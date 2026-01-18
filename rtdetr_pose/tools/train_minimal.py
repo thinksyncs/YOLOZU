@@ -1,0 +1,170 @@
+import argparse
+import sys
+from pathlib import Path
+
+repo_root = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(repo_root))
+
+try:
+    import torch
+    from torch.utils.data import DataLoader, Dataset
+except ImportError as exc:  # pragma: no cover
+    raise SystemExit("torch is required; install requirements-test.txt") from exc
+
+from rtdetr_pose.dataset import build_manifest
+from rtdetr_pose.losses import Losses
+from rtdetr_pose.model import RTDETRPose
+
+
+class ManifestDataset(Dataset):
+    def __init__(
+        self,
+        records,
+        num_queries,
+        num_classes,
+        image_size,
+        seed,
+    ):
+        self.records = records
+        self.num_queries = int(num_queries)
+        self.num_classes = int(num_classes)
+        self.image_size = int(image_size)
+        self.seed = int(seed)
+
+    def __len__(self):
+        return len(self.records)
+
+    def __getitem__(self, idx):
+        record = self.records[idx]
+
+        # We intentionally do NOT decode JPEGs here (keeps deps minimal).
+        # This is a training-loop scaffold: it exercises model/loss/optimizer plumbing.
+        gen = torch.Generator()
+        gen.manual_seed(self.seed + int(idx))
+        image = torch.rand(3, self.image_size, self.image_size, generator=gen)
+
+        labels = torch.full((self.num_queries,), -1, dtype=torch.long)
+        bbox = torch.zeros((self.num_queries, 4), dtype=torch.float32)
+
+        instances = record.get("labels") or []
+        for qi, inst in enumerate(instances[: self.num_queries]):
+            class_id = int(inst.get("class_id", -1))
+            if 0 <= class_id < self.num_classes:
+                labels[qi] = class_id
+            bb = inst.get("bbox") or {}
+            bbox[qi, 0] = float(bb.get("cx", 0.0))
+            bbox[qi, 1] = float(bb.get("cy", 0.0))
+            bbox[qi, 2] = float(bb.get("w", 0.0))
+            bbox[qi, 3] = float(bb.get("h", 0.0))
+
+        return {
+            "image": image,
+            "targets": {
+                "labels": labels,
+                "bbox": bbox,
+            },
+        }
+
+
+def collate(batch):
+    images = torch.stack([item["image"] for item in batch], dim=0)
+    labels = torch.stack([item["targets"]["labels"] for item in batch], dim=0)
+    bbox = torch.stack([item["targets"]["bbox"] for item in batch], dim=0)
+    return images, {"labels": labels, "bbox": bbox}
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Minimal RTDETRPose training scaffold (CPU).")
+    parser.add_argument("--dataset-root", type=str, default="", help="Path to data/coco128")
+    parser.add_argument("--split", type=str, default="train2017")
+    parser.add_argument("--epochs", type=int, default=1)
+    parser.add_argument("--batch-size", type=int, default=2)
+    parser.add_argument("--lr", type=float, default=1e-4)
+    parser.add_argument("--max-steps", type=int, default=30, help="Cap steps per epoch")
+    parser.add_argument("--log-every", type=int, default=10, help="Print every N steps")
+    parser.add_argument("--image-size", type=int, default=64)
+    parser.add_argument("--num-queries", type=int, default=10)
+    parser.add_argument("--hidden-dim", type=int, default=64)
+    parser.add_argument("--num-classes", type=int, default=80)
+    parser.add_argument("--seed", type=int, default=0)
+    args = parser.parse_args()
+
+    torch.manual_seed(args.seed)
+
+    if args.dataset_root:
+        dataset_root = Path(args.dataset_root)
+    else:
+        dataset_root = repo_root / "data" / "coco128"
+        if not dataset_root.exists():
+            dataset_root = repo_root.parent / "data" / "coco128"
+
+    manifest = build_manifest(dataset_root, split=args.split)
+    records = manifest.get("images") or []
+    if not records:
+        raise SystemExit(
+            f"No records found under {dataset_root}. "
+            "Fetch coco128 first: bash tools/fetch_coco128.sh"
+        )
+
+    ds = ManifestDataset(
+        records,
+        num_queries=args.num_queries,
+        num_classes=args.num_classes,
+        image_size=args.image_size,
+        seed=args.seed,
+    )
+    loader = DataLoader(
+        ds,
+        batch_size=args.batch_size,
+        shuffle=True,
+        num_workers=0,
+        collate_fn=collate,
+        drop_last=False,
+    )
+
+    model = RTDETRPose(
+        num_classes=args.num_classes,
+        hidden_dim=args.hidden_dim,
+        num_queries=args.num_queries,
+        num_decoder_layers=2,
+        nhead=4,
+    )
+    losses_fn = Losses()
+
+    device = torch.device("cpu")
+    model.to(device)
+
+    optim = torch.optim.AdamW(model.parameters(), lr=args.lr)
+
+    model.train()
+    for epoch in range(int(args.epochs)):
+        running = 0.0
+        steps = 0
+        for images, targets in loader:
+            images = images.to(device)
+            targets = {k: v.to(device) for k, v in targets.items()}
+
+            out = model(images)
+            loss_dict = losses_fn(out, targets)
+            loss = loss_dict["loss"]
+
+            optim.zero_grad(set_to_none=True)
+            loss.backward()
+            optim.step()
+
+            running += float(loss.detach().cpu())
+            steps += 1
+
+            if steps == 1 or (args.log_every and steps % int(args.log_every) == 0):
+                avg = running / steps
+                print(f"epoch={epoch} step={steps} loss={avg:.4f}")
+
+            if args.max_steps and steps >= int(args.max_steps):
+                break
+
+        avg = running / max(1, steps)
+        print(f"epoch={epoch} done steps={steps} loss={avg:.4f}")
+
+
+if __name__ == "__main__":
+    main()
