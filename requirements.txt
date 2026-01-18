@@ -1,0 +1,8 @@
+# Runtime dependencies (minimal)
+#
+# NOTE: Torch is intentionally kept out of runtime requirements because
+# many users will want a platform-specific install (CPU vs CUDA).
+
+PyYAML>=6.0
+# NumPy is optional in some modules, but recommended and used in validation.
+numpy>=1.24

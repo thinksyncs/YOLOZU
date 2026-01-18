@@ -1,0 +1,11 @@
+# Test dependencies
+-r requirements.txt
+
+# PyTorch (CPU) wheels live on the official PyTorch index.
+# This keeps PyPI as the primary index while allowing torch to resolve.
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+torch>=2.1
+
+# Optional: lets you run `pytest` even though tests use `unittest`.
+pytest>=7.0
