@@ -33,13 +33,10 @@ class SinePositionEmbedding(nn.Module):
         self.hidden_dim = hidden_dim
 
     def forward(self, height, width, device, dtype):
-        grid_y, grid_x = torch.meshgrid(
-            torch.arange(height, device=device, dtype=dtype),
-            torch.arange(width, device=device, dtype=dtype),
-            indexing="ij",
-        )
-        grid_x = grid_x.reshape(-1)
-        grid_y = grid_y.reshape(-1)
+        xs = torch.arange(width, device=device, dtype=dtype)
+        ys = torch.arange(height, device=device, dtype=dtype)
+        grid_x = xs.repeat(height)
+        grid_y = ys.repeat_interleave(width)
         dim_half = self.hidden_dim // 2
         pos_y = _sincos_1d(grid_y, dim_half, device, dtype)
         pos_x = _sincos_1d(grid_x, dim_half, device, dtype)
@@ -91,21 +88,37 @@ class GlobalKHead(nn.Module):
 
 
 class ConvBackbone(nn.Module):
-    def __init__(self, in_channels=3, channels=(64, 128, 256), out_channels=256):
+    def __init__(self, in_channels=3, channels=(64, 128, 256)):
         super().__init__()
-        layers = []
+        stages = []
         prev = in_channels
         for ch in channels:
-            layers.append(nn.Conv2d(prev, ch, kernel_size=3, stride=2, padding=1))
-            layers.append(nn.BatchNorm2d(ch))
-            layers.append(nn.ReLU(inplace=True))
+            stage = nn.Sequential(
+                nn.Conv2d(prev, ch, kernel_size=3, stride=2, padding=1),
+                nn.BatchNorm2d(ch),
+                nn.ReLU(inplace=True),
+            )
+            stages.append(stage)
             prev = ch
-        self.body = nn.Sequential(*layers)
-        self.proj = nn.Conv2d(prev, out_channels, kernel_size=1)
+        self.stages = nn.ModuleList(stages)
 
     def forward(self, x):
-        x = self.body(x)
-        return self.proj(x)
+        outputs = []
+        for stage in self.stages:
+            x = stage(x)
+            outputs.append(x)
+        return outputs
+
+
+class SimpleNeck(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+        self.proj = nn.ModuleList(
+            [nn.Conv2d(ch, out_channels, kernel_size=1) for ch in in_channels]
+        )
+
+    def forward(self, features):
+        return [proj(feat) for proj, feat in zip(self.proj, features)]
 
 
 class SimpleDecoder(nn.Module):
@@ -137,7 +150,8 @@ class RTDETRPose(nn.Module):
         nhead=8,
     ):
         super().__init__()
-        self.backbone = ConvBackbone(channels=backbone_channels, out_channels=hidden_dim)
+        self.backbone = ConvBackbone(channels=backbone_channels)
+        self.neck = SimpleNeck(in_channels=backbone_channels, out_channels=hidden_dim)
         self.position = SinePositionEmbedding(hidden_dim)
         self.decoder = SimpleDecoder(
             hidden_dim=hidden_dim,
@@ -154,9 +168,17 @@ class RTDETRPose(nn.Module):
             raise RuntimeError("torch is required for RTDETRPose")
         batch = x.shape[0]
         feats = self.backbone(x)
-        _, _, height, width = feats.shape
-        memory = feats.flatten(2).permute(0, 2, 1)
-        pos = self.position(height, width, feats.device, feats.dtype)
+        feats = self.neck(feats)
+        memory_chunks = []
+        pos_chunks = []
+        for feat in feats:
+            _, _, height, width = feat.shape
+            memory_chunks.append(feat.flatten(2).permute(0, 2, 1))
+            pos_chunks.append(
+                self.position(height, width, feat.device, feat.dtype).repeat(batch, 1, 1)
+            )
+        memory = torch.cat(memory_chunks, dim=1)
+        pos = torch.cat(pos_chunks, dim=1)
         memory = memory + pos
         queries = self.query_embed.weight.unsqueeze(0).repeat(batch, 1, 1)
         tgt = torch.zeros_like(queries) + queries

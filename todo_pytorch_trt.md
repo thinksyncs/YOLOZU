@@ -61,17 +61,18 @@ Start next (着手)
 - [ ] Replace baseline backbone/decoder with full RT-DETR for parity with spec.
 - [x] Implement CenterOffsetHead (`Δu, Δv`) and GlobalKHead (`δf/δc`) (stub).
 - [x] Implement rotation conversion `rot6D -> R ∈ SO(3)`.
-- [ ] Ensure export-friendly ops for TensorRT.
+- [x] Ensure export-friendly ops for TensorRT (avoid meshgrid; export wrapper in place).
 
 ## Stage 3) Losses + metrics (per spec §5, §7, §8)
-- [ ] Losses (partial scaffolding):
+- [x] Losses (baseline implementations):
   - `L_cls`, `L_box`, `L_z` (log-depth), `L_rot_sym`
   - `L_off`, `L_K`, optional `L_mim`
   - `L_z_prior`, `L_plane`, `L_upright` regularizers
-- [ ] Metrics (partial scaffolding):
-  - mAP/Recall, depth error
+- [x] Metrics (baseline implementations):
+  - depth error
   - symmetry-aware geodesic, ADD-S
-- [ ] Unit tests for symmetry + metric invariance.
+- [x] Unit tests for symmetry + metric invariance (metrics-level).
+- [ ] Wire metric aggregation/mAP/Recall with real detector outputs.
 
 ## Stage 4) Training pipeline (per spec §6, §10, §11)
 - [ ] Data augmentation + SIM jitter integration.
