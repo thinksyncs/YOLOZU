@@ -53,6 +53,34 @@ class TestValidatorMetadata(unittest.TestCase):
             self.assertIsNotNone(sample["depth_path"])
             validate_manifest(manifest, strict=True)
 
+    def test_metadata_content_checks(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            images_dir = root / "images" / "train2017"
+            labels_dir = root / "labels" / "train2017"
+            images_dir.mkdir(parents=True)
+            labels_dir.mkdir(parents=True)
+
+            image_path = images_dir / "000002.jpg"
+            image_path.write_bytes(b"")
+            label_path = labels_dir / "000002.txt"
+            label_path.write_text("0 0.5 0.5 1.0 1.0\n")
+
+            meta = {
+                "M": [[0.0, 1.0], [0.0, 1.0]],
+                "D_obj": [[0.0, 1.2], [0.0, 1.3]],
+                "R_gt": [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+                "t_gt": [0.0, 0.0, 1.0],
+                "K_gt": {"fx": 1.0, "fy": 1.0, "cx": 1.0, "cy": 1.0},
+                "cad_points": [[0.0, 0.0, 0.0], [0.1, 0.0, 0.0]],
+            }
+            meta_path = labels_dir / "000002.json"
+            meta_path.write_text(json.dumps(meta))
+
+            manifest = build_manifest(root, split="train2017")
+            self.assertEqual(len(manifest["images"]), 1)
+            validate_manifest(manifest, strict=True, check_content=True)
+
 
 if __name__ == "__main__":
     unittest.main()

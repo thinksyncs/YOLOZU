@@ -32,6 +32,8 @@ def _load_yolo_labels(label_path):
 def _resolve_optional_path(value, root):
     if value is None:
         return None
+    if isinstance(value, (list, tuple)):
+        return value
     path = Path(value)
     if not path.is_absolute():
         path = Path(root) / path
@@ -43,8 +45,18 @@ def _load_metadata(meta_path, root):
         return {}
     data = json.loads(meta_path.read_text())
     metadata = {}
-    mask_value = data.get("mask_path") or data.get("M") or data.get("mask")
-    depth_value = data.get("depth_path") or data.get("D_obj") or data.get("depth")
+    mask_value = (
+        data.get("mask_path")
+        or data.get("M_path")
+        or data.get("M")
+        or data.get("mask")
+    )
+    depth_value = (
+        data.get("depth_path")
+        or data.get("D_obj_path")
+        or data.get("D_obj")
+        or data.get("depth")
+    )
     if mask_value is not None:
         metadata["mask_path"] = _resolve_optional_path(mask_value, root)
     if depth_value is not None:
@@ -59,11 +71,16 @@ def _load_metadata(meta_path, root):
         metadata["intrinsics"] = data["intrinsics"]
     elif "K_gt" in data:
         metadata["intrinsics"] = data["K_gt"]
+    elif "K" in data:
+        metadata["intrinsics"] = data["K"]
 
     if "K_gt_prime" in data:
         metadata["intrinsics_prime"] = data["K_gt_prime"]
     if "K_gt'" in data:
         metadata["intrinsics_prime"] = data["K_gt'"]
+    cad_value = data.get("cad_points") or data.get("cad_path") or data.get("cad_points_path")
+    if cad_value is not None:
+        metadata["cad_points"] = _resolve_optional_path(cad_value, root)
     return metadata
 
 
@@ -86,6 +103,7 @@ def load_yolo_dataset(root, split="train2017"):
                 "pose": metadata.get("pose"),
                 "intrinsics": metadata.get("intrinsics"),
                 "intrinsics_prime": metadata.get("intrinsics_prime"),
+                "cad_points": metadata.get("cad_points"),
             }
         )
     return records
