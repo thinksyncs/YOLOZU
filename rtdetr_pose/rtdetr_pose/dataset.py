@@ -67,16 +67,14 @@ def _load_metadata(meta_path, root):
     depth_value = _first_key(data, ("depth_path", "D_obj_path", "D_obj", "depth"))
     if mask_value is not None:
         resolved = _resolve_optional_value(mask_value, root)
-        if isinstance(resolved, str):
-            metadata["mask_path"] = resolved
-        else:
-            metadata["mask"] = resolved
+        # Keep using the legacy key name `mask_path` because the validator treats it as
+        # "path OR 2D array". This preserves strict-mode behavior for inline masks.
+        metadata["mask_path"] = resolved
+        metadata["mask"] = resolved
     if depth_value is not None:
         resolved = _resolve_optional_value(depth_value, root)
-        if isinstance(resolved, str):
-            metadata["depth_path"] = resolved
-        else:
-            metadata["depth"] = resolved
+        metadata["depth_path"] = resolved
+        metadata["depth"] = resolved
 
     if "pose" in data:
         metadata["pose"] = data["pose"]

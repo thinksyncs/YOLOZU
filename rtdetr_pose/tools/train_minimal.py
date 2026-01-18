@@ -114,9 +114,9 @@ def main():
         "cad_points": 0,
     }
     for rec in records:
-        if rec.get("mask") is not None or rec.get("mask_path") is not None:
+        if rec.get("mask_path") is not None:
             stats["mask"] += 1
-        if rec.get("depth") is not None or rec.get("depth_path") is not None:
+        if rec.get("depth_path") is not None:
             stats["depth"] += 1
         if rec.get("R_gt") is not None or rec.get("t_gt") is not None or rec.get("pose") is not None:
             stats["pose"] += 1
