@@ -11,14 +11,13 @@ Status (2026-01-18)
 - Full RT-DETR, training loop, and TensorRT conversion are not implemented yet.
 
 Current priorities (auto)
-1) Stage 0: lock framework versions (PyTorch/CUDA/TensorRT/onnxruntime) and target export opset.
-2) Stage 2: replace stub model with real RT-DETR backbone/decoder + export-safe ops.
-3) Stage 3: implement full losses/metrics with symmetry tests.
-4) Stage 5/6: inference path + TensorRT export/parity benchmarks.
+1) Stage 2: replace stub model with real RT-DETR backbone/decoder + export-safe ops.
+2) Stage 3: implement full losses/metrics with symmetry tests.
+3) Stage 5/6: inference path + TensorRT export/parity benchmarks.
 
 ## Stage 0) Repo + environment alignment
 - [x] Decide codebase location (new repo under `/Users/akira/YOLOZU` or existing).
-- [ ] Lock framework versions (PyTorch, CUDA, TensorRT, onnxruntime).
+- [x] Lock framework versions (PyTorch, CUDA, TensorRT, onnxruntime) in `docs/versions.md`.
 - [x] Define experiment config structure (YAML/JSON) and checkpoints layout (scaffolded).
 
 ## Stage 1) Dataset + validation (per spec §4)
