@@ -58,13 +58,14 @@ Current priorities (auto)
 
 ### Training-first next steps (recommended order)
 - [ ] Dataset returns per-instance GT: `M`, `D_obj`, `R_gt`, `t_gt`, `K_gt` (+ optional `K_gt'`, `cad_points`)
-  - [ ] Normalize sidecar keys into canonical fields (`R_gt`, `t_gt`, `K_gt`, `M`, `D_obj`)
-  - [ ] Preserve paths vs inlined arrays without eager decoding
+  - [x] Normalize sidecar keys into canonical fields (`R_gt`, `t_gt`, `K_gt`, `M`, `D_obj`)
+  - [x] Preserve paths vs inlined arrays without eager decoding
   - [ ] Record per-sample availability stats (pose/intrinsics/mask/depth)
 - [ ] Batch collation for variable #instances and masks/depth
 - [ ] Collate keeps per-instance counts (for matcher) and pads/query-aligns labels/bboxes
 - [ ] Minimal trainer entrypoint (1 epoch over coco128; logs loss scalars)
-- [ ] Trainer prints GT availability summary for debugging
+- [ ] Minimal trainer entrypoint (1 epoch over coco128; logs loss scalars)
+- [x] Trainer prints GT availability summary for debugging
 - [ ] Matching (Hungarian) + staged cost terms (start with cls/box, then add z/rot)
 - [ ] Checkpointing + config-driven runs (resume/repro)
 - [ ] Loss/metric integration test: one training step + backward + no NaNs
