@@ -281,6 +281,105 @@ def _validate_content(mask, depth, labels, pose, intrinsics, cad_points):
             raise ValueError("cad projection does not intersect label bbox")
 
 
+def _validate_mask_binary(mask):
+    if mask is None:
+        return
+
+    # Numpy path (fast).
+    if np is not None and hasattr(mask, "shape"):
+        arr = np.asarray(mask)
+        if arr.ndim > 2:
+            arr = arr[..., 0]
+
+        if arr.dtype == np.bool_:
+            return
+
+        if np.issubdtype(arr.dtype, np.integer):
+            ok01 = np.isin(arr, (0, 1)).all()
+            ok0255 = np.isin(arr, (0, 255)).all()
+            if not (ok01 or ok0255):
+                raise ValueError("mask must be binary (0/1 or 0/255)")
+            return
+
+        if np.issubdtype(arr.dtype, np.floating):
+            if not np.isfinite(arr).all():
+                raise ValueError("mask must be finite")
+            if (arr < 0).any() or (arr > 1).any():
+                raise ValueError("mask float values must be in [0,1]")
+            if (np.abs(arr - np.round(arr)) > 1e-3).any():
+                raise ValueError("mask must be binary (near 0/1)")
+            return
+
+    # Pure-Python list/tuple path.
+    shape = _shape(mask)
+    if shape is None or len(shape) != 2:
+        return
+
+    seen_nonfinite = False
+    seen_float = False
+    allowed_int_values = {0, 1, 255}
+
+    for row in mask:
+        for value in row:
+            if value is None:
+                continue
+            if isinstance(value, bool):
+                continue
+            if isinstance(value, int):
+                if value not in allowed_int_values:
+                    raise ValueError("mask must be binary (0/1 or 0/255)")
+                continue
+            if isinstance(value, float):
+                seen_float = True
+                if value != value or value in (float("inf"), float("-inf")):
+                    seen_nonfinite = True
+                    continue
+                if value < 0.0 or value > 1.0:
+                    raise ValueError("mask float values must be in [0,1]")
+                if abs(value - round(value)) > 1e-3:
+                    raise ValueError("mask must be binary (near 0/1)")
+                continue
+
+    if seen_nonfinite:
+        raise ValueError("mask must be finite")
+    if seen_float:
+        return
+
+
+def _validate_depth_range(depth):
+    if depth is None:
+        return
+
+    # Numpy path.
+    if np is not None and hasattr(depth, "shape"):
+        arr = np.asarray(depth)
+        if arr.ndim > 2:
+            arr = arr[..., 0]
+        if not np.isfinite(arr).all():
+            raise ValueError("depth must be finite")
+        if (arr < 0).any():
+            raise ValueError("depth must be non-negative")
+        return
+
+    # Pure-Python list/tuple path.
+    shape = _shape(depth)
+    if shape is None or len(shape) != 2:
+        return
+    seen_nonfinite = False
+    for row in depth:
+        for value in row:
+            if value is None:
+                continue
+            if isinstance(value, (int, float)):
+                if isinstance(value, float) and (value != value or value in (float("inf"), float("-inf"))):
+                    seen_nonfinite = True
+                    continue
+                if value < 0:
+                    raise ValueError("depth must be non-negative")
+    if seen_nonfinite:
+        raise ValueError("depth must be finite")
+
+
 REQUIRED_KEYS = {
     "image_path",
     "labels",
@@ -291,7 +390,7 @@ REQUIRED_KEYS = {
 }
 
 
-def validate_sample(sample, strict=False, check_content=False):
+def validate_sample(sample, strict=False, check_content=False, check_ranges=False):
     missing = REQUIRED_KEYS - set(sample.keys())
     if missing:
         raise ValueError(f"missing keys: {sorted(missing)}")
@@ -317,10 +416,11 @@ def validate_sample(sample, strict=False, check_content=False):
     _validate_pose(sample.get("pose"))
     _validate_intrinsics(sample.get("intrinsics"))
     _validate_intrinsics(sample.get("intrinsics_prime"))
-    if check_content:
+    if check_content or check_ranges:
         mask_array = _load_array(sample.get("mask_path"))
         depth_array = _load_array(sample.get("depth_path"))
         cad_points = _load_array(sample.get("cad_points"))
+    if check_content:
         _validate_content(
             mask_array,
             depth_array,
@@ -329,6 +429,9 @@ def validate_sample(sample, strict=False, check_content=False):
             sample.get("intrinsics"),
             cad_points,
         )
+    if check_ranges:
+        _validate_mask_binary(mask_array)
+        _validate_depth_range(depth_array)
     if strict:
         if sample["mask_path"] is None:
             raise ValueError("mask_path required in strict mode")
@@ -340,9 +443,14 @@ def validate_sample(sample, strict=False, check_content=False):
             raise ValueError("intrinsics required in strict mode")
 
 
-def validate_manifest(manifest, strict=False, check_content=False):
+def validate_manifest(manifest, strict=False, check_content=False, check_ranges=False):
     images = manifest.get("images", [])
     if not images:
         raise ValueError("manifest has no images")
     for sample in images:
-        validate_sample(sample, strict=strict, check_content=check_content)
+        validate_sample(
+            sample,
+            strict=strict,
+            check_content=check_content,
+            check_ranges=check_ranges,
+        )
