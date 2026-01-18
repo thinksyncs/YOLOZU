@@ -26,6 +26,7 @@ class ManifestDataset(Dataset):
         image_size,
         seed,
         use_matcher,
+        synthetic_pose,
     ):
         self.records = records
         self.num_queries = int(num_queries)
@@ -33,6 +34,7 @@ class ManifestDataset(Dataset):
         self.image_size = int(image_size)
         self.seed = int(seed)
         self.use_matcher = bool(use_matcher)
+        self.synthetic_pose = bool(synthetic_pose)
 
     def __len__(self):
         return len(self.records)
@@ -50,6 +52,8 @@ class ManifestDataset(Dataset):
         if self.use_matcher:
             gt_labels = []
             gt_bbox = []
+            gt_z = []
+            gt_R = []
             for inst in instances:
                 class_id = int(inst.get("class_id", -1))
                 if not (0 <= class_id < self.num_classes):
@@ -64,11 +68,26 @@ class ManifestDataset(Dataset):
                         float(bb.get("h", 0.0)),
                     ]
                 )
+
+                if self.synthetic_pose:
+                    # Simple synthetic depth + random rotation to exercise extra loss terms.
+                    gt_z.append(float(torch.rand((), generator=gen) * 0.9 + 0.1))
+                    a = torch.randn(3, 3, generator=gen)
+                    q, _ = torch.linalg.qr(a)
+                    if torch.det(q) < 0:
+                        q[:, 0] = -q[:, 0]
+                    gt_R.append(q)
             return {
                 "image": image,
                 "targets": {
                     "gt_labels": torch.tensor(gt_labels, dtype=torch.long),
                     "gt_bbox": torch.tensor(gt_bbox, dtype=torch.float32),
+                    "gt_z": torch.tensor(gt_z, dtype=torch.float32).unsqueeze(-1)
+                    if self.synthetic_pose
+                    else torch.zeros((0, 1), dtype=torch.float32),
+                    "gt_R": torch.stack(gt_R, dim=0)
+                    if (self.synthetic_pose and gt_R)
+                    else torch.zeros((0, 3, 3), dtype=torch.float32),
                 },
             }
 
@@ -112,6 +131,18 @@ def main():
     parser.add_argument("--use-matcher", action="store_true", help="Use Hungarian matching")
     parser.add_argument("--cost-cls", type=float, default=1.0)
     parser.add_argument("--cost-bbox", type=float, default=5.0)
+    parser.add_argument("--cost-z", type=float, default=0.0, help="Optional matching cost for depth")
+    parser.add_argument(
+        "--cost-rot",
+        type=float,
+        default=0.0,
+        help="Optional matching cost for rotation (geodesic angle)",
+    )
+    parser.add_argument(
+        "--synthetic-pose",
+        action="store_true",
+        help="Generate synthetic z/R GT per instance (scaffold only)",
+    )
     args = parser.parse_args()
 
     torch.manual_seed(args.seed)
@@ -161,6 +192,7 @@ def main():
         image_size=args.image_size,
         seed=args.seed,
         use_matcher=args.use_matcher,
+        synthetic_pose=args.synthetic_pose,
     )
     loader = DataLoader(
         ds,
@@ -202,11 +234,22 @@ def main():
                     num_queries=args.num_queries,
                     cost_cls=args.cost_cls,
                     cost_bbox=args.cost_bbox,
+                    log_z_pred=out.get("log_z"),
+                    rot6d_pred=out.get("rot6d"),
+                    cost_z=args.cost_z,
+                    cost_rot=args.cost_rot,
                 )
                 out = dict(out)
                 # For box regression we train in normalized space.
                 out["bbox"] = aligned["bbox_norm"]
-                targets = {"labels": aligned["labels"], "bbox": aligned["bbox"]}
+                targets = {
+                    "labels": aligned["labels"],
+                    "bbox": aligned["bbox"],
+                    "mask": aligned["mask"],
+                    "z_gt": aligned["z_gt"],
+                    "R_gt": aligned["R_gt"],
+                    "offsets": aligned["offsets"],
+                }
             else:
                 # legacy padded targets
                 targets = {

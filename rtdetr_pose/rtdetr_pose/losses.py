@@ -17,6 +17,24 @@ def _first_present(mapping, keys):
     return None
 
 
+def _valid_mask_from_targets(targets):
+    mask = targets.get("mask")
+    if mask is not None:
+        return mask
+    labels = _first_present(targets, ("labels", "class_gt"))
+    if labels is None:
+        return None
+    return labels != -1
+
+
+def _masked_mean(value, mask):
+    if mask is None:
+        return value.mean()
+    if mask.numel() == 0 or not bool(mask.any()):
+        return value.sum() * 0.0
+    return value[mask].mean()
+
+
 def geodesic_distance(r1, r2):
     if torch is None:
         raise RuntimeError("torch is required for geodesic_distance")
@@ -96,6 +114,8 @@ class Losses(nn.Module):
         losses = {}
         total = 0.0
 
+        valid = _valid_mask_from_targets(targets)
+
         logits = outputs.get("logits")
         labels = _first_present(targets, ("labels", "class_gt"))
         if logits is not None and labels is not None:
@@ -110,14 +130,21 @@ class Losses(nn.Module):
         bbox_pred = outputs.get("bbox")
         bbox_gt = targets.get("bbox")
         if bbox_pred is not None and bbox_gt is not None:
-            loss_box = self.l1(bbox_pred, bbox_gt)
+            if valid is None:
+                loss_box = self.l1(bbox_pred, bbox_gt)
+            else:
+                diff = torch.abs(bbox_pred - bbox_gt).sum(dim=-1)
+                loss_box = _masked_mean(diff, valid)
             losses["loss_box"] = loss_box
             total = total + self.weights["box"] * loss_box
 
         log_z_pred = outputs.get("log_z")
         z_gt = _first_present(targets, ("z_gt", "depth", "z"))
         if log_z_pred is not None and z_gt is not None:
-            loss_z = log_depth_loss(log_z_pred, z_gt)
+            if valid is None:
+                loss_z = log_depth_loss(log_z_pred, z_gt)
+            else:
+                loss_z = log_depth_loss(log_z_pred[valid], z_gt[valid])
             losses["loss_z"] = loss_z
             total = total + self.weights["z"] * loss_z
 
@@ -125,17 +152,35 @@ class Losses(nn.Module):
         r_gt = _first_present(targets, ("R_gt", "r_gt"))
         sym_rots = targets.get("sym_rots")
         if rot_pred is not None and r_gt is not None:
-            if sym_rots is not None:
-                loss_rot = symmetry_rotation_loss(rot_pred, r_gt, sym_rots)
-            else:
-                loss_rot = rotation_loss(rot_pred, r_gt)
+            rot_pred_in = rot_pred
+            r_gt_in = r_gt
+            if valid is not None:
+                if not bool(valid.any()):
+                    loss_rot = rot_pred.sum() * 0.0
+                    losses["loss_rot"] = loss_rot
+                    total = total + self.weights["rot"] * loss_rot
+                    rot_pred_in = None
+                    r_gt_in = None
+                else:
+                    rot_pred_in = rot_pred[valid]
+                    r_gt_in = r_gt[valid]
+
+            if rot_pred_in is not None and r_gt_in is not None:
+                if sym_rots is not None:
+                    loss_rot = symmetry_rotation_loss(rot_pred_in, r_gt_in, sym_rots)
+                else:
+                    loss_rot = rotation_loss(rot_pred_in, r_gt_in)
             losses["loss_rot"] = loss_rot
             total = total + self.weights["rot"] * loss_rot
 
         offsets_pred = outputs.get("offsets")
         offsets_gt = _first_present(targets, ("offsets", "offsets_gt"))
         if offsets_pred is not None and offsets_gt is not None:
-            loss_off = self.l1(offsets_pred, offsets_gt)
+            if valid is None:
+                loss_off = self.l1(offsets_pred, offsets_gt)
+            else:
+                diff = torch.abs(offsets_pred - offsets_gt).sum(dim=-1)
+                loss_off = _masked_mean(diff, valid)
             losses["loss_off"] = loss_off
             total = total + self.weights["off"] * loss_off
 
