@@ -117,6 +117,9 @@ class Losses(nn.Module):
         total = 0.0
 
         valid = _valid_mask_from_targets(targets)
+        z_mask = targets.get("z_mask")
+        rot_mask = targets.get("rot_mask")
+        off_mask = targets.get("off_mask")
 
         logits = outputs.get("logits")
         labels = _first_present(targets, ("labels", "class_gt"))
@@ -149,13 +152,28 @@ class Losses(nn.Module):
         log_z_pred = outputs.get("log_z")
         z_gt = _first_present(targets, ("z_gt", "depth", "z"))
         if log_z_pred is not None and z_gt is not None:
+            if isinstance(z_gt, torch.Tensor) and z_gt.ndim == log_z_pred.ndim + 1 and z_gt.shape[-1] == 1:
+                z_gt = z_gt.squeeze(-1)
+
+            mask_for_z = valid
+            if z_mask is not None:
+                z_mask = z_mask.to(device=log_z_pred.device, dtype=torch.bool)
+                mask_for_z = z_mask if mask_for_z is None else (mask_for_z & z_mask)
+
             if valid is None:
-                loss_z = log_depth_loss(log_z_pred, z_gt)
+                if mask_for_z is None:
+                    loss_z = log_depth_loss(log_z_pred, z_gt)
+                else:
+                    if not bool(mask_for_z.any()):
+                        loss_z = log_z_pred.sum() * 0.0
+                    else:
+                        loss_z = log_depth_loss(log_z_pred[mask_for_z], z_gt[mask_for_z])
             else:
-                if not bool(valid.any()):
+                if mask_for_z is not None and not bool(mask_for_z.any()):
                     loss_z = log_z_pred.sum() * 0.0
                 else:
-                    loss_z = log_depth_loss(log_z_pred[valid], z_gt[valid])
+                    mask_sel = valid if mask_for_z is None else mask_for_z
+                    loss_z = log_depth_loss(log_z_pred[mask_sel], z_gt[mask_sel])
             losses["loss_z"] = loss_z
             total = total + self.weights["z"] * loss_z
 
@@ -163,18 +181,23 @@ class Losses(nn.Module):
         r_gt = _first_present(targets, ("R_gt", "r_gt"))
         sym_rots = targets.get("sym_rots")
         if rot_pred is not None and r_gt is not None:
+            mask_for_rot = valid
+            if rot_mask is not None:
+                rot_mask = rot_mask.to(device=rot_pred.device, dtype=torch.bool)
+                mask_for_rot = rot_mask if mask_for_rot is None else (mask_for_rot & rot_mask)
+
             rot_pred_in = rot_pred
             r_gt_in = r_gt
-            if valid is not None:
-                if not bool(valid.any()):
+            if mask_for_rot is not None:
+                if not bool(mask_for_rot.any()):
                     loss_rot = rot_pred.sum() * 0.0
                     losses["loss_rot"] = loss_rot
                     total = total + self.weights["rot"] * loss_rot
                     rot_pred_in = None
                     r_gt_in = None
                 else:
-                    rot_pred_in = rot_pred[valid]
-                    r_gt_in = r_gt[valid]
+                    rot_pred_in = rot_pred[mask_for_rot]
+                    r_gt_in = r_gt[mask_for_rot]
 
             if rot_pred_in is not None and r_gt_in is not None:
                 if sym_rots is not None:
@@ -187,11 +210,16 @@ class Losses(nn.Module):
         offsets_pred = outputs.get("offsets")
         offsets_gt = _first_present(targets, ("offsets", "offsets_gt"))
         if offsets_pred is not None and offsets_gt is not None:
-            if valid is None:
+            mask_for_off = valid
+            if off_mask is not None:
+                off_mask = off_mask.to(device=offsets_pred.device, dtype=torch.bool)
+                mask_for_off = off_mask if mask_for_off is None else (mask_for_off & off_mask)
+
+            if mask_for_off is None:
                 loss_off = self.l1(offsets_pred, offsets_gt)
             else:
                 diff = torch.abs(offsets_pred - offsets_gt).sum(dim=-1)
-                loss_off = _masked_mean(diff, valid)
+                loss_off = _masked_mean(diff, mask_for_off)
             losses["loss_off"] = loss_off
             total = total + self.weights["off"] * loss_off
 

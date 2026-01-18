@@ -54,10 +54,13 @@ class ManifestDataset(Dataset):
             gt_labels = []
             gt_bbox = []
             gt_z = []
+            gt_z_mask = []
             gt_R = []
+            gt_R_mask = []
             gt_t = []
+            gt_t_mask = []
             gt_offsets = []
-            kept = []
+            gt_offsets_mask = []
 
             # We don't decode images, so default HW is the generated tensor size.
             image_hw = torch.tensor([float(self.image_size), float(self.image_size)], dtype=torch.float32)
@@ -84,7 +87,6 @@ class ManifestDataset(Dataset):
                     continue
                 bb = inst.get("bbox") or {}
                 gt_labels.append(class_id)
-                kept.append(inst_i)
                 gt_bbox.append(
                     [
                         float(bb.get("cx", 0.0)),
@@ -99,12 +101,20 @@ class ManifestDataset(Dataset):
                 r_i = meta.get("R_gt", [None])[inst_i] if meta.get("R_gt") is not None else None
                 off_i = meta.get("offsets_gt", [None])[inst_i] if meta.get("offsets_gt") is not None else None
 
+                # z/t
                 if t_i is not None:
-                    gt_t.append([float(v) for v in t_i])
-                    gt_z.append(float(t_i[2]))
+                    t_val = [float(v) for v in t_i]
+                    z_val = float(t_val[2])
+                    gt_t.append(t_val)
+                    gt_t_mask.append(True)
+                    gt_z.append(z_val)
+                    gt_z_mask.append(True)
                 elif self.synthetic_pose:
                     z_val = float(torch.rand((), generator=gen) * 0.9 + 0.1)
                     gt_z.append(z_val)
+                    gt_z_mask.append(True)
+                    if K_gt is None:
+                        raise RuntimeError("synthetic_pose requires K_gt")
                     cx_n = float(bb.get("cx", 0.0))
                     cy_n = float(bb.get("cy", 0.0))
                     u = cx_n * float(image_hw[1])
@@ -112,29 +122,51 @@ class ManifestDataset(Dataset):
                     x = (u - float(K_gt[0, 2])) / float(K_gt[0, 0]) * z_val
                     y = (v - float(K_gt[1, 2])) / float(K_gt[1, 1]) * z_val
                     gt_t.append([x, y, z_val])
+                    gt_t_mask.append(True)
+                else:
+                    gt_z.append(0.0)
+                    gt_z_mask.append(False)
+                    gt_t.append([0.0, 0.0, 0.0])
+                    gt_t_mask.append(False)
 
+                # R
                 if r_i is not None:
                     gt_R.append(torch.tensor(r_i, dtype=torch.float32))
+                    gt_R_mask.append(True)
                 elif self.synthetic_pose:
                     a = torch.randn(3, 3, generator=gen)
                     q, _ = torch.linalg.qr(a)
                     if torch.det(q) < 0:
                         q[:, 0] = -q[:, 0]
                     gt_R.append(q)
+                    gt_R_mask.append(True)
+                else:
+                    gt_R.append(torch.eye(3, dtype=torch.float32))
+                    gt_R_mask.append(False)
 
+                # offsets
                 if off_i is not None:
                     gt_offsets.append([float(off_i[0]), float(off_i[1])])
+                    gt_offsets_mask.append(True)
                 elif self.synthetic_pose:
                     gt_offsets.append([0.0, 0.0])
+                    gt_offsets_mask.append(True)
+                else:
+                    gt_offsets.append([0.0, 0.0])
+                    gt_offsets_mask.append(False)
             return {
                 "image": image,
                 "targets": {
                     "gt_labels": torch.tensor(gt_labels, dtype=torch.long),
                     "gt_bbox": torch.tensor(gt_bbox, dtype=torch.float32),
-                    **({"gt_z": torch.tensor(gt_z, dtype=torch.float32).unsqueeze(-1)} if gt_z else {}),
-                    **({"gt_R": torch.stack(gt_R, dim=0)} if gt_R else {}),
-                    **({"gt_t": torch.tensor(gt_t, dtype=torch.float32)} if gt_t else {}),
-                    **({"gt_offsets": torch.tensor(gt_offsets, dtype=torch.float32)} if gt_offsets else {}),
+                    "gt_z": torch.tensor(gt_z, dtype=torch.float32).unsqueeze(-1),
+                    "gt_z_mask": torch.tensor(gt_z_mask, dtype=torch.bool),
+                    "gt_R": torch.stack(gt_R, dim=0),
+                    "gt_R_mask": torch.tensor(gt_R_mask, dtype=torch.bool),
+                    "gt_t": torch.tensor(gt_t, dtype=torch.float32),
+                    "gt_t_mask": torch.tensor(gt_t_mask, dtype=torch.bool),
+                    "gt_offsets": torch.tensor(gt_offsets, dtype=torch.float32),
+                    "gt_offsets_mask": torch.tensor(gt_offsets_mask, dtype=torch.bool),
                     **({"K_gt": K_gt} if K_gt is not None else {}),
                     "image_hw": image_hw,
                 },
