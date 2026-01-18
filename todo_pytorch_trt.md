@@ -11,7 +11,7 @@ Status (2026-01-18)
 - Full RT-DETR, training loop, and TensorRT conversion are not implemented yet.
 
 Current priorities (auto)
-1) Stage 1: finish SIM/Blender GT loader + validation (mask/depth/pose/intrinsics) and projection checks.
+1) Stage 0: lock framework versions (PyTorch/CUDA/TensorRT/onnxruntime) and target export opset.
 2) Stage 2: replace stub model with real RT-DETR backbone/decoder + export-safe ops.
 3) Stage 3: implement full losses/metrics with symmetry tests.
 4) Stage 5/6: inference path + TensorRT export/parity benchmarks.
@@ -33,6 +33,7 @@ Current priorities (auto)
 - [x] Optional SIM jitter fields (`K_gt'`) validation (intrinsics_prime).
 - [x] Sidecar accepts `M/D_obj/R_gt/t_gt/K_gt/cad_points` and performs content checks when enabled.
 - [x] Build a small "dataset audit" CLI and summary report.
+- [ ] Add range/units checks (depth meters, mask binary) and clarify multi-object behavior.
 
 ### SIM/Blender sidecar schema (labels/*.json)
 - `M` or `mask_path`: silhouette mask (array or path; 2D).
@@ -42,6 +43,17 @@ Current priorities (auto)
 - `K_gt`: intrinsics (`{fx,fy,cx,cy}` or 3x3 matrix).
 - `K_gt'` (optional): corrected intrinsics.
 - `cad_points` (optional): list of 3D CAD points for projection checks.
+
+Remaining decisions (整理)
+- GT coordinate convention (camera vs object frame) and units (meters vs millimeters).
+- Mask/depth file formats and value ranges (png/npy/json; depth scale).
+- Multi-object samples: whether `cad_points` is per-class or per-instance.
+- Whether `K_gt'` is required in SIM exports or optional with fallback to `K_gt`.
+
+Start next (着手)
+- Lock framework versions and export opset.
+- Implement RT-DETR backbone/decoder (export-safe) and wire HeadFast outputs.
+- Extend losses/metrics to full spec and add symmetry invariance tests.
 
 ## Stage 2) Model architecture (per spec §3)
 - [ ] Implement RT-DETR backbone/neck/decoder with HeadFast outputs (stub only):
