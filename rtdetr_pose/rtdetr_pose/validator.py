@@ -48,6 +48,44 @@ def _validate_optional_path_or_array(value, name):
     return ("array", shape)
 
 
+def _is_2d_list_array(value):
+    if not isinstance(value, (list, tuple)) or not value:
+        return False
+    first = value[0]
+    if not isinstance(first, (list, tuple)) or not first:
+        return False
+    # 2D numeric array-like: value[0][0] is scalar.
+    inner = first[0]
+    return not isinstance(inner, (list, tuple, dict))
+
+
+def _split_per_instance(value, num_instances, *, name):
+    """Return a list length num_instances for broadcast/per-instance values.
+
+    Supports:
+    - None -> [None]*N
+    - path/array -> broadcast
+    - list length N -> per-instance
+    - 2D inline array (list-of-list numeric) -> broadcast
+    """
+
+    n = int(num_instances)
+    if value is None:
+        return [None for _ in range(n)]
+
+    # Inline 2D array is treated as broadcast.
+    if _is_2d_list_array(value) or hasattr(value, "shape"):
+        return [value for _ in range(n)]
+
+    if isinstance(value, (list, tuple)):
+        if len(value) != n:
+            raise ValueError(f"{name} must have length {n} for multi-object samples")
+        return list(value)
+
+    # Scalar/broadcast.
+    return [value for _ in range(n)]
+
+
 def _validate_pose(value):
     if value is None:
         return
@@ -66,6 +104,21 @@ def _validate_pose(value):
     raise ValueError("pose must be a dict with R/t or a 4x4 matrix")
 
 
+def _validate_pose_multi(value, num_instances):
+    if value is None:
+        return
+    # Per-instance pose list.
+    if isinstance(value, (list, tuple)) and value and isinstance(value[0], (dict, list, tuple)):
+        # Avoid treating 4x4 matrix (list of 4 lists) as per-instance.
+        if not _is_matrix(value, 4):
+            if len(value) != int(num_instances):
+                raise ValueError(f"pose must have length {int(num_instances)} for multi-object samples")
+            for item in value:
+                _validate_pose(item)
+            return
+    _validate_pose(value)
+
+
 def _validate_intrinsics(value):
     if value is None:
         return
@@ -80,6 +133,18 @@ def _validate_intrinsics(value):
     if _is_matrix(value, 3):
         return
     raise ValueError("intrinsics must be fx/fy/cx/cy or 3x3 matrix")
+
+
+def _validate_intrinsics_multi(value, num_instances):
+    if value is None:
+        return
+    if isinstance(value, (list, tuple)) and value and not _is_matrix(value, 3):
+        # If this is per-instance list, validate each.
+        if len(value) == int(num_instances) and not (len(value) == 4 and all(isinstance(v, (int, float)) for v in value)):
+            for item in value:
+                _validate_intrinsics(item)
+            return
+    _validate_intrinsics(value)
 
 
 def _load_array_from_path(path):
@@ -107,6 +172,9 @@ def _load_array(value):
         return None
     if isinstance(value, (str, Path)):
         return _load_array_from_path(Path(value))
+    if isinstance(value, (list, tuple)) and value and isinstance(value[0], (str, Path)):
+        # Per-instance list of paths.
+        return [_load_array_from_path(Path(v)) if v is not None else None for v in value]
     return value
 
 
@@ -399,6 +467,7 @@ def validate_sample(sample, strict=False, check_content=False, check_ranges=Fals
         raise ValueError(f"image missing: {image_path}")
     if not isinstance(sample["labels"], list):
         raise ValueError("labels must be list")
+    num_instances = len(sample["labels"])
     for label in sample["labels"]:
         if "class_id" not in label or "bbox" not in label:
             raise ValueError("label missing class_id/bbox")
@@ -407,37 +476,51 @@ def validate_sample(sample, strict=False, check_content=False, check_ranges=Fals
             value = bbox.get(key)
             if value is None or not (0.0 <= value <= 1.0):
                 raise ValueError(f"bbox {key} out of range: {value}")
-    mask_info = _validate_optional_path_or_array(sample.get("mask_path"), "mask_path")
-    depth_info = _validate_optional_path_or_array(sample.get("depth_path"), "depth_path")
-    if mask_info and depth_info:
-        if mask_info[0] == "array" and depth_info[0] == "array":
-            if mask_info[1] != depth_info[1]:
-                raise ValueError("mask/depth shapes must match")
-    _validate_pose(sample.get("pose"))
-    _validate_intrinsics(sample.get("intrinsics"))
-    _validate_intrinsics(sample.get("intrinsics_prime"))
+    # Multi-object handling: allow per-instance mask/depth/pose lists, otherwise broadcast.
+    mask_items = _split_per_instance(sample.get("mask_path"), num_instances, name="mask_path")
+    depth_items = _split_per_instance(sample.get("depth_path"), num_instances, name="depth_path")
+    pose_items = _split_per_instance(sample.get("pose"), num_instances, name="pose")
+
+    for item in mask_items:
+        _validate_optional_path_or_array(item, "mask_path")
+    for item in depth_items:
+        _validate_optional_path_or_array(item, "depth_path")
+
+    # Per-instance pose validation (allows broadcast).
+    for item in pose_items:
+        _validate_pose(item)
+
+    # Intrinsics is typically per-image, but we allow per-instance lists.
+    _validate_intrinsics_multi(sample.get("intrinsics"), num_instances)
+    _validate_intrinsics_multi(sample.get("intrinsics_prime"), num_instances)
+
     if check_content or check_ranges:
-        mask_array = _load_array(sample.get("mask_path"))
-        depth_array = _load_array(sample.get("depth_path"))
+        mask_loaded = _load_array(mask_items)
+        depth_loaded = _load_array(depth_items)
         cad_points = _load_array(sample.get("cad_points"))
-    if check_content:
-        _validate_content(
-            mask_array,
-            depth_array,
-            sample.get("labels") or [],
-            sample.get("pose"),
-            sample.get("intrinsics"),
-            cad_points,
-        )
-    if check_ranges:
-        _validate_mask_binary(mask_array)
-        _validate_depth_range(depth_array)
+
+        # Validate per-instance when possible.
+        for i in range(num_instances):
+            m_i = mask_loaded[i] if isinstance(mask_loaded, list) else None
+            d_i = depth_loaded[i] if isinstance(depth_loaded, list) else None
+            if check_content:
+                _validate_content(
+                    m_i,
+                    d_i,
+                    [sample["labels"][i]] if sample.get("labels") else [],
+                    pose_items[i],
+                    sample.get("intrinsics"),
+                    cad_points,
+                )
+            if check_ranges:
+                _validate_mask_binary(m_i)
+                _validate_depth_range(d_i)
     if strict:
-        if sample["mask_path"] is None:
+        if any(item is None for item in mask_items):
             raise ValueError("mask_path required in strict mode")
-        if sample["depth_path"] is None:
+        if any(item is None for item in depth_items):
             raise ValueError("depth_path required in strict mode")
-        if sample["pose"] is None:
+        if any(item is None for item in pose_items):
             raise ValueError("pose required in strict mode")
         if sample["intrinsics"] is None:
             raise ValueError("intrinsics required in strict mode")
