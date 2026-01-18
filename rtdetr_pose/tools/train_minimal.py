@@ -198,6 +198,11 @@ def main():
         default=0.0,
         help="Optional matching cost for translation recovered from (bbox, offsets, z, K')",
     )
+    parser.add_argument(
+        "--debug-losses",
+        action="store_true",
+        help="Print loss dict breakdown on step 1",
+    )
     args = parser.parse_args()
 
     torch.manual_seed(args.seed)
@@ -310,6 +315,8 @@ def main():
                     "t_gt": aligned["t_gt"],
                     "K_gt": aligned["K_gt"],
                     "image_hw": aligned["image_hw"],
+                    "K_mask": aligned["K_mask"],
+                    "t_mask": aligned["t_mask"],
                 }
             else:
                 # legacy padded targets
@@ -320,6 +327,14 @@ def main():
 
             loss_dict = losses_fn(out, targets)
             loss = loss_dict["loss"]
+
+            if steps == 0 and args.debug_losses:
+                printable = {
+                    k: float(v.detach().cpu())
+                    for k, v in loss_dict.items()
+                    if hasattr(v, "detach")
+                }
+                print("loss_breakdown", " ".join(f"{k}={v:.6g}" for k, v in sorted(printable.items())))
 
             optim.zero_grad(set_to_none=True)
             loss.backward()
