@@ -54,6 +54,24 @@ class ManifestDataset(Dataset):
             gt_bbox = []
             gt_z = []
             gt_R = []
+            gt_t = []
+
+            # Per-image intrinsics (synthetic default if requested).
+            if self.synthetic_pose:
+                w = float(self.image_size)
+                h = float(self.image_size)
+                fx = w
+                fy = w
+                cx = w * 0.5
+                cy = h * 0.5
+                K_gt = torch.tensor(
+                    [[fx, 0.0, cx], [0.0, fy, cy], [0.0, 0.0, 1.0]],
+                    dtype=torch.float32,
+                )
+                image_hw = torch.tensor([h, w], dtype=torch.float32)
+            else:
+                K_gt = torch.zeros((3, 3), dtype=torch.float32)
+                image_hw = torch.tensor([float(self.image_size), float(self.image_size)], dtype=torch.float32)
             for inst in instances:
                 class_id = int(inst.get("class_id", -1))
                 if not (0 <= class_id < self.num_classes):
@@ -71,12 +89,22 @@ class ManifestDataset(Dataset):
 
                 if self.synthetic_pose:
                     # Simple synthetic depth + random rotation to exercise extra loss terms.
-                    gt_z.append(float(torch.rand((), generator=gen) * 0.9 + 0.1))
+                    z_val = float(torch.rand((), generator=gen) * 0.9 + 0.1)
+                    gt_z.append(z_val)
                     a = torch.randn(3, 3, generator=gen)
                     q, _ = torch.linalg.qr(a)
                     if torch.det(q) < 0:
                         q[:, 0] = -q[:, 0]
                     gt_R.append(q)
+
+                    # Translation consistent with bbox center and intrinsics when offsets == 0.
+                    cx_n = float(bb.get("cx", 0.0))
+                    cy_n = float(bb.get("cy", 0.0))
+                    u = cx_n * float(image_hw[1])
+                    v = cy_n * float(image_hw[0])
+                    x = (u - float(K_gt[0, 2])) / float(K_gt[0, 0]) * z_val
+                    y = (v - float(K_gt[1, 2])) / float(K_gt[1, 1]) * z_val
+                    gt_t.append([x, y, z_val])
             return {
                 "image": image,
                 "targets": {
@@ -88,6 +116,11 @@ class ManifestDataset(Dataset):
                     "gt_R": torch.stack(gt_R, dim=0)
                     if (self.synthetic_pose and gt_R)
                     else torch.zeros((0, 3, 3), dtype=torch.float32),
+                    "gt_t": torch.tensor(gt_t, dtype=torch.float32)
+                    if self.synthetic_pose
+                    else torch.zeros((0, 3), dtype=torch.float32),
+                    "K_gt": K_gt,
+                    "image_hw": image_hw,
                 },
             }
 
@@ -142,6 +175,12 @@ def main():
         "--synthetic-pose",
         action="store_true",
         help="Generate synthetic z/R GT per instance (scaffold only)",
+    )
+    parser.add_argument(
+        "--cost-t",
+        type=float,
+        default=0.0,
+        help="Optional matching cost for translation recovered from (bbox, offsets, z, K')",
     )
     args = parser.parse_args()
 
@@ -238,6 +277,9 @@ def main():
                     rot6d_pred=out.get("rot6d"),
                     cost_z=args.cost_z,
                     cost_rot=args.cost_rot,
+                    offsets_pred=out.get("offsets"),
+                    k_delta=out.get("k_delta"),
+                    cost_t=args.cost_t,
                 )
                 out = dict(out)
                 # For box regression we train in normalized space.
@@ -249,6 +291,9 @@ def main():
                     "z_gt": aligned["z_gt"],
                     "R_gt": aligned["R_gt"],
                     "offsets": aligned["offsets"],
+                    "t_gt": aligned["t_gt"],
+                    "K_gt": aligned["K_gt"],
+                    "image_hw": aligned["image_hw"],
                 }
             else:
                 # legacy padded targets
