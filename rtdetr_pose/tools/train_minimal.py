@@ -106,6 +106,29 @@ def main():
             "Fetch coco128 first: bash tools/fetch_coco128.sh"
         )
 
+    stats = {
+        "mask": 0,
+        "depth": 0,
+        "pose": 0,
+        "intrinsics": 0,
+        "cad_points": 0,
+    }
+    for rec in records:
+        if rec.get("mask") is not None or rec.get("mask_path") is not None:
+            stats["mask"] += 1
+        if rec.get("depth") is not None or rec.get("depth_path") is not None:
+            stats["depth"] += 1
+        if rec.get("R_gt") is not None or rec.get("t_gt") is not None or rec.get("pose") is not None:
+            stats["pose"] += 1
+        if rec.get("K_gt") is not None or rec.get("intrinsics") is not None:
+            stats["intrinsics"] += 1
+        if rec.get("cad_points") is not None:
+            stats["cad_points"] += 1
+    print(
+        "dataset_stats "
+        + " ".join(f"{key}={value}" for key, value in sorted(stats.items()))
+    )
+
     ds = ManifestDataset(
         records,
         num_queries=args.num_queries,
