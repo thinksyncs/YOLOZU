@@ -8,7 +8,10 @@
     "num_classes": 80,
     "hidden_dim": 256,
     "num_queries": 300,
-    "use_uncertainty": false
+    "use_uncertainty": false,
+    "backbone_channels": [64, 128, 256],
+    "num_decoder_layers": 3,
+    "nhead": 8
   },
   "train": {
     "batch_size": 2,

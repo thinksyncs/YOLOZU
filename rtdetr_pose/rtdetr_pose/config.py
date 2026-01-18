@@ -16,6 +16,9 @@ class ModelConfig:
     hidden_dim: int = 256
     num_queries: int = 300
     use_uncertainty: bool = False
+    backbone_channels: list[int] = field(default_factory=lambda: [64, 128, 256])
+    num_decoder_layers: int = 3
+    nhead: int = 8
 
 
 @dataclass
