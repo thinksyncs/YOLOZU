@@ -1,0 +1,29 @@
+# Constraint toggles.
+enabled:
+  depth_prior: false
+  table_plane: false
+  upright: false
+  template_gate: false
+
+# Table plane in camera frame: n.x + d = 0.
+table_plane:
+  n: [0.0, 0.0, 1.0]
+  d: 0.0
+
+# Depth priors in meters. Override per class name or id.
+depth_prior:
+  default:
+    min_z: null
+    max_z: null
+  per_class: {}
+
+# Upright constraints in degrees. Override per class name or id.
+upright:
+  default:
+    roll_deg: [-180.0, 180.0]
+    pitch_deg: [-180.0, 180.0]
+  per_class: {}
+
+# Template gate settings.
+template_gate:
+  tau: 0.0
