@@ -61,6 +61,9 @@ def build_query_aligned_targets(
     aligned_z = []
     aligned_r = []
     aligned_offsets = []
+    aligned_z_mask = []
+    aligned_rot_mask = []
+    aligned_off_mask = []
     aligned_t = []
     aligned_k = []
     aligned_hw = []
@@ -82,24 +85,36 @@ def build_query_aligned_targets(
         gt_labels = targets[b].get("gt_labels")
         gt_bbox = targets[b].get("gt_bbox")
         gt_z = _first_present(targets[b], ("gt_z", "z_gt", "z", "depth"))
+        gt_z_mask = targets[b].get("gt_z_mask")
         gt_r = _first_present(targets[b], ("gt_R", "R_gt", "R", "gt_r"))
+        gt_r_mask = targets[b].get("gt_R_mask")
         gt_offsets = _first_present(targets[b], ("gt_offsets", "offsets", "offsets_gt"))
+        gt_offsets_mask = targets[b].get("gt_offsets_mask")
         gt_t = _first_present(targets[b], ("gt_t", "t_gt", "t"))
+        gt_t_mask = targets[b].get("gt_t_mask")
         k_gt = _first_present(targets[b], ("K_gt", "K", "intrinsics"))
         image_hw = _first_present(targets[b], ("image_hw", "hw"))
 
         # Treat empty tensors as missing.
         if isinstance(gt_z, torch.Tensor) and gt_z.numel() == 0:
             gt_z = None
+        if isinstance(gt_z_mask, torch.Tensor) and gt_z_mask.numel() == 0:
+            gt_z_mask = None
         if isinstance(gt_r, torch.Tensor) and gt_r.numel() == 0:
             gt_r = None
+        if isinstance(gt_r_mask, torch.Tensor) and gt_r_mask.numel() == 0:
+            gt_r_mask = None
         if isinstance(gt_offsets, torch.Tensor) and gt_offsets.numel() == 0:
             gt_offsets = None
+        if isinstance(gt_offsets_mask, torch.Tensor) and gt_offsets_mask.numel() == 0:
+            gt_offsets_mask = None
         if isinstance(gt_t, torch.Tensor) and gt_t.numel() == 0:
             gt_t = None
+        if isinstance(gt_t_mask, torch.Tensor) and gt_t_mask.numel() == 0:
+            gt_t_mask = None
 
         has_k = k_gt is not None
-        has_t = gt_t is not None
+        has_t = gt_t is not None and (gt_t_mask is None or bool(gt_t_mask.any()))
         if gt_labels is None or gt_bbox is None or gt_labels.numel() == 0:
             labels_q = torch.full((num_queries,), -1, dtype=torch.long, device=logits.device)
             bbox_q = torch.zeros((num_queries, 4), dtype=torch.float32, device=logits.device)
@@ -109,6 +124,9 @@ def build_query_aligned_targets(
                 num_queries, 1, 1
             )
             off_q = torch.zeros((num_queries, 2), dtype=torch.float32, device=logits.device)
+            z_mask_q = torch.zeros((num_queries,), dtype=torch.bool, device=logits.device)
+            rot_mask_q = torch.zeros((num_queries,), dtype=torch.bool, device=logits.device)
+            off_mask_q = torch.zeros((num_queries,), dtype=torch.bool, device=logits.device)
             t_q = torch.zeros((num_queries, 3), dtype=torch.float32, device=logits.device)
             t_mask_q = torch.zeros((num_queries,), dtype=torch.bool, device=logits.device)
             aligned_labels.append(labels_q)
@@ -117,6 +135,9 @@ def build_query_aligned_targets(
             aligned_z.append(z_q)
             aligned_r.append(r_q)
             aligned_offsets.append(off_q)
+            aligned_z_mask.append(z_mask_q)
+            aligned_rot_mask.append(rot_mask_q)
+            aligned_off_mask.append(off_mask_q)
             aligned_t.append(t_q)
             aligned_t_mask.append(t_mask_q)
 
@@ -140,12 +161,20 @@ def build_query_aligned_targets(
             gt_z = gt_z.to(device=logits.device, dtype=torch.float32)
             if gt_z.ndim == 1:
                 gt_z = gt_z.unsqueeze(-1)
+        if gt_z_mask is not None:
+            gt_z_mask = gt_z_mask.to(device=logits.device, dtype=torch.bool)
         if gt_r is not None:
             gt_r = gt_r.to(device=logits.device, dtype=torch.float32)
+        if gt_r_mask is not None:
+            gt_r_mask = gt_r_mask.to(device=logits.device, dtype=torch.bool)
         if gt_offsets is not None:
             gt_offsets = gt_offsets.to(device=logits.device, dtype=torch.float32)
+        if gt_offsets_mask is not None:
+            gt_offsets_mask = gt_offsets_mask.to(device=logits.device, dtype=torch.bool)
         if gt_t is not None:
             gt_t = gt_t.to(device=logits.device, dtype=torch.float32)
+        if gt_t_mask is not None:
+            gt_t_mask = gt_t_mask.to(device=logits.device, dtype=torch.bool)
         if k_gt is not None:
             k_gt = torch.as_tensor(k_gt, dtype=torch.float32, device=logits.device)
         if image_hw is not None:
@@ -160,6 +189,8 @@ def build_query_aligned_targets(
         if cost_z and log_z_pred is not None and gt_z is not None:
             log_z_gt = torch.log(torch.clamp(gt_z, min=1e-6))
             z_cost = torch.abs(log_z_pred[b].unsqueeze(0) - log_z_gt.unsqueeze(1)).sum(dim=-1)
+            if gt_z_mask is not None:
+                z_cost = z_cost * gt_z_mask.to(dtype=z_cost.dtype).unsqueeze(-1)
             cost = cost + float(cost_z) * z_cost
 
         if cost_rot and r_pred_all is not None and gt_r is not None:
@@ -167,6 +198,8 @@ def build_query_aligned_targets(
             trace = (r_pred_all[b].unsqueeze(0) * gt_r.unsqueeze(1)).sum(dim=(-1, -2))
             cos_theta = torch.clamp((trace - 1.0) * 0.5, -1.0, 1.0)
             rot_cost = torch.acos(cos_theta)
+            if gt_r_mask is not None:
+                rot_cost = rot_cost * gt_r_mask.to(dtype=rot_cost.dtype).unsqueeze(-1)
             cost = cost + float(cost_rot) * rot_cost
 
         if cost_t and offsets_pred is not None and log_z_pred is not None and has_t and has_k:
@@ -202,6 +235,8 @@ def build_query_aligned_targets(
             t_pred = torch.stack((x, y, z), dim=-1)  # (Q,3)
             # (M,Q)
             t_cost = torch.abs(t_pred.unsqueeze(0) - gt_t.unsqueeze(1)).sum(dim=-1)
+            if gt_t_mask is not None:
+                t_cost = t_cost * gt_t_mask.to(dtype=t_cost.dtype).unsqueeze(-1)
             cost = cost + float(cost_t) * t_cost
 
         row_ind, col_ind = linear_sum_assignment(cost.detach().cpu().tolist())
@@ -213,6 +248,9 @@ def build_query_aligned_targets(
             num_queries, 1, 1
         )
         off_q = torch.zeros((num_queries, 2), dtype=torch.float32, device=logits.device)
+        z_mask_q = torch.zeros((num_queries,), dtype=torch.bool, device=logits.device)
+        rot_mask_q = torch.zeros((num_queries,), dtype=torch.bool, device=logits.device)
+        off_mask_q = torch.zeros((num_queries,), dtype=torch.bool, device=logits.device)
         t_q = torch.zeros((num_queries, 3), dtype=torch.float32, device=logits.device)
         t_mask_q = torch.zeros((num_queries,), dtype=torch.bool, device=logits.device)
         for r, c in zip(row_ind, col_ind):
@@ -222,19 +260,37 @@ def build_query_aligned_targets(
                 mask_q[c] = True
                 if gt_z is not None:
                     z_q[c] = gt_z[r]
+                    if gt_z_mask is None:
+                        z_mask_q[c] = True
+                    else:
+                        z_mask_q[c] = bool(gt_z_mask[r])
                 if gt_r is not None:
                     r_q[c] = gt_r[r]
+                    if gt_r_mask is None:
+                        rot_mask_q[c] = True
+                    else:
+                        rot_mask_q[c] = bool(gt_r_mask[r])
                 if gt_offsets is not None:
                     off_q[c] = gt_offsets[r]
+                    if gt_offsets_mask is None:
+                        off_mask_q[c] = True
+                    else:
+                        off_mask_q[c] = bool(gt_offsets_mask[r])
                 if gt_t is not None:
                     t_q[c] = gt_t[r]
-                    t_mask_q[c] = True
+                    if gt_t_mask is None:
+                        t_mask_q[c] = True
+                    else:
+                        t_mask_q[c] = bool(gt_t_mask[r])
         aligned_labels.append(labels_q)
         aligned_bbox.append(bbox_q)
         aligned_mask.append(mask_q)
         aligned_z.append(z_q)
         aligned_r.append(r_q)
         aligned_offsets.append(off_q)
+        aligned_z_mask.append(z_mask_q)
+        aligned_rot_mask.append(rot_mask_q)
+        aligned_off_mask.append(off_mask_q)
         aligned_t.append(t_q)
         aligned_t_mask.append(t_mask_q)
 
@@ -255,8 +311,11 @@ def build_query_aligned_targets(
         "bbox_norm": bbox_norm,
         "mask": torch.stack(aligned_mask, dim=0),
         "z_gt": torch.stack(aligned_z, dim=0),
+        "z_mask": torch.stack(aligned_z_mask, dim=0),
         "R_gt": torch.stack(aligned_r, dim=0),
+        "rot_mask": torch.stack(aligned_rot_mask, dim=0),
         "offsets": torch.stack(aligned_offsets, dim=0),
+        "off_mask": torch.stack(aligned_off_mask, dim=0),
         "t_gt": torch.stack(aligned_t, dim=0),
         "K_gt": torch.stack(aligned_k, dim=0),
         "image_hw": torch.stack(aligned_hw, dim=0),
