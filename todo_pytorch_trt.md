@@ -2,6 +2,46 @@
 
 Spec reference: `rt_detr_6dof_geom_mim_spec_en_v0_4.md`
 
+## Implementation status (at a glance)
+
+### Data / validation
+- [x] YOLO-format dataset manifest builder
+- [x] Sidecar metadata support (mask/depth/pose/intrinsics paths + basic content checks)
+- [x] Dataset audit tool + validator
+- [ ] Dataset loader returns full per-instance GT per spec (`M`, `D_obj`, `R_gt`, `t_gt`, `K_gt`)
+- [ ] Multi-object samples (multiple instances per image) end-to-end support
+- [ ] Range/units checks (depth meters, mask binary, bbox normalized) + clear conventions
+- [ ] Deterministic splits + shuffling + reproducibility hooks (seeded)
+
+### Model (RT-DETR)
+- [x] Minimal DETR-style scaffold wired to pose heads (shape-correct)
+- [x] Backbone stub: simple strided conv stages (not RT-DETR-grade)
+- [x] Neck stub: per-scale 1x1 projections to `hidden_dim`
+- [x] Decoder stub: `torch.nn.TransformerDecoder` with learned queries
+- [x] Positional embedding: 2D sin/cos
+- [ ] Full RT-DETR backbone + neck (parity with spec / real RT-DETR)
+- [ ] RT-DETR hybrid encoder / multi-scale fusion (if required for parity)
+- [ ] RT-DETR training-time tricks (e.g., denoising queries) if targeting published behavior
+
+### Heads / geometry
+- [x] HeadFast outputs (cls/bbox/log_z/rot6D + optional uncertainty)
+- [x] CenterOffsetHead (Δu, Δv) (simple linear head)
+- [x] GlobalKHead (δfx, δfy, δcx, δcy) (simple linear head)
+- [x] rot6D -> R conversion helper
+- [ ] Translation recovery from bbox/offsets + corrected intrinsics (spec §2)
+
+### Losses / metrics
+- [x] Baseline losses (classification/box/log-depth/rot + basic regularizers)
+- [x] Symmetry-aware metrics (geodesic, ADD-S) + unit tests (metrics-level)
+- [ ] Matching-aware training losses wired to real matcher outputs
+- [ ] Full detector metrics aggregation (mAP/Recall) wired to real outputs
+
+### Training / inference / export
+- [x] ONNX export wrapper for the current minimal model (opset 17)
+- [ ] Training pipeline (matcher, augmentation, MIM teacher, staged schedule)
+- [ ] Inference path (translation recovery, template verification, constraints gating)
+- [ ] TensorRT export + engine build + parity tests + benchmarks
+
 Status (2026-01-18)
 - Scaffold created in `rtdetr_pose/` with dataset loader, validator, and model stubs.
 - Dataset manifest supports metadata sidecar (`.json`) for mask/depth/pose/intrinsics; validator checks shapes and paths.
@@ -12,9 +52,23 @@ Status (2026-01-18)
 - Baseline DETR-style backbone/decoder implemented; replace with full RT-DETR for parity.
 
 Current priorities (auto)
-1) Stage 2: replace stub model with real RT-DETR backbone/decoder + export-safe ops.
-2) Stage 3: implement full losses/metrics with symmetry tests.
-3) Stage 5/6: inference path + TensorRT export/parity benchmarks.
+1) Stage 1/4 (training-first): make the dataset loader return full GT fields + build a minimal training loop that runs end-to-end.
+2) Stage 2/3: upgrade the model from the current scaffold toward RT-DETR parity while keeping losses/metrics wired.
+3) Stage 5/6 (later): inference path + TensorRT export/parity benchmarks.
+
+### Training-first next steps (recommended order)
+- [ ] Dataset returns per-instance GT: `M`, `D_obj`, `R_gt`, `t_gt`, `K_gt` (+ optional `K_gt'`, `cad_points`)
+  - [ ] Normalize sidecar keys into canonical fields (`R_gt`, `t_gt`, `K_gt`, `M`, `D_obj`)
+  - [ ] Preserve paths vs inlined arrays without eager decoding
+  - [ ] Record per-sample availability stats (pose/intrinsics/mask/depth)
+- [ ] Batch collation for variable #instances and masks/depth
+- [ ] Collate keeps per-instance counts (for matcher) and pads/query-aligns labels/bboxes
+- [ ] Minimal trainer entrypoint (1 epoch over coco128; logs loss scalars)
+- [ ] Trainer prints GT availability summary for debugging
+- [ ] Matching (Hungarian) + staged cost terms (start with cls/box, then add z/rot)
+- [ ] Checkpointing + config-driven runs (resume/repro)
+- [ ] Loss/metric integration test: one training step + backward + no NaNs
+- [ ] Inference-only utilities (later): decoding + constraints gate + template verify
 
 ## Stage 0) Repo + environment alignment
 - [x] Decide codebase location (new repo under `/Users/akira/YOLOZU` or existing).
