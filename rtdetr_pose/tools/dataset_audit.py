@@ -16,6 +16,8 @@ def main():
     manifest = build_manifest(dataset_root)
     validate_manifest(manifest, strict=False, check_content=True)
     summary = {"images": len(manifest["images"])}
+    if "stats" in manifest:
+        summary["stats"] = manifest["stats"]
     output_dir = repo_root / "reports"
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / "dataset_audit.json"
