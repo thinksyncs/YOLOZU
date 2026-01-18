@@ -33,6 +33,21 @@ def _resolve_optional_path(value, root):
     if value is None:
         return None
     if isinstance(value, (list, tuple)):
+        if not value:
+            return list(value)
+        # If this is a list of paths (strings), resolve each element.
+        if isinstance(value[0], (str, Path)):
+            resolved = []
+            for item in value:
+                if item is None:
+                    resolved.append(None)
+                    continue
+                path = Path(item)
+                if not path.is_absolute():
+                    path = Path(root) / path
+                resolved.append(str(path))
+            return resolved
+        # Otherwise keep as-is (likely an inline array).
         return value
     path = Path(value)
     if not path.is_absolute():
@@ -43,7 +58,23 @@ def _resolve_optional_path(value, root):
 def _resolve_optional_value(value, root):
     if value is None:
         return None
-    if isinstance(value, (list, tuple, dict)):
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, (list, tuple)):
+        if not value:
+            return list(value)
+        # List of relative/absolute paths.
+        if isinstance(value[0], (str, Path)):
+            resolved = []
+            for item in value:
+                if item is None:
+                    resolved.append(None)
+                    continue
+                path = Path(item)
+                if not path.is_absolute():
+                    path = Path(root) / path
+                resolved.append(str(path))
+            return resolved
         return value
     path = Path(value)
     if not path.is_absolute():
