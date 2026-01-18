@@ -7,6 +7,7 @@ Status (2026-01-18)
 - Dataset manifest supports metadata sidecar (`.json`) for mask/depth/pose/intrinsics; validator checks shapes and paths.
 - SIM/Blender sidecar schema added (M/D_obj/R_gt/t_gt/K_gt + cad_points) and content checks for mask/depth/bbox/projection.
 - Reports for baseline/gates/scenarios are scaffolded (dummy metrics; no real model yet).
+- rtdetr_pose scaffolding files are tracked in git; generated caches/reports are ignored.
 - Full RT-DETR, training loop, and TensorRT conversion are not implemented yet.
 
 Current priorities (auto)
