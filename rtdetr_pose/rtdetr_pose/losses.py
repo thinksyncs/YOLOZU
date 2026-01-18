@@ -10,6 +10,13 @@ except ImportError:  # pragma: no cover
 from .model import rot6d_to_matrix
 
 
+def _first_present(mapping, keys):
+    for key in keys:
+        if key in mapping and mapping[key] is not None:
+            return mapping[key]
+    return None
+
+
 def geodesic_distance(r1, r2):
     if torch is None:
         raise RuntimeError("torch is required for geodesic_distance")
@@ -90,7 +97,7 @@ class Losses(nn.Module):
         total = 0.0
 
         logits = outputs.get("logits")
-        labels = targets.get("labels") or targets.get("class_gt")
+        labels = _first_present(targets, ("labels", "class_gt"))
         if logits is not None and labels is not None:
             loss_cls = F.cross_entropy(
                 logits.reshape(-1, logits.shape[-1]),
@@ -108,14 +115,14 @@ class Losses(nn.Module):
             total = total + self.weights["box"] * loss_box
 
         log_z_pred = outputs.get("log_z")
-        z_gt = targets.get("z_gt") or targets.get("depth") or targets.get("z")
+        z_gt = _first_present(targets, ("z_gt", "depth", "z"))
         if log_z_pred is not None and z_gt is not None:
             loss_z = log_depth_loss(log_z_pred, z_gt)
             losses["loss_z"] = loss_z
             total = total + self.weights["z"] * loss_z
 
         rot_pred = outputs.get("rot6d")
-        r_gt = targets.get("R_gt") or targets.get("r_gt")
+        r_gt = _first_present(targets, ("R_gt", "r_gt"))
         sym_rots = targets.get("sym_rots")
         if rot_pred is not None and r_gt is not None:
             if sym_rots is not None:
@@ -126,14 +133,14 @@ class Losses(nn.Module):
             total = total + self.weights["rot"] * loss_rot
 
         offsets_pred = outputs.get("offsets")
-        offsets_gt = targets.get("offsets") or targets.get("offsets_gt")
+        offsets_gt = _first_present(targets, ("offsets", "offsets_gt"))
         if offsets_pred is not None and offsets_gt is not None:
             loss_off = self.l1(offsets_pred, offsets_gt)
             losses["loss_off"] = loss_off
             total = total + self.weights["off"] * loss_off
 
         k_pred = outputs.get("k_delta")
-        k_gt = targets.get("k_delta") or targets.get("k_delta_gt")
+        k_gt = _first_present(targets, ("k_delta", "k_delta_gt"))
         if k_pred is not None and k_gt is not None:
             loss_k = self.l1(k_pred, k_gt)
             losses["loss_k"] = loss_k
