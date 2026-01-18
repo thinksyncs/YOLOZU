@@ -13,6 +13,7 @@ except ImportError as exc:  # pragma: no cover
 
 from rtdetr_pose.dataset import build_manifest
 from rtdetr_pose.losses import Losses
+from rtdetr_pose.training import build_query_aligned_targets
 from rtdetr_pose.model import RTDETRPose
 
 
@@ -24,12 +25,14 @@ class ManifestDataset(Dataset):
         num_classes,
         image_size,
         seed,
+        use_matcher,
     ):
         self.records = records
         self.num_queries = int(num_queries)
         self.num_classes = int(num_classes)
         self.image_size = int(image_size)
         self.seed = int(seed)
+        self.use_matcher = bool(use_matcher)
 
     def __len__(self):
         return len(self.records)
@@ -43,10 +46,34 @@ class ManifestDataset(Dataset):
         gen.manual_seed(self.seed + int(idx))
         image = torch.rand(3, self.image_size, self.image_size, generator=gen)
 
+        instances = record.get("labels") or []
+        if self.use_matcher:
+            gt_labels = []
+            gt_bbox = []
+            for inst in instances:
+                class_id = int(inst.get("class_id", -1))
+                if not (0 <= class_id < self.num_classes):
+                    continue
+                bb = inst.get("bbox") or {}
+                gt_labels.append(class_id)
+                gt_bbox.append(
+                    [
+                        float(bb.get("cx", 0.0)),
+                        float(bb.get("cy", 0.0)),
+                        float(bb.get("w", 0.0)),
+                        float(bb.get("h", 0.0)),
+                    ]
+                )
+            return {
+                "image": image,
+                "targets": {
+                    "gt_labels": torch.tensor(gt_labels, dtype=torch.long),
+                    "gt_bbox": torch.tensor(gt_bbox, dtype=torch.float32),
+                },
+            }
+
         labels = torch.full((self.num_queries,), -1, dtype=torch.long)
         bbox = torch.zeros((self.num_queries, 4), dtype=torch.float32)
-
-        instances = record.get("labels") or []
         for qi, inst in enumerate(instances[: self.num_queries]):
             class_id = int(inst.get("class_id", -1))
             if 0 <= class_id < self.num_classes:
@@ -57,20 +84,15 @@ class ManifestDataset(Dataset):
             bbox[qi, 2] = float(bb.get("w", 0.0))
             bbox[qi, 3] = float(bb.get("h", 0.0))
 
-        return {
-            "image": image,
-            "targets": {
-                "labels": labels,
-                "bbox": bbox,
-            },
-        }
+        return {"image": image, "targets": {"labels": labels, "bbox": bbox}}
 
 
 def collate(batch):
     images = torch.stack([item["image"] for item in batch], dim=0)
-    labels = torch.stack([item["targets"]["labels"] for item in batch], dim=0)
-    bbox = torch.stack([item["targets"]["bbox"] for item in batch], dim=0)
-    return images, {"labels": labels, "bbox": bbox}
+    targets = [item["targets"] for item in batch]
+    return images, targets
+
+
 
 
 def main():
@@ -87,6 +109,9 @@ def main():
     parser.add_argument("--hidden-dim", type=int, default=64)
     parser.add_argument("--num-classes", type=int, default=80)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--use-matcher", action="store_true", help="Use Hungarian matching")
+    parser.add_argument("--cost-cls", type=float, default=1.0)
+    parser.add_argument("--cost-bbox", type=float, default=5.0)
     args = parser.parse_args()
 
     torch.manual_seed(args.seed)
@@ -135,6 +160,7 @@ def main():
         num_classes=args.num_classes,
         image_size=args.image_size,
         seed=args.seed,
+        use_matcher=args.use_matcher,
     )
     loader = DataLoader(
         ds,
@@ -165,9 +191,29 @@ def main():
         steps = 0
         for images, targets in loader:
             images = images.to(device)
-            targets = {k: v.to(device) for k, v in targets.items()}
 
             out = model(images)
+
+            if args.use_matcher:
+                aligned = build_query_aligned_targets(
+                    out["logits"],
+                    out["bbox"],
+                    targets,
+                    num_queries=args.num_queries,
+                    cost_cls=args.cost_cls,
+                    cost_bbox=args.cost_bbox,
+                )
+                out = dict(out)
+                # For box regression we train in normalized space.
+                out["bbox"] = aligned["bbox_norm"]
+                targets = {"labels": aligned["labels"], "bbox": aligned["bbox"]}
+            else:
+                # legacy padded targets
+                targets = {
+                    "labels": torch.stack([t["labels"] for t in targets], dim=0).to(device),
+                    "bbox": torch.stack([t["bbox"] for t in targets], dim=0).to(device),
+                }
+
             loss_dict = losses_fn(out, targets)
             loss = loss_dict["loss"]
 
