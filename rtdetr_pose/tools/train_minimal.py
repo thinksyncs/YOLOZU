@@ -11,7 +11,7 @@ try:
 except ImportError as exc:  # pragma: no cover
     raise SystemExit("torch is required; install requirements-test.txt") from exc
 
-from rtdetr_pose.dataset import build_manifest
+from rtdetr_pose.dataset import build_manifest, extract_pose_intrinsics_targets
 from rtdetr_pose.losses import Losses
 from rtdetr_pose.training import build_query_aligned_targets
 from rtdetr_pose.model import RTDETRPose
@@ -50,14 +50,23 @@ class ManifestDataset(Dataset):
 
         instances = record.get("labels") or []
         if self.use_matcher:
+            meta = extract_pose_intrinsics_targets(record, num_instances=len(instances))
             gt_labels = []
             gt_bbox = []
             gt_z = []
             gt_R = []
             gt_t = []
+            gt_offsets = []
+            kept = []
 
-            # Per-image intrinsics (synthetic default if requested).
-            if self.synthetic_pose:
+            # We don't decode images, so default HW is the generated tensor size.
+            image_hw = torch.tensor([float(self.image_size), float(self.image_size)], dtype=torch.float32)
+
+            # Prefer real intrinsics when present; else synthesize if requested.
+            K_gt = None
+            if meta.get("K_gt") is not None:
+                K_gt = torch.tensor(meta["K_gt"], dtype=torch.float32)
+            elif self.synthetic_pose:
                 w = float(self.image_size)
                 h = float(self.image_size)
                 fx = w
@@ -68,16 +77,14 @@ class ManifestDataset(Dataset):
                     [[fx, 0.0, cx], [0.0, fy, cy], [0.0, 0.0, 1.0]],
                     dtype=torch.float32,
                 )
-                image_hw = torch.tensor([h, w], dtype=torch.float32)
-            else:
-                K_gt = torch.zeros((3, 3), dtype=torch.float32)
-                image_hw = torch.tensor([float(self.image_size), float(self.image_size)], dtype=torch.float32)
-            for inst in instances:
+
+            for inst_i, inst in enumerate(instances):
                 class_id = int(inst.get("class_id", -1))
                 if not (0 <= class_id < self.num_classes):
                     continue
                 bb = inst.get("bbox") or {}
                 gt_labels.append(class_id)
+                kept.append(inst_i)
                 gt_bbox.append(
                     [
                         float(bb.get("cx", 0.0)),
@@ -87,17 +94,17 @@ class ManifestDataset(Dataset):
                     ]
                 )
 
-                if self.synthetic_pose:
-                    # Simple synthetic depth + random rotation to exercise extra loss terms.
+                # Real (t/R/offsets) if present, otherwise optional synthetic fallback.
+                t_i = meta.get("t_gt", [None])[inst_i] if meta.get("t_gt") is not None else None
+                r_i = meta.get("R_gt", [None])[inst_i] if meta.get("R_gt") is not None else None
+                off_i = meta.get("offsets_gt", [None])[inst_i] if meta.get("offsets_gt") is not None else None
+
+                if t_i is not None:
+                    gt_t.append([float(v) for v in t_i])
+                    gt_z.append(float(t_i[2]))
+                elif self.synthetic_pose:
                     z_val = float(torch.rand((), generator=gen) * 0.9 + 0.1)
                     gt_z.append(z_val)
-                    a = torch.randn(3, 3, generator=gen)
-                    q, _ = torch.linalg.qr(a)
-                    if torch.det(q) < 0:
-                        q[:, 0] = -q[:, 0]
-                    gt_R.append(q)
-
-                    # Translation consistent with bbox center and intrinsics when offsets == 0.
                     cx_n = float(bb.get("cx", 0.0))
                     cy_n = float(bb.get("cy", 0.0))
                     u = cx_n * float(image_hw[1])
@@ -105,21 +112,30 @@ class ManifestDataset(Dataset):
                     x = (u - float(K_gt[0, 2])) / float(K_gt[0, 0]) * z_val
                     y = (v - float(K_gt[1, 2])) / float(K_gt[1, 1]) * z_val
                     gt_t.append([x, y, z_val])
+
+                if r_i is not None:
+                    gt_R.append(torch.tensor(r_i, dtype=torch.float32))
+                elif self.synthetic_pose:
+                    a = torch.randn(3, 3, generator=gen)
+                    q, _ = torch.linalg.qr(a)
+                    if torch.det(q) < 0:
+                        q[:, 0] = -q[:, 0]
+                    gt_R.append(q)
+
+                if off_i is not None:
+                    gt_offsets.append([float(off_i[0]), float(off_i[1])])
+                elif self.synthetic_pose:
+                    gt_offsets.append([0.0, 0.0])
             return {
                 "image": image,
                 "targets": {
                     "gt_labels": torch.tensor(gt_labels, dtype=torch.long),
                     "gt_bbox": torch.tensor(gt_bbox, dtype=torch.float32),
-                    "gt_z": torch.tensor(gt_z, dtype=torch.float32).unsqueeze(-1)
-                    if self.synthetic_pose
-                    else torch.zeros((0, 1), dtype=torch.float32),
-                    "gt_R": torch.stack(gt_R, dim=0)
-                    if (self.synthetic_pose and gt_R)
-                    else torch.zeros((0, 3, 3), dtype=torch.float32),
-                    "gt_t": torch.tensor(gt_t, dtype=torch.float32)
-                    if self.synthetic_pose
-                    else torch.zeros((0, 3), dtype=torch.float32),
-                    "K_gt": K_gt,
+                    **({"gt_z": torch.tensor(gt_z, dtype=torch.float32).unsqueeze(-1)} if gt_z else {}),
+                    **({"gt_R": torch.stack(gt_R, dim=0)} if gt_R else {}),
+                    **({"gt_t": torch.tensor(gt_t, dtype=torch.float32)} if gt_t else {}),
+                    **({"gt_offsets": torch.tensor(gt_offsets, dtype=torch.float32)} if gt_offsets else {}),
+                    **({"K_gt": K_gt} if K_gt is not None else {}),
                     "image_hw": image_hw,
                 },
             }

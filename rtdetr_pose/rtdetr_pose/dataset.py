@@ -163,3 +163,95 @@ def _availability_stats(records):
 def build_manifest(root, split="train2017"):
     images = load_yolo_dataset(root, split=split)
     return {"images": images, "stats": _availability_stats(images)}
+
+
+def _k_to_3x3(k):
+    if k is None:
+        return None
+    # K may be a 3x3 nested list, or (fx, fy, cx, cy)
+    if isinstance(k, (list, tuple)) and len(k) == 4 and not isinstance(k[0], (list, tuple)):
+        fx, fy, cx, cy = [float(v) for v in k]
+        return [[fx, 0.0, cx], [0.0, fy, cy], [0.0, 0.0, 1.0]]
+    if isinstance(k, (list, tuple)) and len(k) == 3 and isinstance(k[0], (list, tuple)):
+        return [[float(v) for v in row] for row in k]
+    if isinstance(k, dict) and {"fx", "fy", "cx", "cy"}.issubset(k.keys()):
+        fx = float(k["fx"])
+        fy = float(k["fy"])
+        cx = float(k["cx"])
+        cy = float(k["cy"])
+        return [[fx, 0.0, cx], [0.0, fy, cy], [0.0, 0.0, 1.0]]
+    return None
+
+
+def _expand_to_instances(value, num_instances, *, default=None):
+    if value is None:
+        return [default for _ in range(int(num_instances))]
+    if isinstance(value, (list, tuple)) and len(value) == int(num_instances):
+        return list(value)
+    return [value for _ in range(int(num_instances))]
+
+
+def extract_pose_intrinsics_targets(record, num_instances: int):
+    """Extract and normalize optional pose/intrinsics targets.
+
+    Returns a dict of python lists suitable for conversion to torch tensors:
+    - K_gt: 3x3 nested list or None
+    - t_gt: list length num_instances, each item is [x,y,z] or None
+    - R_gt: list length num_instances, each item is 3x3 nested list or None
+    - offsets_gt: list length num_instances, each item is [du,dv] or None
+    """
+
+    pose = record.get("pose") or {}
+    r_gt = record.get("R_gt")
+    t_gt = record.get("t_gt")
+    if r_gt is None and isinstance(pose, dict):
+        r_gt = pose.get("R")
+    if t_gt is None and isinstance(pose, dict):
+        t_gt = pose.get("t")
+
+    k_raw = record.get("K_gt")
+    if k_raw is None:
+        k_raw = record.get("intrinsics")
+    k_gt = _k_to_3x3(k_raw)
+
+    # R and t may be per-image or per-instance.
+    r_list = _expand_to_instances(r_gt, num_instances, default=None)
+    t_list = _expand_to_instances(t_gt, num_instances, default=None)
+
+    def _norm_R(r):
+        if r is None:
+            return None
+        if isinstance(r, (list, tuple)) and len(r) == 3 and isinstance(r[0], (list, tuple)):
+            return [[float(v) for v in row] for row in r]
+        return None
+
+    def _norm_t(t):
+        if t is None:
+            return None
+        if isinstance(t, (list, tuple)) and len(t) == 3 and not isinstance(t[0], (list, tuple)):
+            return [float(v) for v in t]
+        return None
+
+    r_list = [_norm_R(r) for r in r_list]
+    t_list = [_norm_t(t) for t in t_list]
+
+    offsets_raw = record.get("offsets_gt")
+    if offsets_raw is None:
+        offsets_raw = record.get("offsets")
+    off_list = _expand_to_instances(offsets_raw, num_instances, default=None)
+
+    def _norm_off(off):
+        if off is None:
+            return None
+        if isinstance(off, (list, tuple)) and len(off) == 2:
+            return [float(off[0]), float(off[1])]
+        return None
+
+    off_list = [_norm_off(o) for o in off_list]
+
+    return {
+        "K_gt": k_gt,
+        "t_gt": t_list,
+        "R_gt": r_list,
+        "offsets_gt": off_list,
+    }

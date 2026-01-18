@@ -191,6 +191,8 @@ class Losses(nn.Module):
         k_gt = _first_present(targets, ("K_gt", "K", "intrinsics"))
         t_gt = _first_present(targets, ("t_gt", "t"))
         image_hw = _first_present(targets, ("image_hw", "hw"))
+        k_mask = targets.get("K_mask")
+        t_mask = targets.get("t_mask")
         bbox_gt_for_t = targets.get("bbox")
         log_z_pred_for_t = outputs.get("log_z")
         k_delta_pred = outputs.get("k_delta")
@@ -202,63 +204,74 @@ class Losses(nn.Module):
             and t_gt is not None
             and image_hw is not None
         ):
-            # Parse K: (B,3,3) or (3,3)
-            if k_gt.ndim == 2:
-                k_gt_b = k_gt.unsqueeze(0).expand(bbox_gt_for_t.shape[0], -1, -1)
+            if (t_mask is not None and not bool(t_mask.any())) or (
+                k_mask is not None and not bool(k_mask.any())
+            ):
+                # No translation supervision available in this batch.
+                pass
             else:
-                k_gt_b = k_gt
-
-            fx = k_gt_b[:, 0, 0]
-            fy = k_gt_b[:, 1, 1]
-            cx = k_gt_b[:, 0, 2]
-            cy = k_gt_b[:, 1, 2]
-
-            if image_hw.ndim == 1:
-                hw_b = image_hw.unsqueeze(0).expand(bbox_gt_for_t.shape[0], -1)
-            else:
-                hw_b = image_hw
-            h = hw_b[:, 0].unsqueeze(1)
-            w = hw_b[:, 1].unsqueeze(1)
-
-            u = bbox_gt_for_t[..., 0] * w
-            v = bbox_gt_for_t[..., 1] * h
-            z = torch.exp(log_z_pred_for_t).clamp(min=1e-6).squeeze(-1)
-
-            du = offsets_pred[..., 0]
-            dv = offsets_pred[..., 1]
-
-            # Apply k_delta if available (B,4).
-            if k_delta_pred is not None:
-                dfx = k_delta_pred[:, 0].unsqueeze(1)
-                dfy = k_delta_pred[:, 1].unsqueeze(1)
-                dcx = k_delta_pred[:, 2].unsqueeze(1)
-                dcy = k_delta_pred[:, 3].unsqueeze(1)
-                fx = fx.unsqueeze(1) * (1.0 + dfx)
-                fy = fy.unsqueeze(1) * (1.0 + dfy)
-                cx = cx.unsqueeze(1) + dcx
-                cy = cy.unsqueeze(1) + dcy
-            else:
-                fx = fx.unsqueeze(1)
-                fy = fy.unsqueeze(1)
-                cx = cx.unsqueeze(1)
-                cy = cy.unsqueeze(1)
-
-            u_p = u + du
-            v_p = v + dv
-            x = (u_p - cx) / fx * z
-            y = (v_p - cy) / fy * z
-            t_pred = torch.stack((x, y, z), dim=-1)
-
-            if valid is not None:
-                if not bool(valid.any()):
-                    loss_t = t_pred.sum() * 0.0
+                # Parse K: (B,3,3) or (3,3)
+                if k_gt.ndim == 2:
+                    k_gt_b = k_gt.unsqueeze(0).expand(bbox_gt_for_t.shape[0], -1, -1)
                 else:
-                    diff = torch.abs(t_pred - t_gt).sum(dim=-1)
-                    loss_t = _masked_mean(diff, valid)
-            else:
-                loss_t = torch.abs(t_pred - t_gt).mean()
-            losses["loss_t"] = loss_t
-            total = total + self.weights["t"] * loss_t
+                    k_gt_b = k_gt
+
+                fx = k_gt_b[:, 0, 0].clamp(min=1e-6)
+                fy = k_gt_b[:, 1, 1].clamp(min=1e-6)
+                cx = k_gt_b[:, 0, 2]
+                cy = k_gt_b[:, 1, 2]
+
+                if image_hw.ndim == 1:
+                    hw_b = image_hw.unsqueeze(0).expand(bbox_gt_for_t.shape[0], -1)
+                else:
+                    hw_b = image_hw
+                h = hw_b[:, 0].unsqueeze(1)
+                w = hw_b[:, 1].unsqueeze(1)
+
+                u = bbox_gt_for_t[..., 0] * w
+                v = bbox_gt_for_t[..., 1] * h
+                z = torch.exp(log_z_pred_for_t).clamp(min=1e-6).squeeze(-1)
+
+                du = offsets_pred[..., 0]
+                dv = offsets_pred[..., 1]
+
+                # Apply k_delta if available (B,4).
+                if k_delta_pred is not None:
+                    dfx = k_delta_pred[:, 0].unsqueeze(1)
+                    dfy = k_delta_pred[:, 1].unsqueeze(1)
+                    dcx = k_delta_pred[:, 2].unsqueeze(1)
+                    dcy = k_delta_pred[:, 3].unsqueeze(1)
+                    fx = fx.unsqueeze(1) * (1.0 + dfx)
+                    fy = fy.unsqueeze(1) * (1.0 + dfy)
+                    cx = cx.unsqueeze(1) + dcx
+                    cy = cy.unsqueeze(1) + dcy
+                else:
+                    fx = fx.unsqueeze(1)
+                    fy = fy.unsqueeze(1)
+                    cx = cx.unsqueeze(1)
+                    cy = cy.unsqueeze(1)
+
+                u_p = u + du
+                v_p = v + dv
+                x = (u_p - cx) / fx * z
+                y = (v_p - cy) / fy * z
+                t_pred = torch.stack((x, y, z), dim=-1)
+
+                mask_for_t = valid
+                if t_mask is not None:
+                    mask_for_t = t_mask if mask_for_t is None else (mask_for_t & t_mask)
+
+                if mask_for_t is not None:
+                    if not bool(mask_for_t.any()):
+                        loss_t = t_pred.sum() * 0.0
+                    else:
+                        diff = torch.abs(t_pred - t_gt).sum(dim=-1)
+                        loss_t = _masked_mean(diff, mask_for_t)
+                else:
+                    loss_t = torch.abs(t_pred - t_gt).mean()
+
+                losses["loss_t"] = loss_t
+                total = total + self.weights["t"] * loss_t
 
         k_pred = outputs.get("k_delta")
         k_gt = _first_present(targets, ("k_delta", "k_delta_gt"))

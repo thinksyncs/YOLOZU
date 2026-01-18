@@ -57,6 +57,10 @@ class TestTrainingAlignExtras(unittest.TestCase):
         self.assertEqual(aligned["t_gt"].shape, (b, q, 3))
         self.assertEqual(aligned["K_gt"].shape, (b, 3, 3))
         self.assertEqual(aligned["image_hw"].shape, (b, 2))
+        self.assertEqual(aligned["K_mask"].shape, (b,))
+        self.assertEqual(aligned["t_mask"].shape, (b, q))
+        self.assertTrue(bool(aligned["K_mask"].all()))
+        self.assertTrue(bool(aligned["t_mask"].any()))
 
 
 if __name__ == "__main__":
