@@ -121,11 +121,17 @@ class Losses(nn.Module):
         logits = outputs.get("logits")
         labels = _first_present(targets, ("labels", "class_gt"))
         if logits is not None and labels is not None:
-            loss_cls = F.cross_entropy(
-                logits.reshape(-1, logits.shape[-1]),
-                labels.reshape(-1),
-                ignore_index=-1,
-            )
+            logits_flat = logits.reshape(-1, logits.shape[-1])
+            labels_flat = labels.reshape(-1)
+            if valid is None:
+                valid_cls = labels_flat != -1
+            else:
+                valid_cls = valid.reshape(-1)
+
+            if not bool(valid_cls.any()):
+                loss_cls = logits_flat.sum() * 0.0
+            else:
+                loss_cls = F.cross_entropy(logits_flat[valid_cls], labels_flat[valid_cls])
             losses["loss_cls"] = loss_cls
             total = total + self.weights["cls"] * loss_cls
 
@@ -146,7 +152,10 @@ class Losses(nn.Module):
             if valid is None:
                 loss_z = log_depth_loss(log_z_pred, z_gt)
             else:
-                loss_z = log_depth_loss(log_z_pred[valid], z_gt[valid])
+                if not bool(valid.any()):
+                    loss_z = log_z_pred.sum() * 0.0
+                else:
+                    loss_z = log_depth_loss(log_z_pred[valid], z_gt[valid])
             losses["loss_z"] = loss_z
             total = total + self.weights["z"] * loss_z
 
