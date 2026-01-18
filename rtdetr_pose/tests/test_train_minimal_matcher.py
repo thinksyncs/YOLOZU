@@ -29,6 +29,7 @@ class TestTrainMinimalMatcher(unittest.TestCase):
         aligned = build_query_aligned_targets(logits, bbox, targets, num_queries=q)
         self.assertEqual(aligned["labels"].shape, (b, q))
         self.assertEqual(aligned["bbox"].shape, (b, q, 4))
+        self.assertEqual(aligned["mask"].shape, (b, q))
 
 
 if __name__ == "__main__":
