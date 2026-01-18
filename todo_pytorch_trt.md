@@ -10,7 +10,7 @@ Spec reference: `rt_detr_6dof_geom_mim_spec_en_v0_4.md`
 - [x] Dataset audit tool + validator
 - [ ] Dataset loader returns full per-instance GT per spec (`M`, `D_obj`, `R_gt`, `t_gt`, `K_gt`)
 - [ ] Multi-object samples (multiple instances per image) end-to-end support
-- [ ] Range/units checks (depth meters, mask binary, bbox normalized) + clear conventions
+- [x] Range/units checks (depth meters, mask binary, bbox normalized) + clear conventions
 - [ ] Deterministic splits + shuffling + reproducibility hooks (seeded)
 
 ### Model (RT-DETR)
@@ -87,7 +87,7 @@ Current priorities (auto)
 - [x] Optional SIM jitter fields (`K_gt'`) validation (intrinsics_prime).
 - [x] Sidecar accepts `M/D_obj/R_gt/t_gt/K_gt/cad_points` and performs content checks when enabled.
 - [x] Build a small "dataset audit" CLI and summary report.
-- [ ] Add range/units checks (depth meters, mask binary) and clarify multi-object behavior.
+- [x] Add range/units checks (depth meters, mask binary) and clarify multi-object behavior.
 
 ### SIM/Blender sidecar schema (labels/*.json)
 - `M` or `mask_path`: silhouette mask (array or path; 2D).
