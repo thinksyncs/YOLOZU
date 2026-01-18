@@ -137,5 +137,29 @@ def load_yolo_dataset(root, split="train2017"):
     return records
 
 
+def _availability_stats(records):
+    stats = {
+        "total": len(records),
+        "mask": 0,
+        "depth": 0,
+        "pose": 0,
+        "intrinsics": 0,
+        "cad_points": 0,
+    }
+    for rec in records:
+        if rec.get("mask_path") is not None:
+            stats["mask"] += 1
+        if rec.get("depth_path") is not None:
+            stats["depth"] += 1
+        if rec.get("pose") is not None or rec.get("R_gt") is not None or rec.get("t_gt") is not None:
+            stats["pose"] += 1
+        if rec.get("intrinsics") is not None or rec.get("K_gt") is not None:
+            stats["intrinsics"] += 1
+        if rec.get("cad_points") is not None:
+            stats["cad_points"] += 1
+    return stats
+
+
 def build_manifest(root, split="train2017"):
-    return {"images": load_yolo_dataset(root, split=split)}
+    images = load_yolo_dataset(root, split=split)
+    return {"images": images, "stats": _availability_stats(images)}

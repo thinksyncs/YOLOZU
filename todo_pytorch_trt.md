@@ -60,10 +60,9 @@ Current priorities (auto)
 - [ ] Dataset returns per-instance GT: `M`, `D_obj`, `R_gt`, `t_gt`, `K_gt` (+ optional `K_gt'`, `cad_points`)
   - [x] Normalize sidecar keys into canonical fields (`R_gt`, `t_gt`, `K_gt`, `M`, `D_obj`)
   - [x] Preserve paths vs inlined arrays without eager decoding
-  - [ ] Record per-sample availability stats (pose/intrinsics/mask/depth)
+  - [x] Record per-sample availability stats (pose/intrinsics/mask/depth)
 - [ ] Batch collation for variable #instances and masks/depth
 - [ ] Collate keeps per-instance counts (for matcher) and pads/query-aligns labels/bboxes
-- [ ] Minimal trainer entrypoint (1 epoch over coco128; logs loss scalars)
 - [ ] Minimal trainer entrypoint (1 epoch over coco128; logs loss scalars)
 - [x] Trainer prints GT availability summary for debugging
 - [ ] Matching (Hungarian) + staged cost terms (start with cls/box, then add z/rot)
