@@ -3,7 +3,8 @@
 This folder contains a minimal PyTorch/TensorRT-oriented scaffolding for the RT-DETR 6DoF pose spec.
 
 ## Quick checks
-- Dataset audit: `python3 tools/dataset_audit.py`
+- Dataset audit (default coco128 path): `python3 tools/dataset_audit.py`
+- Dataset audit (with deeper checks): `python3 tools/dataset_audit.py --check-content --check-ranges --fail-on-issues`
 - Dataset test: `python3 -m unittest tests/test_dataset.py`
 
 ## Minimal training scaffold (CPU)
