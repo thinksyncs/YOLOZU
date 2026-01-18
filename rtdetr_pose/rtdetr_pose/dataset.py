@@ -114,6 +114,17 @@ def load_yolo_dataset(root, split="train2017"):
         meta_path = labels_dir / f"{image_path.stem}.json"
         labels = _load_yolo_labels(label_path)
         metadata = _load_metadata(meta_path, root)
+
+        k_raw = metadata.get("K_gt")
+        if k_raw is None:
+            k_raw = metadata.get("intrinsics")
+        k_3x3 = _k_to_3x3(k_raw)
+
+        k_prime_raw = metadata.get("K_gt_prime")
+        if k_prime_raw is None:
+            k_prime_raw = metadata.get("intrinsics_prime")
+        k_prime_3x3 = _k_to_3x3(k_prime_raw)
+
         records.append(
             {
                 "image_path": str(image_path),
@@ -126,9 +137,9 @@ def load_yolo_dataset(root, split="train2017"):
                 "R_gt": metadata.get("R_gt"),
                 "t_gt": metadata.get("t_gt"),
                 "intrinsics": metadata.get("intrinsics"),
-                "K_gt": metadata.get("K_gt"),
+                "K_gt": k_3x3 if k_3x3 is not None else metadata.get("K_gt"),
                 "intrinsics_prime": metadata.get("intrinsics_prime"),
-                "K_gt_prime": metadata.get("K_gt_prime"),
+                "K_gt_prime": k_prime_3x3 if k_prime_3x3 is not None else metadata.get("K_gt_prime"),
                 "cad_points": metadata.get("cad_points"),
                 "M": metadata.get("mask"),
                 "D_obj": metadata.get("depth"),
@@ -254,4 +265,65 @@ def extract_pose_intrinsics_targets(record, num_instances: int):
         "t_gt": t_list,
         "R_gt": r_list,
         "offsets_gt": off_list,
+    }
+
+
+def extract_full_gt_targets(record, num_instances: int):
+    """Extract and normalize full GT fields per spec.
+
+    Returns canonical python lists suitable for conversion to torch tensors
+    (where applicable) without eager decoding:
+
+    - M: list length num_instances, each item is a 2D array OR a path string OR None
+    - D_obj: list length num_instances, each item is a 2D array OR a path string OR None
+    - R_gt/t_gt/K_gt/offsets_gt: see extract_pose_intrinsics_targets
+    - *_mask: list[bool] indicating availability per instance
+    """
+
+    base = extract_pose_intrinsics_targets(record, num_instances=num_instances)
+
+    m_raw = record.get("M")
+    if m_raw is None:
+        m_raw = record.get("mask")
+    if m_raw is None:
+        m_raw = record.get("mask_path")
+
+    d_raw = record.get("D_obj")
+    if d_raw is None:
+        d_raw = record.get("depth")
+    if d_raw is None:
+        d_raw = record.get("depth_path")
+
+    m_list = _expand_to_instances(m_raw, num_instances, default=None)
+    d_list = _expand_to_instances(d_raw, num_instances, default=None)
+
+    def _norm_m(value):
+        if value is None:
+            return None
+        if isinstance(value, str):
+            return value
+        if isinstance(value, (list, tuple)):
+            return value
+        return None
+
+    def _norm_d(value):
+        if value is None:
+            return None
+        if isinstance(value, str):
+            return value
+        if isinstance(value, (list, tuple)):
+            return value
+        return None
+
+    m_list = [_norm_m(v) for v in m_list]
+    d_list = [_norm_d(v) for v in d_list]
+    m_mask = [v is not None for v in m_list]
+    d_mask = [v is not None for v in d_list]
+
+    return {
+        **base,
+        "M": m_list,
+        "D_obj": d_list,
+        "M_mask": m_mask,
+        "D_obj_mask": d_mask,
     }
