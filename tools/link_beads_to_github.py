@@ -16,6 +16,7 @@ Usage:
 Optional:
   --repo owner/name     # override target repo
   --only YOLOZU-xxm.2   # only link specific bead IDs (repeatable)
+    --sync-close          # if Beads issue is closed/done, close linked GitHub issue
 """
 
 from __future__ import annotations
@@ -108,6 +109,34 @@ def gh_create_issue(repo: str, title: str, body: str) -> int:
     return int(data["number"])
 
 
+def gh_get_state(repo: str, number: int) -> str:
+    return run(
+        [
+            "gh",
+            "api",
+            f"repos/{repo}/issues/{number}",
+            "--jq",
+            ".state",
+        ]
+    ).strip()
+
+
+def gh_close_issue(repo: str, number: int, *, dry_run: bool) -> None:
+    cmd = [
+        "gh",
+        "api",
+        "--method",
+        "PATCH",
+        f"repos/{repo}/issues/{number}",
+        "-f",
+        "state=closed",
+    ]
+    if dry_run:
+        print("DRY:", " ".join(cmd))
+        return
+    run(cmd)
+
+
 def bd_link_external_ref(bead_id: str, number: int, *, dry_run: bool) -> None:
     ext = f"gh-{number}"
     note = f"Linked GitHub issue #{number} ({ext})"
@@ -144,7 +173,21 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--repo", default=None, help="GitHub repo as owner/name")
     p.add_argument("--only", action="append", default=[], help="Only link specified Beads IDs (repeatable)")
+    p.add_argument(
+        "--sync-close",
+        action="store_true",
+        help="If Beads issue is closed/done and has external_ref gh-<n>, close the GitHub issue (one-way).",
+    )
     return p.parse_args(list(argv) if argv is not None else None)
+
+
+def parse_gh_external_ref(value: str | None) -> int | None:
+    if not value:
+        return None
+    m = re.fullmatch(r"gh-(\d+)", str(value).strip())
+    if not m:
+        return None
+    return int(m.group(1))
 
 
 def main() -> int:
@@ -159,30 +202,44 @@ def main() -> int:
     issues = load_beads_jsonl(beads_path)
     targets = [i for i in issues if (not allow or i.get("id") in allow)]
 
-    changed = 0
+    linked = 0
+    closed = 0
+
     for bead in targets:
         bead_id = str(bead.get("id"))
         title = str(bead.get("title") or "").strip()
         if not bead_id or not title:
             continue
 
-        if bead.get("external_ref"):
-            print(f"SKIP {bead_id}: already has external_ref={bead['external_ref']}")
-            continue
+        number = parse_gh_external_ref(bead.get("external_ref"))
 
-        existing = find_exact_title_match(repo, title)
-        if existing is not None:
-            number = existing
-            action = "link"
-        else:
-            number = gh_create_issue(repo, title, format_body(bead))
-            action = "create+link"
+        # Linking mode: create/link external_ref if missing.
+        if number is None:
+            existing = find_exact_title_match(repo, title)
+            if existing is not None:
+                number = existing
+                action = "link"
+            else:
+                number = gh_create_issue(repo, title, format_body(bead))
+                action = "create+link"
 
-        print(f"{action.upper()} {bead_id} -> #{number}")
-        bd_link_external_ref(bead_id, number, dry_run=args.dry_run)
-        changed += 1
+            print(f"{action.upper()} {bead_id} -> #{number}")
+            bd_link_external_ref(bead_id, number, dry_run=args.dry_run)
+            linked += 1
 
-    print(f"Done. Updated {changed} Beads issues.")
+        # Close-sync mode: if Beads is closed/done and external_ref exists, close GH issue.
+        if args.sync_close and number is not None:
+            status = str(bead.get("status") or "").lower()
+            if status in {"closed", "done"}:
+                state = gh_get_state(repo, number)
+                if state != "closed":
+                    print(f"CLOSE {bead_id} -> #{number}")
+                    gh_close_issue(repo, number, dry_run=args.dry_run)
+                    closed += 1
+
+    print(f"Done. Linked {linked} Beads issues.")
+    if args.sync_close:
+        print(f"Done. Closed {closed} GitHub issues.")
     if args.dry_run:
         print("(dry-run: no changes written)")
     return 0
