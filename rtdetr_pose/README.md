@@ -12,6 +12,10 @@ This folder contains a minimal PyTorch/TensorRT-oriented scaffolding for the RT-
 - Fetch coco128 (once, from repo root): `bash tools/fetch_coco128.sh`
 - Run: `python3 tools/train_minimal.py --epochs 1 --batch-size 2 --max-steps 30`
 
+Optional full-GT consumption (mask/depth)
+- Derive `z` (and `t` if `K_gt` exists) from per-instance `D_obj` at bbox center: `python3 tools/train_minimal.py --use-matcher --z-from-dobj`
+- If `M`/`D_obj` are stored as file paths instead of inlined arrays, allow loading: `python3 tools/train_minimal.py --use-matcher --z-from-dobj --load-aux`
+
 ## Config
 - Example config: `configs/base.json`
 
