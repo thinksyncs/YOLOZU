@@ -12,6 +12,7 @@ except ImportError as exc:  # pragma: no cover
     raise SystemExit("torch is required; install requirements-test.txt") from exc
 
 from rtdetr_pose.dataset import build_manifest, extract_pose_intrinsics_targets
+from rtdetr_pose.dataset import extract_full_gt_targets, depth_at_bbox_center
 from rtdetr_pose.losses import Losses
 from rtdetr_pose.training import build_query_aligned_targets
 from rtdetr_pose.model import RTDETRPose
@@ -27,6 +28,8 @@ class ManifestDataset(Dataset):
         seed,
         use_matcher,
         synthetic_pose,
+        z_from_dobj,
+        load_aux,
     ):
         self.records = records
         self.num_queries = int(num_queries)
@@ -35,6 +38,40 @@ class ManifestDataset(Dataset):
         self.seed = int(seed)
         self.use_matcher = bool(use_matcher)
         self.synthetic_pose = bool(synthetic_pose)
+        self.z_from_dobj = bool(z_from_dobj)
+        self.load_aux = bool(load_aux)
+
+    def _load_2d(self, value):
+        if value is None:
+            return None
+        if isinstance(value, (list, tuple)):
+            return value
+        if not self.load_aux:
+            return None
+        if isinstance(value, str):
+            path = Path(value)
+            if path.suffix.lower() == ".json":
+                import json
+
+                try:
+                    return json.loads(path.read_text())
+                except Exception:
+                    return None
+            if path.suffix.lower() in (".npy", ".npz"):
+                try:
+                    import numpy as np
+                except Exception:
+                    return None
+                try:
+                    loaded = np.load(path)
+                except Exception:
+                    return None
+                if hasattr(loaded, "files"):
+                    if not loaded.files:
+                        return None
+                    return loaded[loaded.files[0]]
+                return loaded
+        return None
 
     def __len__(self):
         return len(self.records)
@@ -50,7 +87,7 @@ class ManifestDataset(Dataset):
 
         instances = record.get("labels") or []
         if self.use_matcher:
-            meta = extract_pose_intrinsics_targets(record, num_instances=len(instances))
+            full = extract_full_gt_targets(record, num_instances=len(instances))
             gt_labels = []
             gt_bbox = []
             gt_z = []
@@ -61,14 +98,16 @@ class ManifestDataset(Dataset):
             gt_t_mask = []
             gt_offsets = []
             gt_offsets_mask = []
+            gt_M_mask = []
+            gt_D_obj_mask = []
 
             # We don't decode images, so default HW is the generated tensor size.
             image_hw = torch.tensor([float(self.image_size), float(self.image_size)], dtype=torch.float32)
 
             # Prefer real intrinsics when present; else synthesize if requested.
             K_gt = None
-            if meta.get("K_gt") is not None:
-                K_gt = torch.tensor(meta["K_gt"], dtype=torch.float32)
+            if full.get("K_gt") is not None:
+                K_gt = torch.tensor(full["K_gt"], dtype=torch.float32)
             elif self.synthetic_pose:
                 w = float(self.image_size)
                 h = float(self.image_size)
@@ -97,9 +136,18 @@ class ManifestDataset(Dataset):
                 )
 
                 # Real (t/R/offsets) if present, otherwise optional synthetic fallback.
-                t_i = meta.get("t_gt", [None])[inst_i] if meta.get("t_gt") is not None else None
-                r_i = meta.get("R_gt", [None])[inst_i] if meta.get("R_gt") is not None else None
-                off_i = meta.get("offsets_gt", [None])[inst_i] if meta.get("offsets_gt") is not None else None
+                t_i = full.get("t_gt", [None])[inst_i] if full.get("t_gt") is not None else None
+                r_i = full.get("R_gt", [None])[inst_i] if full.get("R_gt") is not None else None
+                off_i = full.get("offsets_gt", [None])[inst_i] if full.get("offsets_gt") is not None else None
+
+                m_i = full.get("M", [None])[inst_i] if full.get("M") is not None else None
+                d_i = full.get("D_obj", [None])[inst_i] if full.get("D_obj") is not None else None
+                m_loaded = self._load_2d(m_i)
+                d_loaded = self._load_2d(d_i)
+                gt_M_mask.append(bool(full.get("M_mask", [False])[inst_i]) if full.get("M_mask") else False)
+                gt_D_obj_mask.append(
+                    bool(full.get("D_obj_mask", [False])[inst_i]) if full.get("D_obj_mask") else False
+                )
 
                 # z/t
                 if t_i is not None:
@@ -124,10 +172,30 @@ class ManifestDataset(Dataset):
                     gt_t.append([x, y, z_val])
                     gt_t_mask.append(True)
                 else:
-                    gt_z.append(0.0)
-                    gt_z_mask.append(False)
-                    gt_t.append([0.0, 0.0, 0.0])
-                    gt_t_mask.append(False)
+                    # Optional: derive z (and optionally t) from D_obj at bbox center.
+                    z_val = None
+                    if self.z_from_dobj and d_loaded is not None:
+                        z_val = depth_at_bbox_center(d_loaded, bb, mask=m_loaded)
+                    if z_val is not None:
+                        gt_z.append(float(z_val))
+                        gt_z_mask.append(True)
+                        if K_gt is not None:
+                            cx_n = float(bb.get("cx", 0.0))
+                            cy_n = float(bb.get("cy", 0.0))
+                            u = cx_n * float(image_hw[1])
+                            v = cy_n * float(image_hw[0])
+                            x = (u - float(K_gt[0, 2])) / float(K_gt[0, 0]) * float(z_val)
+                            y = (v - float(K_gt[1, 2])) / float(K_gt[1, 1]) * float(z_val)
+                            gt_t.append([x, y, float(z_val)])
+                            gt_t_mask.append(True)
+                        else:
+                            gt_t.append([0.0, 0.0, float(z_val)])
+                            gt_t_mask.append(False)
+                    else:
+                        gt_z.append(0.0)
+                        gt_z_mask.append(False)
+                        gt_t.append([0.0, 0.0, 0.0])
+                        gt_t_mask.append(False)
 
                 # R
                 if r_i is not None:
@@ -167,6 +235,8 @@ class ManifestDataset(Dataset):
                     "gt_t_mask": torch.tensor(gt_t_mask, dtype=torch.bool),
                     "gt_offsets": torch.tensor(gt_offsets, dtype=torch.float32),
                     "gt_offsets_mask": torch.tensor(gt_offsets_mask, dtype=torch.bool),
+                    "gt_M_mask": torch.tensor(gt_M_mask, dtype=torch.bool),
+                    "gt_D_obj_mask": torch.tensor(gt_D_obj_mask, dtype=torch.bool),
                     **({"K_gt": K_gt} if K_gt is not None else {}),
                     "image_hw": image_hw,
                 },
@@ -223,6 +293,16 @@ def main():
         "--synthetic-pose",
         action="store_true",
         help="Generate synthetic z/R GT per instance (scaffold only)",
+    )
+    parser.add_argument(
+        "--z-from-dobj",
+        action="store_true",
+        help="When GT t is missing, derive z (and optionally t if K is available) from D_obj at bbox center",
+    )
+    parser.add_argument(
+        "--load-aux",
+        action="store_true",
+        help="Allow loading mask/depth arrays from paths (.json/.npy) for z-from-dobj; default keeps lazy paths",
     )
     parser.add_argument(
         "--cost-t",
@@ -285,6 +365,8 @@ def main():
         seed=args.seed,
         use_matcher=args.use_matcher,
         synthetic_pose=args.synthetic_pose,
+        z_from_dobj=args.z_from_dobj,
+        load_aux=args.load_aux,
     )
     loader = DataLoader(
         ds,
@@ -342,13 +424,18 @@ def main():
                     "bbox": aligned["bbox"],
                     "mask": aligned["mask"],
                     "z_gt": aligned["z_gt"],
+                    "z_mask": aligned["z_mask"],
                     "R_gt": aligned["R_gt"],
+                    "rot_mask": aligned["rot_mask"],
                     "offsets": aligned["offsets"],
+                    "off_mask": aligned["off_mask"],
                     "t_gt": aligned["t_gt"],
                     "K_gt": aligned["K_gt"],
                     "image_hw": aligned["image_hw"],
                     "K_mask": aligned["K_mask"],
                     "t_mask": aligned["t_mask"],
+                    "M_mask": aligned.get("M_mask"),
+                    "D_obj_mask": aligned.get("D_obj_mask"),
                 }
             else:
                 # legacy padded targets

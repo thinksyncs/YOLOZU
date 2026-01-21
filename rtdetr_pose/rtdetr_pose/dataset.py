@@ -358,3 +358,62 @@ def extract_full_gt_targets(record, num_instances: int):
         "M_mask": m_mask,
         "D_obj_mask": d_mask,
     }
+
+
+def depth_at_bbox_center(d_obj, bbox, mask=None):
+    """Sample depth (z) at bbox center from an object-only depth map.
+
+    d_obj: 2D array-like (nested lists/tuples or ndarray)
+    bbox: dict with cx/cy or sequence [cx,cy,w,h] in normalized coords
+    mask: optional 2D mask (same spatial size); if provided and center is masked out,
+          returns None.
+    """
+
+    if d_obj is None:
+        return None
+
+    # Extract bbox center in normalized coords.
+    if isinstance(bbox, dict):
+        cx = float(bbox.get("cx", 0.0))
+        cy = float(bbox.get("cy", 0.0))
+    else:
+        cx = float(bbox[0])
+        cy = float(bbox[1])
+
+    # Determine H,W.
+    if hasattr(d_obj, "shape"):
+        h = int(d_obj.shape[0])
+        w = int(d_obj.shape[1])
+    else:
+        if not isinstance(d_obj, (list, tuple)) or not d_obj:
+            return None
+        h = len(d_obj)
+        w = len(d_obj[0]) if isinstance(d_obj[0], (list, tuple)) else 0
+    if h <= 0 or w <= 0:
+        return None
+
+    u = int(round(cx * (w - 1)))
+    v = int(round(cy * (h - 1)))
+    u = max(0, min(w - 1, u))
+    v = max(0, min(h - 1, v))
+
+    if mask is not None:
+        try:
+            m_val = mask[v][u] if not hasattr(mask, "shape") else mask[v, u]
+        except Exception:
+            m_val = None
+        if m_val is not None and float(m_val) <= 0.0:
+            return None
+
+    try:
+        z = d_obj[v][u] if not hasattr(d_obj, "shape") else d_obj[v, u]
+    except Exception:
+        return None
+
+    try:
+        zf = float(z)
+    except Exception:
+        return None
+    if not (zf >= 0.0):
+        return None
+    return zf

@@ -64,6 +64,8 @@ def build_query_aligned_targets(
     aligned_z_mask = []
     aligned_rot_mask = []
     aligned_off_mask = []
+    aligned_m_mask = []
+    aligned_dobj_mask = []
     aligned_t = []
     aligned_k = []
     aligned_hw = []
@@ -92,6 +94,8 @@ def build_query_aligned_targets(
         gt_offsets_mask = targets[b].get("gt_offsets_mask")
         gt_t = _first_present(targets[b], ("gt_t", "t_gt", "t"))
         gt_t_mask = targets[b].get("gt_t_mask")
+        gt_m_mask = targets[b].get("gt_M_mask")
+        gt_dobj_mask = targets[b].get("gt_D_obj_mask")
         k_gt = _first_present(targets[b], ("K_gt", "K", "intrinsics"))
         image_hw = _first_present(targets[b], ("image_hw", "hw"))
 
@@ -112,6 +116,10 @@ def build_query_aligned_targets(
             gt_t = None
         if isinstance(gt_t_mask, torch.Tensor) and gt_t_mask.numel() == 0:
             gt_t_mask = None
+        if isinstance(gt_m_mask, torch.Tensor) and gt_m_mask.numel() == 0:
+            gt_m_mask = None
+        if isinstance(gt_dobj_mask, torch.Tensor) and gt_dobj_mask.numel() == 0:
+            gt_dobj_mask = None
 
         has_k = k_gt is not None
         has_t = gt_t is not None and (gt_t_mask is None or bool(gt_t_mask.any()))
@@ -127,6 +135,8 @@ def build_query_aligned_targets(
             z_mask_q = torch.zeros((num_queries,), dtype=torch.bool, device=logits.device)
             rot_mask_q = torch.zeros((num_queries,), dtype=torch.bool, device=logits.device)
             off_mask_q = torch.zeros((num_queries,), dtype=torch.bool, device=logits.device)
+            m_mask_q = torch.zeros((num_queries,), dtype=torch.bool, device=logits.device)
+            dobj_mask_q = torch.zeros((num_queries,), dtype=torch.bool, device=logits.device)
             t_q = torch.zeros((num_queries, 3), dtype=torch.float32, device=logits.device)
             t_mask_q = torch.zeros((num_queries,), dtype=torch.bool, device=logits.device)
             aligned_labels.append(labels_q)
@@ -138,6 +148,8 @@ def build_query_aligned_targets(
             aligned_z_mask.append(z_mask_q)
             aligned_rot_mask.append(rot_mask_q)
             aligned_off_mask.append(off_mask_q)
+            aligned_m_mask.append(m_mask_q)
+            aligned_dobj_mask.append(dobj_mask_q)
             aligned_t.append(t_q)
             aligned_t_mask.append(t_mask_q)
 
@@ -175,6 +187,10 @@ def build_query_aligned_targets(
             gt_t = gt_t.to(device=logits.device, dtype=torch.float32)
         if gt_t_mask is not None:
             gt_t_mask = gt_t_mask.to(device=logits.device, dtype=torch.bool)
+        if gt_m_mask is not None:
+            gt_m_mask = gt_m_mask.to(device=logits.device, dtype=torch.bool)
+        if gt_dobj_mask is not None:
+            gt_dobj_mask = gt_dobj_mask.to(device=logits.device, dtype=torch.bool)
         if k_gt is not None:
             k_gt = torch.as_tensor(k_gt, dtype=torch.float32, device=logits.device)
         if image_hw is not None:
@@ -251,6 +267,8 @@ def build_query_aligned_targets(
         z_mask_q = torch.zeros((num_queries,), dtype=torch.bool, device=logits.device)
         rot_mask_q = torch.zeros((num_queries,), dtype=torch.bool, device=logits.device)
         off_mask_q = torch.zeros((num_queries,), dtype=torch.bool, device=logits.device)
+        m_mask_q = torch.zeros((num_queries,), dtype=torch.bool, device=logits.device)
+        dobj_mask_q = torch.zeros((num_queries,), dtype=torch.bool, device=logits.device)
         t_q = torch.zeros((num_queries, 3), dtype=torch.float32, device=logits.device)
         t_mask_q = torch.zeros((num_queries,), dtype=torch.bool, device=logits.device)
         for r, c in zip(row_ind, col_ind):
@@ -276,6 +294,10 @@ def build_query_aligned_targets(
                         off_mask_q[c] = True
                     else:
                         off_mask_q[c] = bool(gt_offsets_mask[r])
+                if gt_m_mask is not None:
+                    m_mask_q[c] = bool(gt_m_mask[r])
+                if gt_dobj_mask is not None:
+                    dobj_mask_q[c] = bool(gt_dobj_mask[r])
                 if gt_t is not None:
                     t_q[c] = gt_t[r]
                     if gt_t_mask is None:
@@ -291,6 +313,8 @@ def build_query_aligned_targets(
         aligned_z_mask.append(z_mask_q)
         aligned_rot_mask.append(rot_mask_q)
         aligned_off_mask.append(off_mask_q)
+        aligned_m_mask.append(m_mask_q)
+        aligned_dobj_mask.append(dobj_mask_q)
         aligned_t.append(t_q)
         aligned_t_mask.append(t_mask_q)
 
@@ -316,6 +340,8 @@ def build_query_aligned_targets(
         "rot_mask": torch.stack(aligned_rot_mask, dim=0),
         "offsets": torch.stack(aligned_offsets, dim=0),
         "off_mask": torch.stack(aligned_off_mask, dim=0),
+        "M_mask": torch.stack(aligned_m_mask, dim=0),
+        "D_obj_mask": torch.stack(aligned_dobj_mask, dim=0),
         "t_gt": torch.stack(aligned_t, dim=0),
         "K_gt": torch.stack(aligned_k, dim=0),
         "image_hw": torch.stack(aligned_hw, dim=0),
