@@ -10,6 +10,81 @@ class DummyAdapter(ModelAdapter):
         ]
 
 
+class PrecomputedAdapter(ModelAdapter):
+    """Adapter that returns detections loaded from a JSON file.
+
+    This is useful when you run real inference elsewhere (torch/TRT/etc.)
+    and want to evaluate the pipeline in this repo without heavyweight deps.
+
+    Supported JSON formats:
+
+    1) List of per-image entries:
+       [{"image": "/abs/or/rel/path.jpg", "detections": [...]}, ...]
+
+    2) Dict with top-level key:
+       {"predictions": [ ...same as above... ]}
+
+    3) Dict mapping image->detections:
+       {"/path.jpg": [...], "000000000009.jpg": [...]}  # values are detections
+    """
+
+    def __init__(self, predictions_path):
+        from pathlib import Path
+
+        self.predictions_path = str(predictions_path)
+        self._path = Path(predictions_path)
+        self._index = None
+
+    def _load(self):
+        import json
+
+        data = json.loads(self._path.read_text())
+        if isinstance(data, dict) and "predictions" in data:
+            data = data["predictions"]
+
+        index = {}
+        if isinstance(data, list):
+            for entry in data:
+                image = entry.get("image")
+                detections = entry.get("detections", [])
+                if not image:
+                    continue
+                index[str(image)] = detections
+        elif isinstance(data, dict):
+            # Mapping image -> detections
+            for image, detections in data.items():
+                index[str(image)] = detections
+        else:
+            raise ValueError("Unsupported predictions JSON format")
+
+        # Add basename aliases for convenience.
+        basename_index = {}
+        for image, dets in index.items():
+            try:
+                base = image.split("/")[-1]
+            except Exception:
+                base = image
+            if base and base not in basename_index:
+                basename_index[base] = dets
+        index.update(basename_index)
+
+        self._index = index
+
+    def predict(self, records):
+        if self._index is None:
+            self._load()
+
+        outputs = []
+        for record in records:
+            image = record["image"]
+            dets = self._index.get(image)
+            if dets is None:
+                base = str(image).split("/")[-1]
+                dets = self._index.get(base, [])
+            outputs.append({"image": image, "detections": dets})
+        return outputs
+
+
 class RTDETRPoseAdapter(ModelAdapter):
     """Adapter that runs the RT-DETR pose scaffold (optional dependency).
 

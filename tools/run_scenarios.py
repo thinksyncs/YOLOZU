@@ -6,7 +6,7 @@ from pathlib import Path
 repo_root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(repo_root))
 
-from yolozu.adapter import DummyAdapter, RTDETRPoseAdapter
+from yolozu.adapter import DummyAdapter, PrecomputedAdapter, RTDETRPoseAdapter
 from yolozu.dataset import build_manifest
 from yolozu.runner import run_adapter
 
@@ -15,9 +15,14 @@ def _parse_args(argv):
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--adapter",
-        choices=("dummy", "rtdetr_pose"),
+        choices=("dummy", "precomputed", "rtdetr_pose"),
         default="dummy",
         help="Which adapter to run (default: dummy).",
+    )
+    parser.add_argument(
+        "--predictions",
+        default=None,
+        help="Predictions JSON path for --adapter precomputed.",
     )
     parser.add_argument(
         "--config",
@@ -48,6 +53,10 @@ def main(argv=None):
 
     if args.adapter == "dummy":
         adapter = DummyAdapter()
+    elif args.adapter == "precomputed":
+        if not args.predictions:
+            raise SystemExit("--predictions is required for --adapter precomputed")
+        adapter = PrecomputedAdapter(predictions_path=args.predictions)
     else:
         adapter = RTDETRPoseAdapter(config_path=args.config, checkpoint_path=args.checkpoint)
 
