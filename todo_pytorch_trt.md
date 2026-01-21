@@ -9,7 +9,7 @@ Status (2026-01-18)
 - Reports for baseline/gates/scenarios are scaffolded (dummy metrics; no real model yet).
 - rtdetr_pose scaffolding files are tracked in git; generated caches/reports are ignored.
 - Full RT-DETR, training loop, and TensorRT conversion are not implemented yet.
-- Baseline DETR-style backbone/decoder implemented; replace with full RT-DETR for parity.
+- RT-DETR-style backbone/neck/encoder/decoder (CSPResNet + FPN/PAN + transformer encoder/decoder) is in place.
 
 Current priorities (auto)
 1) Stage 2: replace stub model with real RT-DETR backbone/decoder + export-safe ops.
@@ -58,7 +58,7 @@ Start next (着手)
 ## Stage 2) Model architecture (per spec §3)
 - [x] Implement RT-DETR-like backbone/decoder with HeadFast outputs:
   - class logits, bbox, `log_z`, `rot6D`, optional `log_sigma_z/rot`
-- [ ] Replace baseline backbone/decoder with full RT-DETR for parity with spec.
+- [x] Replace baseline backbone/decoder with full RT-DETR-style backbone/neck/encoder/decoder.
 - [x] Implement CenterOffsetHead (`Δu, Δv`) and GlobalKHead (`δf/δc`) (stub).
 - [x] Implement rotation conversion `rot6D -> R ∈ SO(3)`.
 - [x] Ensure export-friendly ops for TensorRT (avoid meshgrid; export wrapper in place).
