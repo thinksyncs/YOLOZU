@@ -13,6 +13,14 @@ bd close <id>         # Complete work
 bd sync               # Sync with git
 ```
 
+## GitHub Issues Linking
+
+Use `external-ref` to link a Beads issue to a GitHub Issue number.
+
+```bash
+bd update <id> --external-ref gh-123
+```
+
 ## Landing the Plane (Session Completion)
 
 **When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
