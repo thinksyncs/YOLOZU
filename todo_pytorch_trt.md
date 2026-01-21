@@ -8,8 +8,8 @@ Spec reference: `rt_detr_6dof_geom_mim_spec_en_v0_4.md`
 - [x] YOLO-format dataset manifest builder
 - [x] Sidecar metadata support (mask/depth/pose/intrinsics paths + basic content checks)
 - [x] Dataset audit tool + validator
-- [ ] Dataset loader returns full per-instance GT per spec (`M`, `D_obj`, `R_gt`, `t_gt`, `K_gt`)
-- [ ] Multi-object samples (multiple instances per image) end-to-end support
+- [x] Dataset loader returns full per-instance GT per spec (`M`, `D_obj`, `R_gt`, `t_gt`, `K_gt`)
+- [x] Multi-object samples (multiple instances per image) end-to-end support
 - [x] Range/units checks (depth meters, mask binary, bbox normalized) + clear conventions
 - [ ] Deterministic splits + shuffling + reproducibility hooks (seeded)
 
@@ -33,7 +33,7 @@ Spec reference: `rt_detr_6dof_geom_mim_spec_en_v0_4.md`
 ### Losses / metrics
 - [x] Baseline losses (classification/box/log-depth/rot + basic regularizers)
 - [x] Symmetry-aware metrics (geodesic, ADD-S) + unit tests (metrics-level)
-- [ ] Matching-aware training losses wired to real matcher outputs
+- [x] Matching-aware training losses wired to real matcher outputs
 - [ ] Full detector metrics aggregation (mAP/Recall) wired to real outputs
 
 ### Training / inference / export
@@ -57,17 +57,21 @@ Current priorities (auto)
 3) Stage 5/6 (later): inference path + TensorRT export/parity benchmarks.
 
 ### Training-first next steps (recommended order)
-- [ ] Dataset returns per-instance GT: `M`, `D_obj`, `R_gt`, `t_gt`, `K_gt` (+ optional `K_gt'`, `cad_points`)
+- [x] Dataset returns per-instance GT: `M`, `D_obj`, `R_gt`, `t_gt`, `K_gt` (+ optional `K_gt'`, `cad_points`)
   - [x] Normalize sidecar keys into canonical fields (`R_gt`, `t_gt`, `K_gt`, `M`, `D_obj`)
   - [x] Preserve paths vs inlined arrays without eager decoding
   - [x] Record per-sample availability stats (pose/intrinsics/mask/depth)
 - [ ] Batch collation for variable #instances and masks/depth
 - [ ] Collate keeps per-instance counts (for matcher) and pads/query-aligns labels/bboxes
-- [ ] Minimal trainer entrypoint (1 epoch over coco128; logs loss scalars)
+- [x] Minimal trainer entrypoint (1 epoch over coco128; logs loss scalars)
 - [x] Trainer prints GT availability summary for debugging
-- [ ] Matching (Hungarian) + staged cost terms (start with cls/box, then add z/rot)
+- [x] Matching (Hungarian) + staged cost terms (start with cls/box, then add z/rot)
 - [ ] Checkpointing + config-driven runs (resume/repro)
-- [ ] Loss/metric integration test: one training step + backward + no NaNs
+- [x] Loss/metric integration test: one training step + backward + no NaNs
+
+Notes (2026-01-21)
+- Training scaffold can now consume full GT availability for mask/depth via `gt_M_mask`/`gt_D_obj_mask` (propagated through Hungarian alignment as `M_mask`/`D_obj_mask`).
+- Optional: when `t_gt` is missing, `tools/train_minimal.py` can derive `z` (and `t` if `K_gt` exists) from `D_obj` at bbox center via `--z-from-dobj` (arrays inline by default; paths require `--load-aux`).
 - [ ] Inference-only utilities (later): decoding + constraints gate + template verify
 
 ## Stage 0) Repo + environment alignment
