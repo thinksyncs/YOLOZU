@@ -36,39 +36,9 @@ class PrecomputedAdapter(ModelAdapter):
         self._index = None
 
     def _load(self):
-        import json
+        from .predictions import load_predictions_index
 
-        data = json.loads(self._path.read_text())
-        if isinstance(data, dict) and "predictions" in data:
-            data = data["predictions"]
-
-        index = {}
-        if isinstance(data, list):
-            for entry in data:
-                image = entry.get("image")
-                detections = entry.get("detections", [])
-                if not image:
-                    continue
-                index[str(image)] = detections
-        elif isinstance(data, dict):
-            # Mapping image -> detections
-            for image, detections in data.items():
-                index[str(image)] = detections
-        else:
-            raise ValueError("Unsupported predictions JSON format")
-
-        # Add basename aliases for convenience.
-        basename_index = {}
-        for image, dets in index.items():
-            try:
-                base = image.split("/")[-1]
-            except Exception:
-                base = image
-            if base and base not in basename_index:
-                basename_index[base] = dets
-        index.update(basename_index)
-
-        self._index = index
+        self._index = load_predictions_index(self._path)
 
     def predict(self, records):
         if self._index is None:

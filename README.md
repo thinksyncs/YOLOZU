@@ -32,5 +32,21 @@ Use these as lightweight landing-page/app-store/one-pager blurbs (edit freely).
 - Dataset manifest: `python3 tools/build_manifest.py`
 - Adapter run: `python3 tools/run_scenarios.py`
 
+## Precomputed predictions workflow (no torch required)
+
+If you run real inference elsewhere (PyTorch/TensorRT/etc.), you can evaluate this repo without installing heavy deps locally.
+
+- Export predictions (in an environment where the adapter can run):
+	- `python3 tools/export_predictions.py --adapter rtdetr_pose --checkpoint /path/to.ckpt --max-images 50 --wrap --output reports/predictions.json`
+- Validate the JSON:
+	- `python3 tools/validate_predictions.py reports/predictions.json`
+- Consume predictions locally:
+	- `python3 tools/run_scenarios.py --adapter precomputed --predictions reports/predictions.json --max-images 50`
+
+Supported predictions JSON shapes:
+- `[{"image": "...", "detections": [...]}, ...]`
+- `{ "predictions": [ ... ] }`
+- `{ "000000000009.jpg": [...], "/abs/path.jpg": [...] }` (image -> detections)
+
 ## Deployment notes
 - Keep symmetry/commonsense logic in lightweight postprocess utilities, outside any inference graph export.
