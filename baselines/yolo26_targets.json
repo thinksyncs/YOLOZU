@@ -1,0 +1,18 @@
+{
+  "task": "detect",
+  "dataset": "COCO val2017",
+  "imgsz": 640,
+  "metric": "e2e mAP@[.5:.95] (bbox)",
+  "notes": [
+    "Fill in target values from your trusted source (e.g., internal benchmark sheet).",
+    "Targets should reflect NMS-free (end-to-end) evaluation for a fair comparison."
+  ],
+  "targets": {
+    "yolo26n": null,
+    "yolo26s": null,
+    "yolo26m": null,
+    "yolo26l": null,
+    "yolo26x": null
+  }
+}
+

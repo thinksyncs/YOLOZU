@@ -85,5 +85,14 @@ To compare against external baselines (including YOLO26) while keeping this repo
 Minimal predictions entry schema:
 - `{"image": "/abs/or/rel/path.jpg", "detections": [{"class_id": 0, "score": 0.9, "bbox": {"cx": 0.5, "cy": 0.5, "w": 0.2, "h": 0.2}}]}`
 
+### Size-bucket competition (yolo26n/s/m/l/x)
+
+If you export `yolo26n/s/m/l/x` predictions as separate JSON files (e.g. `reports/pred_yolo26n.json`, ...),
+you can score them together:
+
+- `python3 tools/eval_suite.py --dataset /path/to/coco-yolo --split val2017 --predictions-glob 'reports/pred_yolo26*.json' --bbox-format cxcywh_norm --output reports/eval_suite.json`
+- Fill in targets: `baselines/yolo26_targets.json`
+- Check pass/fail: `python3 tools/check_map_targets.py --suite reports/eval_suite.json --targets baselines/yolo26_targets.json --key map50_95`
+
 ## Deployment notes
 - Keep symmetry/commonsense logic in lightweight postprocess utilities, outside any inference graph export.
