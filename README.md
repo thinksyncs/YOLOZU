@@ -71,12 +71,19 @@ Example (coco128 quick run):
 Note:
 - `--bbox-format cxcywh_norm` expects bbox dict `{cx,cy,w,h}` normalized to `[0,1]` (matching the RTDETR pose adapter bbox head).
 
-## Ultralytics YOLO26 (e2e) export
+## External baselines (Apache-2.0-friendly)
 
-If you want to compare against `yolo26n/s/m/l/x` on the same dataset split, export Ultralytics predictions into YOLOZU JSON:
+This repo does **not** require (or vendor) any GPL/AGPL inference code.
 
-- `python3 tools/export_ultralytics_predictions.py --model yolo26s.pt --dataset data/coco128 --split train2017 --imgsz 640 --wrap --output reports/predictions_yolo26s.json`
-- Evaluate: `python3 tools/eval_coco.py --dataset data/coco128 --split train2017 --predictions reports/predictions_yolo26s.json --bbox-format cxcywh_norm`
+To compare against external baselines (including YOLO26) while keeping this repo Apache-2.0-only:
+- Run baseline inference in your own environment/implementation (ONNX Runtime / TensorRT / custom code).
+- Export detections to YOLOZU predictions JSON (see schema below).
+- Validate + evaluate mAP in this repo:
+  - `python3 tools/validate_predictions.py reports/predictions.json`
+  - `python3 tools/eval_coco.py --dataset /path/to/coco-yolo --split val2017 --predictions reports/predictions.json --bbox-format cxcywh_norm`
+
+Minimal predictions entry schema:
+- `{"image": "/abs/or/rel/path.jpg", "detections": [{"class_id": 0, "score": 0.9, "bbox": {"cx": 0.5, "cy": 0.5, "w": 0.2, "h": 0.2}}]}`
 
 ## Deployment notes
 - Keep symmetry/commonsense logic in lightweight postprocess utilities, outside any inference graph export.
