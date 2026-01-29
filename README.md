@@ -55,5 +55,21 @@ Supported predictions JSON shapes:
 - `{ "predictions": [ ... ] }`
 - `{ "000000000009.jpg": [...], "/abs/path.jpg": [...] }` (image -> detections)
 
+## COCO mAP (end-to-end, no NMS)
+
+To compete on **e2e mAP** (NMS-free), evaluate detections as-is (no NMS postprocess applied).
+
+This repo includes a COCO-style evaluator that:
+- Builds COCO ground truth from YOLO-format labels
+- Converts YOLOZU predictions JSON into COCO detections
+- Runs COCO mAP via `pycocotools` (optional dependency)
+
+Example (coco128 quick run):
+- Export predictions (any adapter): `python3 tools/export_predictions.py --adapter dummy --max-images 50 --wrap --output reports/predictions.json`
+- Evaluate mAP: `python3 tools/eval_coco.py --dataset data/coco128 --predictions reports/predictions.json --bbox-format cxcywh_norm --max-images 50`
+
+Note:
+- `--bbox-format cxcywh_norm` expects bbox dict `{cx,cy,w,h}` normalized to `[0,1]` (matching the RTDETR pose adapter bbox head).
+
 ## Deployment notes
 - Keep symmetry/commonsense logic in lightweight postprocess utilities, outside any inference graph export.
