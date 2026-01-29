@@ -36,6 +36,11 @@ def _parse_args(argv):
         help="Optional cap for number of images (for quick smoke runs).",
     )
     parser.add_argument(
+        "--split",
+        default=None,
+        help="Dataset split under images/ and labels/ (e.g. val2017, train2017). Default: auto.",
+    )
+    parser.add_argument(
         "--output",
         default="reports/predictions.json",
         help="Where to write predictions JSON.",
@@ -52,7 +57,7 @@ def main(argv=None):
     args = _parse_args(sys.argv[1:] if argv is None else argv)
 
     dataset_root = repo_root / "data" / "coco128"
-    manifest = build_manifest(dataset_root)
+    manifest = build_manifest(dataset_root, split=args.split)
     records = manifest["images"]
     if args.max_images is not None:
         records = records[: args.max_images]

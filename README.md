@@ -71,5 +71,12 @@ Example (coco128 quick run):
 Note:
 - `--bbox-format cxcywh_norm` expects bbox dict `{cx,cy,w,h}` normalized to `[0,1]` (matching the RTDETR pose adapter bbox head).
 
+## Ultralytics YOLO26 (e2e) export
+
+If you want to compare against `yolo26n/s/m/l/x` on the same dataset split, export Ultralytics predictions into YOLOZU JSON:
+
+- `python3 tools/export_ultralytics_predictions.py --model yolo26s.pt --dataset data/coco128 --split train2017 --imgsz 640 --wrap --output reports/predictions_yolo26s.json`
+- Evaluate: `python3 tools/eval_coco.py --dataset data/coco128 --split train2017 --predictions reports/predictions_yolo26s.json --bbox-format cxcywh_norm`
+
 ## Deployment notes
 - Keep symmetry/commonsense logic in lightweight postprocess utilities, outside any inference graph export.

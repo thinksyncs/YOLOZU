@@ -32,9 +32,19 @@ def load_yolo_dataset(images_dir, labels_dir):
     return records
 
 
-def build_manifest(dataset_root):
+def _pick_split(dataset_root: Path, split: str | None) -> str:
+    if split:
+        return split
+    for candidate in ("val2017", "train2017"):
+        if (dataset_root / "images" / candidate).exists():
+            return candidate
+    return "train2017"
+
+
+def build_manifest(dataset_root, *, split: str | None = None):
     dataset_root = Path(dataset_root)
-    images_dir = dataset_root / "images" / "train2017"
-    labels_dir = dataset_root / "labels" / "train2017"
+    split = _pick_split(dataset_root, split)
+    images_dir = dataset_root / "images" / split
+    labels_dir = dataset_root / "labels" / split
     records = load_yolo_dataset(images_dir, labels_dir)
-    return {"images": records}
+    return {"images": records, "split": split}

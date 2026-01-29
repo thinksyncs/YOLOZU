@@ -15,6 +15,11 @@ from yolozu.predictions import load_predictions_entries
 def _parse_args(argv):
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", default="data/coco128", help="YOLO-format dataset root (images/ + labels/).")
+    parser.add_argument(
+        "--split",
+        default=None,
+        help="Dataset split under images/ and labels/ (e.g. val2017, train2017). Default: auto.",
+    )
     parser.add_argument("--predictions", required=True, help="Predictions JSON path (YOLOZU format).")
     parser.add_argument(
         "--bbox-format",
@@ -36,7 +41,7 @@ def main(argv=None):
     args = _parse_args(sys.argv[1:] if argv is None else argv)
 
     dataset_root = repo_root / args.dataset
-    manifest = build_manifest(dataset_root)
+    manifest = build_manifest(dataset_root, split=args.split)
     records = manifest["images"]
     if args.max_images is not None:
         records = records[: args.max_images]
@@ -64,4 +69,3 @@ def main(argv=None):
 
 if __name__ == "__main__":
     main()
-
