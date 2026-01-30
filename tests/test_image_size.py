@@ -10,6 +10,8 @@ from yolozu.image_size import get_image_size
 class TestImageSize(unittest.TestCase):
     def test_jpeg_size_from_coco128(self):
         dataset_dir = Path(__file__).resolve().parents[1] / "data" / "coco128" / "images" / "train2017"
+        if not dataset_dir.is_dir():
+            self.skipTest("coco128 missing; run: bash tools/fetch_coco128.sh")
         images = sorted(dataset_dir.glob("*.jpg"))
         self.assertTrue(images, "expected coco128 images to exist")
         w, h = get_image_size(images[0])
@@ -19,4 +21,3 @@ class TestImageSize(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

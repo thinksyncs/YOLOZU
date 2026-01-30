@@ -4,6 +4,7 @@ Real-time monocular RGB pipeline for object detection, depth, and 6DoF pose esti
 
 - Spec: [rt_detr_6dof_geom_mim_spec_en_v0_4.md](rt_detr_6dof_geom_mim_spec_en_v0_4.md)
 - Notes/TODOs: [todo_symmetry_commonsense_realtime.md](todo_symmetry_commonsense_realtime.md)
+- License policy: [docs/license_policy.md](docs/license_policy.md)
 
 ---
 
@@ -28,7 +29,7 @@ Use these as lightweight landing-page/app-store/one-pager blurbs (edit freely).
 ## Testing (tiny COCO)
 - Install deps (CPU PyTorch): `python3 -m pip install -r requirements-test.txt`
 - Fetch dataset (once): `bash tools/fetch_coco128.sh`
-- Dataset: `data/coco128` (YOLO-format COCO subset).
+- Dataset: `data/coco128` (YOLO-format COCO subset, fetched from official COCO hosting).
 - Smoke test: `python3 -m unittest tests/test_coco128_smoke.py`
 - Core checks: `python3 -m unittest tests/test_config_loader.py tests/test_symmetry.py tests/test_metrics.py tests/test_gates_constraints.py tests/test_geometry_pipeline.py tests/test_jitter.py tests/test_scenario_suite.py tests/test_benchmark.py`
 - Dataset manifest: `python3 tools/build_manifest.py`
@@ -124,3 +125,7 @@ If you don't have `pycocotools` installed yet, you can still validate/convert pr
 
 ## Deployment notes
 - Keep symmetry/commonsense logic in lightweight postprocess utilities, outside any inference graph export.
+
+## License
+
+Code in this repository is licensed under the Apache License, Version 2.0. See `LICENSE`.

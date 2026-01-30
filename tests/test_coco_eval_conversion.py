@@ -11,6 +11,8 @@ from yolozu.dataset import build_manifest
 class TestCocoEvalConversion(unittest.TestCase):
     def test_build_ground_truth_schema(self):
         dataset_root = Path(__file__).resolve().parents[1] / "data" / "coco128"
+        if not dataset_root.is_dir():
+            self.skipTest("coco128 missing; run: bash tools/fetch_coco128.sh")
         manifest = build_manifest(dataset_root)
         records = manifest["images"][:3]
 
@@ -25,6 +27,8 @@ class TestCocoEvalConversion(unittest.TestCase):
 
     def test_predictions_to_detections_mapping(self):
         dataset_root = Path(__file__).resolve().parents[1] / "data" / "coco128"
+        if not dataset_root.is_dir():
+            self.skipTest("coco128 missing; run: bash tools/fetch_coco128.sh")
         manifest = build_manifest(dataset_root)
         records = manifest["images"][:2]
 
@@ -58,4 +62,3 @@ class TestCocoEvalConversion(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
