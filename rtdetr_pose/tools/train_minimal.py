@@ -279,6 +279,17 @@ def main():
     parser.add_argument("--hidden-dim", type=int, default=64)
     parser.add_argument("--num-classes", type=int, default=80)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument(
+        "--shuffle",
+        default=True,
+        action=argparse.BooleanOptionalAction,
+        help="Shuffle dataset each epoch (default: true).",
+    )
+    parser.add_argument(
+        "--deterministic",
+        action="store_true",
+        help="Enable deterministic data order via DataLoader generator (seeded).",
+    )
     parser.add_argument("--use-matcher", action="store_true", help="Use Hungarian matching")
     parser.add_argument("--cost-cls", type=float, default=1.0)
     parser.add_argument("--cost-bbox", type=float, default=5.0)
@@ -371,10 +382,11 @@ def main():
     loader = DataLoader(
         ds,
         batch_size=args.batch_size,
-        shuffle=True,
+        shuffle=bool(args.shuffle),
         num_workers=0,
         collate_fn=collate,
         drop_last=False,
+        generator=(torch.Generator().manual_seed(int(args.seed)) if args.deterministic else None),
     )
 
     model = RTDETRPose(

@@ -85,6 +85,16 @@ To compare against external baselines (including YOLO26) while keeping this repo
 Minimal predictions entry schema:
 - `{"image": "/abs/or/rel/path.jpg", "detections": [{"class_id": 0, "score": 0.9, "bbox": {"cx": 0.5, "cy": 0.5, "w": 0.2, "h": 0.2}}]}`
 
+## COCO dataset prep (official JSON -> YOLO-format)
+
+If you have the official COCO layout (images + `annotations/instances_*.json`), you can generate YOLO-format labels:
+
+- `python3 tools/prepare_coco_yolo.py --coco-root /path/to/coco --split val2017 --out /path/to/coco-yolo`
+
+This creates:
+- `/path/to/coco-yolo/labels/val2017/*.txt` (YOLO normalized `class cx cy w h`)
+- `/path/to/coco-yolo/labels/val2017/classes.json` (category_id <-> class_id mapping)
+
 ### Size-bucket competition (yolo26n/s/m/l/x)
 
 If you export `yolo26n/s/m/l/x` predictions as separate JSON files (e.g. `reports/pred_yolo26n.json`, ...),

@@ -11,7 +11,7 @@ Spec reference: `rt_detr_6dof_geom_mim_spec_en_v0_4.md`
 - [x] Dataset loader returns full per-instance GT per spec (`M`, `D_obj`, `R_gt`, `t_gt`, `K_gt`)
 - [x] Multi-object samples (multiple instances per image) end-to-end support
 - [x] Range/units checks (depth meters, mask binary, bbox normalized) + clear conventions
-- [ ] Deterministic splits + shuffling + reproducibility hooks (seeded)
+- [x] Deterministic splits + shuffling + reproducibility hooks (seeded)
 
 ### Model (RT-DETR)
 - [x] Minimal DETR-style scaffold wired to pose heads (shape-correct)
@@ -28,13 +28,13 @@ Spec reference: `rt_detr_6dof_geom_mim_spec_en_v0_4.md`
 - [x] CenterOffsetHead (Δu, Δv) (simple linear head)
 - [x] GlobalKHead (δfx, δfy, δcx, δcy) (simple linear head)
 - [x] rot6D -> R conversion helper
-- [ ] Translation recovery from bbox/offsets + corrected intrinsics (spec §2)
+- [x] Translation recovery from bbox/offsets + corrected intrinsics (spec §2)
 
 ### Losses / metrics
 - [x] Baseline losses (classification/box/log-depth/rot + basic regularizers)
 - [x] Symmetry-aware metrics (geodesic, ADD-S) + unit tests (metrics-level)
 - [x] Matching-aware training losses wired to real matcher outputs
-- [ ] Full detector metrics aggregation (mAP/Recall) wired to real outputs
+- [x] Full detector metrics aggregation (mAP/AR) wired to prediction JSON (COCOeval)
 
 ### Training / inference / export
 - [x] ONNX export wrapper for the current minimal model (opset 17)
