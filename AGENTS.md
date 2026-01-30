@@ -21,6 +21,13 @@ Use `external-ref` to link a Beads issue to a GitHub Issue number.
 bd update <id> --external-ref gh-123
 ```
 
+## Multi-environment / Team Workflow (2台開発)
+
+- まず `git pull --rebase`（`.beads/*.jsonl` もここで更新される）
+- 着手するissueは `bd update <id> --claim`（同時編集を避ける）
+- 競合したら `bd resolve-conflicts` → `bd sync`
+- Beadsの共有は `bd sync` の `beads-sync` ブランチで行う（全clone共通）
+
 ## Landing the Plane (Session Completion)
 
 **When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
@@ -46,4 +53,3 @@ bd update <id> --external-ref gh-123
 - NEVER stop before pushing - that leaves work stranded locally
 - NEVER say "ready to push when you are" - YOU must push
 - If push fails, resolve and retry until it succeeds
-
