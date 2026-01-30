@@ -95,6 +95,13 @@ This creates:
 - `/path/to/coco-yolo/labels/val2017/*.txt` (YOLO normalized `class cx cy w h`)
 - `/path/to/coco-yolo/labels/val2017/classes.json` (category_id <-> class_id mapping)
 
+### Dataset layout under `data/`
+
+For local development, keep datasets under `data/`:
+- Debug/smoke: `data/coco128` (already included)
+- Full COCO (official): `data/coco` (your download)
+- YOLO-format labels generated from official JSON: `data/coco-yolo` (your output from `tools/prepare_coco_yolo.py`)
+
 ### Size-bucket competition (yolo26n/s/m/l/x)
 
 If you export `yolo26n/s/m/l/x` predictions as separate JSON files (e.g. `reports/pred_yolo26n.json`, ...),
@@ -103,6 +110,12 @@ you can score them together:
 - `python3 tools/eval_suite.py --dataset /path/to/coco-yolo --split val2017 --predictions-glob 'reports/pred_yolo26*.json' --bbox-format cxcywh_norm --output reports/eval_suite.json`
 - Fill in targets: `baselines/yolo26_targets.json`
 - Check pass/fail: `python3 tools/check_map_targets.py --suite reports/eval_suite.json --targets baselines/yolo26_targets.json --key map50_95`
+
+### Debug without `pycocotools`
+
+If you don't have `pycocotools` installed yet, you can still validate/convert predictions on `data/coco128`:
+- `python3 tools/export_predictions.py --adapter dummy --max-images 10 --wrap --output reports/predictions_dummy.json`
+- `python3 tools/eval_coco.py --predictions reports/predictions_dummy.json --dry-run`
 
 ## Deployment notes
 - Keep symmetry/commonsense logic in lightweight postprocess utilities, outside any inference graph export.

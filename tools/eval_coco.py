@@ -18,7 +18,7 @@ def _parse_args(argv):
     parser.add_argument(
         "--split",
         default=None,
-        help="Dataset split under images/ and labels/ (e.g. val2017, train2017). Default: auto.",
+        help="Dataset split under images/ and labels/ (e.g. val2017, train2017). Default: auto (val2017 if present else train2017).",
     )
     parser.add_argument("--predictions", required=True, help="Predictions JSON path (YOLOZU format).")
     parser.add_argument(
@@ -26,6 +26,11 @@ def _parse_args(argv):
         choices=("cxcywh_norm", "cxcywh_abs", "xywh_abs", "xyxy_abs"),
         default="cxcywh_norm",
         help="How to interpret detection bbox fields (default: cxcywh_norm).",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Skip COCOeval and only validate/convert predictions (no pycocotools required).",
     )
     parser.add_argument(
         "--max-images",
@@ -50,8 +55,29 @@ def main(argv=None):
     image_sizes = {img["id"]: (int(img["width"]), int(img["height"])) for img in gt["images"]}
 
     preds = load_predictions_entries(repo_root / args.predictions)
+    # Validate shape early; useful even in dry-run mode.
+    # (Strict mode is optional; keep default permissive for external baselines.)
+    from yolozu.predictions import validate_predictions_entries
+
+    validation = validate_predictions_entries(preds, strict=False)
     dt = predictions_to_coco_detections(preds, coco_index=index, image_sizes=image_sizes, bbox_format=args.bbox_format)
-    result = evaluate_coco_map(gt, dt)
+
+    if args.dry_run:
+        result = {
+            "metrics": {
+                "map50_95": None,
+                "map50": None,
+                "map75": None,
+                "ar100": None,
+            },
+            "stats": [],
+            "dry_run": True,
+            "counts": {"images": len(records), "detections": len(dt)},
+            "warnings": validation.warnings,
+        }
+    else:
+        result = evaluate_coco_map(gt, dt)
+        result["warnings"] = validation.warnings
 
     payload = {
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),

@@ -14,8 +14,12 @@ from yolozu.predictions import load_predictions_entries, validate_predictions_en
 
 def _parse_args(argv):
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset", required=True, help="YOLO-format COCO root (images/ + labels/).")
-    parser.add_argument("--split", default="val2017", help="Dataset split (default: val2017).")
+    parser.add_argument("--dataset", default="data/coco128", help="YOLO-format COCO root (images/ + labels/).")
+    parser.add_argument(
+        "--split",
+        default=None,
+        help="Dataset split under images/ and labels/ (e.g. val2017, train2017). Default: auto (val2017 if present else train2017).",
+    )
     parser.add_argument(
         "--predictions-glob",
         required=True,
@@ -25,6 +29,11 @@ def _parse_args(argv):
         "--bbox-format",
         choices=("cxcywh_norm", "cxcywh_abs", "xywh_abs", "xyxy_abs"),
         default="cxcywh_norm",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Skip COCOeval and only validate/convert predictions (no pycocotools required).",
     )
     parser.add_argument("--max-images", type=int, default=None, help="Optional cap for quick runs.")
     parser.add_argument("--strict", action="store_true", help="Strict prediction schema validation.")
@@ -59,7 +68,20 @@ def main(argv=None):
         dt = predictions_to_coco_detections(
             entries, coco_index=index, image_sizes=image_sizes, bbox_format=args.bbox_format
         )
-        eval_result = evaluate_coco_map(gt, dt)
+        if args.dry_run:
+            eval_result = {
+                "metrics": {
+                    "map50_95": None,
+                    "map50": None,
+                    "map75": None,
+                    "ar100": None,
+                },
+                "stats": [],
+                "dry_run": True,
+                "counts": {"images": len(records), "detections": len(dt)},
+            }
+        else:
+            eval_result = evaluate_coco_map(gt, dt)
         results.append(
             {
                 "name": path.stem,
@@ -86,4 +108,3 @@ def main(argv=None):
 
 if __name__ == "__main__":
     main()
-
