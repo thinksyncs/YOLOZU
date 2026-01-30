@@ -17,8 +17,8 @@ sys.path.insert(0, str(repo_root))
 from yolozu.coco_convert import convert_coco_instances_to_yolo_labels
 
 
-DEFAULT_ANN_ZIP_URL = "http://images.cocodataset.org/annotations/annotations_trainval2017.zip"
-DEFAULT_IMG_BASE = "http://images.cocodataset.org"
+DEFAULT_ANN_ZIP_URL = "https://images.cocodataset.org/annotations/annotations_trainval2017.zip"
+DEFAULT_IMG_BASE = "https://images.cocodataset.org"
 
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
@@ -193,4 +193,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
