@@ -78,12 +78,16 @@ This repo does **not** require (or vendor) any GPL/AGPL inference code.
 To compare against external baselines (including YOLO26) while keeping this repo Apache-2.0-only:
 - Run baseline inference in your own environment/implementation (ONNX Runtime / TensorRT / custom code).
 - Export detections to YOLOZU predictions JSON (see schema below).
+- (Optional) Normalize class ids using COCO `classes.json` mapping.
 - Validate + evaluate mAP in this repo:
   - `python3 tools/validate_predictions.py reports/predictions.json`
   - `python3 tools/eval_coco.py --dataset /path/to/coco-yolo --split val2017 --predictions reports/predictions.json --bbox-format cxcywh_norm`
 
 Minimal predictions entry schema:
 - `{"image": "/abs/or/rel/path.jpg", "detections": [{"class_id": 0, "score": 0.9, "bbox": {"cx": 0.5, "cy": 0.5, "w": 0.2, "h": 0.2}}]}`
+
+Optional class-id normalization (when your exporter produces COCO `category_id`):
+- `python3 tools/normalize_predictions.py --input reports/predictions.json --output reports/predictions_norm.json --classes data/coco-yolo/labels/val2017/classes.json --wrap`
 
 ## COCO dataset prep (official JSON -> YOLO-format)
 
@@ -110,6 +114,7 @@ you can score them together:
 - `python3 tools/eval_suite.py --dataset /path/to/coco-yolo --split val2017 --predictions-glob 'reports/pred_yolo26*.json' --bbox-format cxcywh_norm --output reports/eval_suite.json`
 - Fill in targets: `baselines/yolo26_targets.json`
 - Check pass/fail: `python3 tools/check_map_targets.py --suite reports/eval_suite.json --targets baselines/yolo26_targets.json --key map50_95`
+- Print a table: `python3 tools/print_leaderboard.py --suite reports/eval_suite.json --targets baselines/yolo26_targets.json --key map50_95`
 
 ### Debug without `pycocotools`
 

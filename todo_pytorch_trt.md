@@ -2,6 +2,11 @@
 
 Spec reference: `rt_detr_6dof_geom_mim_spec_en_v0_4.md`
 
+## YOLO26 competition tooling
+
+For the Apache-2.0-only toolchain to compete against YOLO26 (COCO detect, e2e mAP, size buckets),
+track tasks in `todo_yolo26_competition.md`.
+
 ## Implementation status (at a glance)
 
 ### Data / validation
@@ -80,9 +85,9 @@ Notes (2026-01-21)
 - [x] Define experiment config structure (YAML/JSON) and checkpoints layout (scaffolded).
 
 ## Stage 1) Dataset + validation (per spec §4)
-- [ ] Implement dataset loader with required GT fields (scaffolded for YOLO bboxes only):
+- [x] Implement dataset loader with required GT fields (scaffolded for YOLO bboxes only):
   - `I`, `class_gt`, `bbox_gt`, `M`, `D_obj`, `R_gt`, `t_gt`, `K_gt`
-- [ ] Add DataSet type checks (scaffolded for image/labels):
+- [x] Add DataSet type checks (scaffolded for image/labels):
   - shapes, ranges, missing depth mask handling
   - bbox/mask consistency; `D_obj` masked by `M`
   - project CAD points with `(R_gt, t_gt, K_gt)` to validate bbox/mask
@@ -130,7 +135,7 @@ Start next (着手)
   - depth error
   - symmetry-aware geodesic, ADD-S
 - [x] Unit tests for symmetry + metric invariance (metrics-level).
-- [ ] Wire metric aggregation/mAP/Recall with real detector outputs.
+- [x] Wire metric aggregation/mAP/AR with prediction JSON (COCOeval).
 
 ## Stage 4) Training pipeline (per spec §6, §10, §11)
 - [ ] Data augmentation + SIM jitter integration.
@@ -139,7 +144,7 @@ Start next (着手)
 - [ ] Staged training: offsets first, then GlobalKHead.
 
 ## Stage 5) Inference + constraints (per spec §2, §8, §9)
-- [ ] Translation recovery using corrected `K'` + offsets.
+- [x] Translation recovery using corrected `K'` + offsets (utility-level).
 - [ ] Symmetry-aware template verification (Top-K only).
 - [ ] Constraints gating (depth prior, plane, upright) using `constraints.yaml`.
 - [ ] Low-FP gate via `score_tmp_sym < τ`.
