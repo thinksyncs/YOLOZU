@@ -15,9 +15,17 @@ over the current baseline on coco128 (quick check) and COCO val2017.
 
 ## Determinism checklist
 - Fix seeds: Python, NumPy, and framework RNGs.
+- Set `PYTHONHASHSEED` and log it.
 - Set deterministic flags (e.g., disable nondeterministic kernels, disable benchmark mode).
 - Dataloader worker seeds: `base_seed + worker_id`.
 - Log: git commit, dataset hash/path, training command line, framework versions, GPU/CPU.
+- For PyTorch (example):
+  - `torch.use_deterministic_algorithms(True)`
+  - `torch.backends.cudnn.benchmark = False`
+  - `torch.backends.cudnn.deterministic = True`
+  - `torch.backends.cuda.matmul.allow_tf32 = False`
+  - `torch.backends.cudnn.allow_tf32 = False`
+  - Set `CUBLAS_WORKSPACE_CONFIG=:4096:8`
 
 ## Data + preprocessing
 - Use official COCO, convert to YOLO-format labels:
@@ -39,6 +47,10 @@ Heavy aug (first 90% of epochs, then **off** for last 10%):
 
 Rationale: reduce train/test gap and stabilize final epochs by disabling heavy aug.
 
+Suggested schedule (by epoch %):
+- 0% → 90%: heavy aug **on** (mosaic/mixup/copy-paste enabled)
+- 90% → 100%: heavy aug **off**; keep only Always-on aug
+
 ## Multi-scale
 - Random resize **per batch** in `[512, 768]` with step `32`
 - Last 10% epochs: fixed `640`
@@ -53,6 +65,10 @@ Rationale: reduce train/test gap and stabilize final epochs by disabling heavy a
 - Schedule: cosine decay to `0.01 * base_lr`
 - Gradient clip: `1.0`
 - EMA: decay `0.9999`, use EMA weights for eval/export
+
+Implementation notes:
+- Exclude weight decay for bias and norm parameters.
+- If using gradient accumulation, compute warmup and decay in **steps**, not epochs.
 
 ## Training duration
 - COCO full: start at `300` epochs, adjust after first eval sweep
@@ -85,6 +101,8 @@ Use coco128 to validate the pipeline before full COCO:
 - Export predictions JSON.
 - Evaluate via `tools/eval_coco.py` on `data/coco128`.
 - Compare mAP to your previous baseline and record delta.
+
+Target: $\Delta$ mAP50-95 $> 0$ vs the current baseline on coco128 (even a small gain is acceptable).
 
 ## Run record (required)
 Keep a short run note in your training env:
