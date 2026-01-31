@@ -64,6 +64,16 @@ Example (coco128 quick run):
 Note:
 - `--bbox-format cxcywh_norm` expects bbox dict `{cx,cy,w,h}` normalized to `[0,1]` (matching the RTDETR pose adapter bbox head).
 
+## Training recipe (v1)
+
+Reference recipe for external training runs (augment, multiscale, schedule, EMA):
+- `docs/training_recipe_v1.md`
+
+## Hyperparameter sweep harness
+
+Run a configurable sweep and emit CSV/MD tables:
+- `docs/hpo_sweep.md`
+
 ## External baselines (Apache-2.0-friendly)
 
 This repo does **not** require (or vendor) any GPL/AGPL inference code.
