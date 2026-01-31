@@ -22,6 +22,13 @@ def _parse_args(argv):
     p = argparse.ArgumentParser()
     p.add_argument("--dataset", required=True, help="YOLO-format COCO root (images/ + labels/).")
     p.add_argument("--predictions-glob", default="reports/pred_yolo26*.json", help="Glob for yolo26 bucket JSONs.")
+    p.add_argument(
+        "--protocol",
+        choices=("yolo26", "none"),
+        default="yolo26",
+        help="Evaluation protocol preset to apply (default: yolo26). Use 'none' for smoke runs.",
+    )
+    p.add_argument("--split", default=None, help="Override dataset split when --protocol none (e.g., train2017).")
     p.add_argument("--output-suite", default="reports/eval_suite.json", help="Where to write suite JSON.")
     p.add_argument("--archive-root", default="baselines/yolo26_runs", help="Where to archive suite + metadata.")
     p.add_argument(
@@ -137,8 +144,6 @@ def main(argv=None):
     suite_cmd = [
         "python3",
         "tools/eval_suite.py",
-        "--protocol",
-        "yolo26",
         "--dataset",
         args.dataset,
         "--predictions-glob",
@@ -146,6 +151,10 @@ def main(argv=None):
         "--output",
         args.output_suite,
     ]
+    if args.protocol != "none":
+        suite_cmd.extend(["--protocol", args.protocol])
+    elif args.split:
+        suite_cmd.extend(["--split", args.split])
     if args.dry_run:
         suite_cmd.append("--dry-run")
     if args.strict:
@@ -176,8 +185,9 @@ def main(argv=None):
 
     run_payload = {
         "timestamp": _now_utc(),
-        "protocol_id": "yolo26",
+        "protocol_id": None if args.protocol == "none" else args.protocol,
         "dataset": args.dataset,
+        "split": args.split,
         "predictions_glob": args.predictions_glob,
         "bucket_files": {b: str(p) for b, p in bucket_files.items()},
         "output_suite": args.output_suite,
