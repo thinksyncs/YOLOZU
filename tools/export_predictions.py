@@ -20,9 +20,38 @@ def _parse_args(argv):
         help="Which adapter to run (default: dummy).",
     )
     parser.add_argument(
+        "--dataset",
+        default=None,
+        help="YOLO-format dataset root (defaults to data/coco128).",
+    )
+    parser.add_argument(
         "--config",
         default="rtdetr_pose/configs/base.json",
         help="Config path for rtdetr_pose adapter.",
+    )
+    parser.add_argument(
+        "--device",
+        default="cpu",
+        help="Device for rtdetr_pose adapter (default: cpu).",
+    )
+    parser.add_argument(
+        "--image-size",
+        type=int,
+        nargs="+",
+        default=None,
+        help="Image size for rtdetr_pose adapter (one value or two values).",
+    )
+    parser.add_argument(
+        "--score-threshold",
+        type=float,
+        default=0.3,
+        help="Score threshold for rtdetr_pose adapter (default: 0.3).",
+    )
+    parser.add_argument(
+        "--max-detections",
+        type=int,
+        default=50,
+        help="Max detections per image for rtdetr_pose adapter (default: 50).",
     )
     parser.add_argument(
         "--checkpoint",
@@ -56,7 +85,7 @@ def _parse_args(argv):
 def main(argv=None):
     args = _parse_args(sys.argv[1:] if argv is None else argv)
 
-    dataset_root = repo_root / "data" / "coco128"
+    dataset_root = Path(args.dataset) if args.dataset else (repo_root / "data" / "coco128")
     manifest = build_manifest(dataset_root, split=args.split)
     records = manifest["images"]
     if args.max_images is not None:
@@ -65,7 +94,22 @@ def main(argv=None):
     if args.adapter == "dummy":
         adapter = DummyAdapter()
     else:
-        adapter = RTDETRPoseAdapter(config_path=args.config, checkpoint_path=args.checkpoint)
+        image_size = None
+        if args.image_size:
+            if len(args.image_size) == 1:
+                image_size = (args.image_size[0], args.image_size[0])
+            elif len(args.image_size) == 2:
+                image_size = (args.image_size[0], args.image_size[1])
+            else:
+                raise SystemExit("--image-size expects 1 or 2 integers")
+        adapter = RTDETRPoseAdapter(
+            config_path=args.config,
+            checkpoint_path=args.checkpoint,
+            device=args.device,
+            image_size=image_size or (320, 320),
+            score_threshold=args.score_threshold,
+            max_detections=args.max_detections,
+        )
 
     predictions = adapter.predict(records)
 

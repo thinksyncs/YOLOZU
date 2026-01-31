@@ -343,6 +343,7 @@ def main():
     parser.add_argument("--metrics-jsonl", default=None, help="Append per-step loss/metric report JSONL here.")
     parser.add_argument("--metrics-json", default=None, help="Write final run summary JSON here.")
     parser.add_argument("--metrics-csv", default=None, help="Write final run summary CSV (single row) here.")
+    parser.add_argument("--checkpoint-out", default=None, help="Write model state_dict to this path at end.")
     args = parser.parse_args()
 
     torch.manual_seed(args.seed)
@@ -534,6 +535,11 @@ def main():
             write_json(args.metrics_json, summary)
         if args.metrics_csv:
             write_csv_row(args.metrics_csv, summary)
+
+    if args.checkpoint_out:
+        ckpt_path = Path(args.checkpoint_out)
+        ckpt_path.parent.mkdir(parents=True, exist_ok=True)
+        torch.save(model.state_dict(), ckpt_path)
 
 
 if __name__ == "__main__":
