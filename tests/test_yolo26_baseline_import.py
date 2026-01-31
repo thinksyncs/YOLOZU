@@ -119,6 +119,8 @@ class TestYOLO26BaselineImport(unittest.TestCase):
             self.assertEqual(run.get("protocol_id"), "yolo26")
             self.assertEqual(run.get("run_id"), "test-run")
             self.assertEqual(len(run.get("predictions", [])), 5)
+            self.assertIn("bucket_files", run)
+            self.assertIn("yolo26n", run["bucket_files"])
 
 
 if __name__ == "__main__":

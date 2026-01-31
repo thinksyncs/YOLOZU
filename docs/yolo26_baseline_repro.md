@@ -44,6 +44,8 @@ python3 tools/import_yolo26_baseline.py \
   --notes 'Describe exporter, postprocess, and hardware here'
 ```
 
+The importer will fail loudly unless **all 5 buckets** are present in the glob: `yolo26n/s/m/l/x`.
+
 Outputs:
 - `reports/eval_suite.json` (ignored by git)
 - `baselines/yolo26_runs/<run-id>/eval_suite.json` (tracked)

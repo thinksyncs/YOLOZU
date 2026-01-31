@@ -15,6 +15,9 @@ sys.path.insert(0, str(repo_root))
 from yolozu.predictions import load_predictions_entries, validate_predictions_entries
 
 
+_BUCKETS = ("yolo26n", "yolo26s", "yolo26m", "yolo26l", "yolo26x")
+
+
 def _parse_args(argv):
     p = argparse.ArgumentParser()
     p.add_argument("--dataset", required=True, help="YOLO-format COCO root (images/ + labels/).")
@@ -73,6 +76,33 @@ def _load_tool_module(path: Path, name: str):
     return mod
 
 
+def _bucket_from_path(path: Path) -> str | None:
+    name = path.stem.lower()
+    for b in _BUCKETS:
+        if b in name:
+            return b
+    return None
+
+
+def _collect_bucket_files(paths: list[Path], *, glob_str: str) -> dict[str, Path]:
+    by_bucket: dict[str, list[Path]] = {b: [] for b in _BUCKETS}
+    for p in paths:
+        bucket = _bucket_from_path(p)
+        if bucket is None:
+            continue
+        by_bucket[bucket].append(p)
+
+    missing = [b for b, ps in by_bucket.items() if not ps]
+    if missing:
+        raise SystemExit(f"missing YOLO26 buckets: {', '.join(missing)} (glob: {glob_str})")
+    dup = {b: ps for b, ps in by_bucket.items() if len(ps) > 1}
+    if dup:
+        msg = "; ".join(f"{b}: {[p.name for p in ps]}" for b, ps in dup.items())
+        raise SystemExit(f"multiple files matched per bucket (make glob more specific): {msg}")
+
+    return {b: ps[0] for b, ps in by_bucket.items()}
+
+
 def main(argv=None):
     args = _parse_args(sys.argv[1:] if argv is None else argv)
 
@@ -83,15 +113,20 @@ def main(argv=None):
     if not pred_paths:
         raise SystemExit(f"no predictions matched: {args.predictions_glob}")
 
+    bucket_files = _collect_bucket_files(pred_paths, glob_str=args.predictions_glob)
+    pred_paths = [bucket_files[b] for b in _BUCKETS]
+
     commands: list[str] = []
     predictions_meta = []
 
     for path in pred_paths:
+        bucket = _bucket_from_path(path)
         entries = load_predictions_entries(path)
         validation = validate_predictions_entries(entries, strict=args.strict)
         commands.append(f"python3 tools/validate_predictions.py {'--strict ' if args.strict else ''}{path.as_posix()}")
         predictions_meta.append(
             {
+                "bucket": bucket,
                 "path": str(path),
                 "entries": len(entries),
                 "warnings": validation.warnings,
@@ -144,6 +179,7 @@ def main(argv=None):
         "protocol_id": "yolo26",
         "dataset": args.dataset,
         "predictions_glob": args.predictions_glob,
+        "bucket_files": {b: str(p) for b, p in bucket_files.items()},
         "output_suite": args.output_suite,
         "dry_run": bool(args.dry_run),
         "strict": bool(args.strict),
