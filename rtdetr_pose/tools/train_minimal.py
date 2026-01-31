@@ -4,6 +4,7 @@ from pathlib import Path
 
 repo_root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(repo_root))
+sys.path.insert(0, str(repo_root.parent))
 
 try:
     import torch
@@ -16,6 +17,8 @@ from rtdetr_pose.dataset import extract_full_gt_targets, depth_at_bbox_center
 from rtdetr_pose.losses import Losses
 from rtdetr_pose.training import build_query_aligned_targets
 from rtdetr_pose.model import RTDETRPose
+
+from yolozu.metrics_report import append_jsonl, build_report, write_csv_row, write_json
 
 
 class ManifestDataset(Dataset):
@@ -326,6 +329,9 @@ def main():
         action="store_true",
         help="Print loss dict breakdown on step 1",
     )
+    parser.add_argument("--metrics-jsonl", default=None, help="Append per-step loss/metric report JSONL here.")
+    parser.add_argument("--metrics-json", default=None, help="Write final run summary JSON here.")
+    parser.add_argument("--metrics-csv", default=None, help="Write final run summary CSV (single row) here.")
     args = parser.parse_args()
 
     torch.manual_seed(args.seed)
@@ -404,6 +410,8 @@ def main():
     optim = torch.optim.AdamW(model.parameters(), lr=args.lr)
 
     model.train()
+    last_loss_dict = None
+    last_epoch_avg = None
     for epoch in range(int(args.epochs)):
         running = 0.0
         steps = 0
@@ -458,6 +466,7 @@ def main():
 
             loss_dict = losses_fn(out, targets)
             loss = loss_dict["loss"]
+            last_loss_dict = loss_dict
 
             if steps == 0 and args.debug_losses:
                 printable = {
@@ -477,12 +486,42 @@ def main():
             if steps == 1 or (args.log_every and steps % int(args.log_every) == 0):
                 avg = running / steps
                 print(f"epoch={epoch} step={steps} loss={avg:.4f}")
+                if args.metrics_jsonl:
+                    losses_out = {k: float(v.detach().cpu()) for k, v in loss_dict.items() if hasattr(v, "detach")}
+                    report = build_report(
+                        losses=losses_out,
+                        metrics={"loss_avg": float(avg)},
+                        meta={"kind": "train_step", "epoch": int(epoch), "step": int(steps)},
+                    )
+                    append_jsonl(args.metrics_jsonl, report)
 
             if args.max_steps and steps >= int(args.max_steps):
                 break
 
         avg = running / max(1, steps)
+        last_epoch_avg = float(avg)
         print(f"epoch={epoch} done steps={steps} loss={avg:.4f}")
+        if args.metrics_jsonl and last_loss_dict is not None:
+            losses_out = {k: float(v.detach().cpu()) for k, v in last_loss_dict.items() if hasattr(v, "detach")}
+            report = build_report(
+                losses=losses_out,
+                metrics={"loss_avg": float(avg), "steps": int(steps)},
+                meta={"kind": "train_epoch", "epoch": int(epoch)},
+            )
+            append_jsonl(args.metrics_jsonl, report)
+
+    if args.metrics_json or args.metrics_csv:
+        losses_out = {}
+        if last_loss_dict is not None:
+            losses_out = {k: float(v.detach().cpu()) for k, v in last_loss_dict.items() if hasattr(v, "detach")}
+        metrics_out = {"epochs": int(args.epochs), "max_steps": int(args.max_steps)}
+        if last_epoch_avg is not None:
+            metrics_out["loss_avg_last_epoch"] = float(last_epoch_avg)
+        summary = build_report(losses=losses_out, metrics=metrics_out, meta={"kind": "train_run"})
+        if args.metrics_json:
+            write_json(args.metrics_json, summary)
+        if args.metrics_csv:
+            write_csv_row(args.metrics_csv, summary)
 
 
 if __name__ == "__main__":
