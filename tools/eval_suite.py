@@ -9,11 +9,18 @@ sys.path.insert(0, str(repo_root))
 
 from yolozu.coco_eval import build_coco_ground_truth, evaluate_coco_map, predictions_to_coco_detections
 from yolozu.dataset import build_manifest
+from yolozu.eval_protocol import apply_eval_protocol_args, load_eval_protocol
 from yolozu.predictions import load_predictions_entries, validate_predictions_entries
 
 
 def _parse_args(argv):
     parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--protocol",
+        choices=("yolo26",),
+        default=None,
+        help="Apply canonical evaluation protocol presets (pins split/bbox_format).",
+    )
     parser.add_argument("--dataset", default="data/coco128", help="YOLO-format COCO root (images/ + labels/).")
     parser.add_argument(
         "--split",
@@ -41,16 +48,25 @@ def _parse_args(argv):
     return parser.parse_args(argv)
 
 
+def _resolve_args(argv):
+    args = _parse_args(argv)
+    protocol = load_eval_protocol(args.protocol) if args.protocol else None
+    if protocol:
+        args = apply_eval_protocol_args(args, protocol)
+    return args, protocol
+
+
 def _now_utc():
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
 def main(argv=None):
-    args = _parse_args(sys.argv[1:] if argv is None else argv)
+    args, protocol = _resolve_args(sys.argv[1:] if argv is None else argv)
 
     dataset_root = repo_root / args.dataset
     manifest = build_manifest(dataset_root, split=args.split)
     records = manifest["images"]
+    split_effective = manifest["split"]
     if args.max_images is not None:
         records = records[: args.max_images]
 
@@ -92,9 +108,13 @@ def main(argv=None):
         )
 
     payload = {
+        "report_schema_version": 1,
         "timestamp": _now_utc(),
+        "protocol_id": args.protocol,
+        "protocol": protocol,
         "dataset": str(args.dataset),
-        "split": args.split,
+        "split": split_effective,
+        "split_requested": args.split,
         "bbox_format": args.bbox_format,
         "images": len(records),
         "results": results,

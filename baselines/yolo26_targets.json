@@ -1,8 +1,12 @@
 {
+  "protocol_id": "yolo26",
+  "protocol_path": "protocols/yolo26_eval.json",
   "task": "detect",
-  "dataset": "COCO val2017",
+  "dataset": "COCO",
+  "split": "val2017",
   "imgsz": 640,
-  "metric": "e2e mAP@[.5:.95] (bbox)",
+  "metric_key": "map50_95",
+  "metric": "e2e mAP@[.5:.95] (bbox, no NMS)",
   "notes": [
     "Fill in target values from your trusted source (e.g., internal benchmark sheet).",
     "Targets should reflect NMS-free (end-to-end) evaluation for a fair comparison."
@@ -15,4 +19,3 @@
     "yolo26x": null
   }
 }
-

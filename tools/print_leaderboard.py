@@ -6,6 +6,8 @@ from pathlib import Path
 repo_root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(repo_root))
 
+from yolozu.map_targets import load_targets_map
+
 
 def _parse_args(argv):
     p = argparse.ArgumentParser()
@@ -19,15 +21,7 @@ def _parse_args(argv):
 def _load_targets(path: str | None) -> dict[str, float | None]:
     if not path:
         return {}
-    doc = json.loads((repo_root / path).read_text())
-    targets = doc.get("targets") or {}
-    out: dict[str, float | None] = {}
-    for k, v in targets.items():
-        try:
-            out[str(k)] = None if v is None else float(v)
-        except Exception:
-            out[str(k)] = None
-    return out
+    return load_targets_map(repo_root / path)
 
 
 def _match_target(name: str, targets: dict[str, float | None]) -> float | None:

@@ -6,6 +6,8 @@ from pathlib import Path
 repo_root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(repo_root))
 
+from yolozu.map_targets import load_map_targets_doc, load_targets_map
+
 
 def _parse_args(argv):
     parser = argparse.ArgumentParser()
@@ -20,10 +22,14 @@ def main(argv=None):
     args = _parse_args(sys.argv[1:] if argv is None else argv)
 
     suite = json.loads((repo_root / args.suite).read_text())
-    targets_doc = json.loads((repo_root / args.targets).read_text())
-    targets = targets_doc.get("targets", {})
+    targets_doc = load_map_targets_doc(repo_root / args.targets)
+    targets = load_targets_map(repo_root / args.targets)
+    doc_key = targets_doc.get("metric_key")
 
     failures = []
+    if doc_key and args.key != doc_key:
+        failures.append(f"metric key mismatch: --key={args.key} but targets.metric_key={doc_key}")
+
     rows = []
     for result in suite.get("results", []):
         name = result.get("name", "")
@@ -64,4 +70,3 @@ def main(argv=None):
 
 if __name__ == "__main__":
     main()
-

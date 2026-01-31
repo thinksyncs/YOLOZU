@@ -104,8 +104,10 @@ For local development, keep datasets under `data/`:
 If you export `yolo26n/s/m/l/x` predictions as separate JSON files (e.g. `reports/pred_yolo26n.json`, ...),
 you can score them together:
 
-- `python3 tools/eval_suite.py --dataset /path/to/coco-yolo --split val2017 --predictions-glob 'reports/pred_yolo26*.json' --bbox-format cxcywh_norm --output reports/eval_suite.json`
+- Protocol details: `docs/yolo26_eval_protocol.md`
+- `python3 tools/eval_suite.py --protocol yolo26 --dataset /path/to/coco-yolo --predictions-glob 'reports/pred_yolo26*.json' --output reports/eval_suite.json`
 - Fill in targets: `baselines/yolo26_targets.json`
+- Validate targets: `python3 tools/validate_map_targets.py --targets baselines/yolo26_targets.json`
 - Check pass/fail: `python3 tools/check_map_targets.py --suite reports/eval_suite.json --targets baselines/yolo26_targets.json --key map50_95`
 - Print a table: `python3 tools/print_leaderboard.py --suite reports/eval_suite.json --targets baselines/yolo26_targets.json --key map50_95`
 
