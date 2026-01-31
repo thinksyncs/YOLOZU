@@ -15,6 +15,9 @@ Inference / predictions export:
 Scenario runner (metrics pipeline):
 - `python3 tools/run_scenarios.py --adapter rtdetr_pose --dataset data/coco128 --checkpoint /path/to/checkpoint.pt --max-images 50`
 
+Baseline report (real outputs + fps):
+- `./.venv/bin/python tools/run_baseline.py --adapter rtdetr_pose --dataset data/coco128 --max-images 50 --output reports/baseline.json`
+
 Export (ONNX):
 - `python3 -c "from rtdetr_pose.export import export_onnx; ..."` (see `rtdetr_pose/rtdetr_pose/export.py`)
 

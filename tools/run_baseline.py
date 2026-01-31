@@ -1,3 +1,4 @@
+import argparse
 import json
 import sys
 import time
@@ -6,22 +7,279 @@ from pathlib import Path
 repo_root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(repo_root))
 
-from yolozu.benchmark import run_benchmark
+from yolozu.adapter import DummyAdapter, PrecomputedAdapter, RTDETRPoseAdapter
+from yolozu.boxes import iou_xyxy_abs
+from yolozu.dataset import build_manifest
 from yolozu.scenario_suite import build_report
 
 
-def main():
+def _parse_args(argv):
+    p = argparse.ArgumentParser()
+    p.add_argument(
+        "--adapter",
+        choices=("dummy", "precomputed", "rtdetr_pose"),
+        default="dummy",
+        help="Which adapter to run (default: dummy).",
+    )
+    p.add_argument(
+        "--dataset",
+        default=None,
+        help="YOLO-format dataset root (defaults to data/coco128).",
+    )
+    p.add_argument(
+        "--predictions",
+        default=None,
+        help="Predictions JSON path for --adapter precomputed.",
+    )
+    p.add_argument(
+        "--config",
+        default="rtdetr_pose/configs/base.json",
+        help="Config path for rtdetr_pose adapter.",
+    )
+    p.add_argument(
+        "--device",
+        default="cpu",
+        help="Device for rtdetr_pose adapter (default: cpu).",
+    )
+    p.add_argument(
+        "--image-size",
+        type=int,
+        nargs="+",
+        default=None,
+        help="Image size for rtdetr_pose adapter (one value or two values).",
+    )
+    p.add_argument(
+        "--score-threshold",
+        type=float,
+        default=0.3,
+        help="Score threshold for rtdetr_pose adapter (default: 0.3).",
+    )
+    p.add_argument(
+        "--max-detections",
+        type=int,
+        default=50,
+        help="Max detections per image for rtdetr_pose adapter (default: 50).",
+    )
+    p.add_argument(
+        "--checkpoint",
+        default=None,
+        help="Optional checkpoint for rtdetr_pose adapter.",
+    )
+    p.add_argument(
+        "--max-images",
+        type=int,
+        default=None,
+        help="Optional cap for number of images (for quick smoke runs).",
+    )
+    p.add_argument(
+        "--split",
+        default=None,
+        help="Dataset split under images/ and labels/ (e.g. val2017, train2017). Default: auto.",
+    )
+    p.add_argument(
+        "--iou-threshold",
+        type=float,
+        default=0.5,
+        help="IoU threshold for matching detections to labels (default: 0.5).",
+    )
+    p.add_argument(
+        "--output",
+        default="reports/baseline.json",
+        help="Where to write baseline JSON (default: reports/baseline.json).",
+    )
+    p.add_argument(
+        "--predictions-out",
+        default=None,
+        help="Optional path to write predictions JSON from adapter.",
+    )
+    p.add_argument(
+        "--wrap",
+        action="store_true",
+        help="Wrap predictions output as {predictions: [...], meta: {...}} when --predictions-out is set.",
+    )
+    return p.parse_args(argv)
+
+
+def _bbox_xyxy_from_cxcywh_norm(cx, cy, w, h):
+    x1 = float(cx) - float(w) / 2.0
+    y1 = float(cy) - float(h) / 2.0
+    x2 = float(cx) + float(w) / 2.0
+    y2 = float(cy) + float(h) / 2.0
+    return x1, y1, x2, y2
+
+
+def _extract_det_bbox(det):
+    bbox = det.get("bbox") if isinstance(det, dict) else None
+    if not isinstance(bbox, dict):
+        return None
+    try:
+        return _bbox_xyxy_from_cxcywh_norm(bbox["cx"], bbox["cy"], bbox["w"], bbox["h"])
+    except Exception:
+        return None
+
+
+def _extract_label_bbox(label):
+    try:
+        return _bbox_xyxy_from_cxcywh_norm(label["cx"], label["cy"], label["w"], label["h"])
+    except Exception:
+        return None
+
+
+def _index_predictions(predictions):
+    index = {}
+    for entry in predictions or []:
+        if not isinstance(entry, dict):
+            continue
+        image = entry.get("image")
+        if not image:
+            continue
+        dets = entry.get("detections") or []
+        if not isinstance(dets, list):
+            dets = []
+        index[str(image)] = dets
+    # Add basename aliases for convenience.
+    for image, dets in list(index.items()):
+        base = str(image).split("/")[-1]
+        if base and base not in index:
+            index[base] = dets
+    return index
+
+
+def _match_counts(records, predictions, iou_thr):
+    pred_index = _index_predictions(predictions)
+    total_gt = 0
+    total_pred = 0
+    matched = 0
+
+    for record in records:
+        labels = record.get("labels") or []
+        dets = pred_index.get(record.get("image"), [])
+
+        total_gt += len(labels)
+        total_pred += len(dets)
+
+        if not labels or not dets:
+            continue
+
+        pairs = []
+        for det_idx, det in enumerate(dets):
+            det_bbox = _extract_det_bbox(det)
+            if det_bbox is None:
+                continue
+            det_cls = det.get("class_id") if isinstance(det, dict) else None
+            for gt_idx, gt in enumerate(labels):
+                if det_cls is not None and det_cls != gt.get("class_id"):
+                    continue
+                gt_bbox = _extract_label_bbox(gt)
+                if gt_bbox is None:
+                    continue
+                iou = iou_xyxy_abs(det_bbox, gt_bbox)
+                if iou >= iou_thr:
+                    pairs.append((iou, det_idx, gt_idx))
+
+        pairs.sort(reverse=True, key=lambda item: item[0])
+        used_det = set()
+        used_gt = set()
+        for _, det_idx, gt_idx in pairs:
+            if det_idx in used_det or gt_idx in used_gt:
+                continue
+            used_det.add(det_idx)
+            used_gt.add(gt_idx)
+            matched += 1
+
+    return matched, total_gt, total_pred
+
+
+def _summary_metrics(records, predictions, iou_thr):
+    matched, total_gt, total_pred = _match_counts(records, predictions, iou_thr)
+    precision = matched / total_pred if total_pred else 0.0
+    recall = matched / total_gt if total_gt else 0.0
+    map_est = precision
+    rejection_rate = max(0.0, 1.0 - precision)
+    return {
+        "matched": matched,
+        "total_gt": total_gt,
+        "total_pred": total_pred,
+        "precision": precision,
+        "recall": recall,
+        "map": map_est,
+        "rejection_rate": rejection_rate,
+        "detections_per_image": (total_pred / max(1, len(records))),
+    }
+
+
+def main(argv=None):
+    args = _parse_args(sys.argv[1:] if argv is None else argv)
+
+    dataset_root = Path(args.dataset) if args.dataset else (repo_root / "data" / "coco128")
+    manifest = build_manifest(dataset_root, split=args.split)
+    records = manifest["images"]
+    if args.max_images is not None:
+        records = records[: args.max_images]
+
+    if args.adapter == "dummy":
+        adapter = DummyAdapter()
+    elif args.adapter == "precomputed":
+        if not args.predictions:
+            raise SystemExit("--predictions is required for --adapter precomputed")
+        adapter = PrecomputedAdapter(predictions_path=args.predictions)
+    else:
+        image_size = None
+        if args.image_size:
+            if len(args.image_size) == 1:
+                image_size = (args.image_size[0], args.image_size[0])
+            elif len(args.image_size) == 2:
+                image_size = (args.image_size[0], args.image_size[1])
+            else:
+                raise SystemExit("--image-size expects 1 or 2 integers")
+        adapter = RTDETRPoseAdapter(
+            config_path=args.config,
+            checkpoint_path=args.checkpoint,
+            device=args.device,
+            image_size=image_size or (320, 320),
+            score_threshold=args.score_threshold,
+            max_detections=args.max_detections,
+        )
+
+    start = time.perf_counter()
+    predictions = adapter.predict(records)
+    elapsed = time.perf_counter() - start
+    fps = (len(records) / elapsed) if elapsed > 0 else float("inf")
+
+    summary = _summary_metrics(records, predictions, args.iou_threshold)
     report = build_report()
-    fps = run_benchmark(iterations=100, sleep_s=0.0)
+    for entry in report.get("scenarios", []):
+        metrics = entry.get("metrics", {})
+        metrics["fps"] = round(fps, 3)
+        metrics["recall"] = round(summary["recall"], 4)
+        metrics["map"] = round(summary["map"], 4)
+        metrics["rejection_rate"] = round(summary["rejection_rate"], 4)
+        entry["metrics"] = metrics
+
+    output_path = repo_root / args.output
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     baseline = {
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "fps": fps,
+        "fps": round(fps, 3),
         "scenario_report": report,
     }
-    output_dir = repo_root / "reports"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    output_path = output_dir / "baseline.json"
     output_path.write_text(json.dumps(baseline, indent=2, sort_keys=True))
+
+    if args.predictions_out:
+        payload = predictions
+        if args.wrap:
+            payload = {
+                "predictions": predictions,
+                "meta": {
+                    "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                    "adapter": args.adapter,
+                    "images": len(records),
+                },
+            }
+        pred_path = repo_root / args.predictions_out
+        pred_path.parent.mkdir(parents=True, exist_ok=True)
+        pred_path.write_text(json.dumps(payload, indent=2, sort_keys=True))
+
     print(output_path)
 
 
