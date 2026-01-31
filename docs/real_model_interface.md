@@ -18,6 +18,23 @@ Scenario runner (metrics pipeline):
 Export (ONNX):
 - `python3 -c "from rtdetr_pose.export import export_onnx; ..."` (see `rtdetr_pose/rtdetr_pose/export.py`)
 
+## No-torch path (precomputed predictions)
+
+If PyTorch is unavailable locally (e.g., macOS), you can still run the pipeline
+using **precomputed** predictions JSON:
+
+- Generate predictions JSON from your external inference code.
+- Ensure it matches the YOLOZU schema (see README predictions schema).
+- Run scenario runner with the precomputed adapter:
+
+```bash
+python3 tools/run_scenarios.py \
+  --adapter precomputed \
+  --predictions /path/to/predictions.json \
+  --dataset /path/to/coco-yolo \
+  --max-images 50
+```
+
 ## Adapter interface (expected inputs/outputs)
 
 Input records (from `yolozu.dataset.build_manifest`):
