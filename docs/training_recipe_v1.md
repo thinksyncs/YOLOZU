@@ -102,6 +102,14 @@ Use coco128 to validate the pipeline before full COCO:
 - Evaluate via `tools/eval_coco.py` on `data/coco128`.
 - Compare mAP to your previous baseline and record delta.
 
+Minimal external run checklist (coco128):
+- (Optional) normalize class ids:
+  - `python3 tools/normalize_predictions.py --input /path/to/predictions.json --output /path/to/predictions_norm.json --classes /path/to/coco-yolo/labels/val2017/classes.json --wrap`
+- Validate schema:
+  - `python3 tools/validate_predictions.py /path/to/predictions_norm.json`
+- Evaluate mAP:
+  - `python3 tools/eval_coco.py --dataset /path/to/coco-yolo --split val2017 --predictions /path/to/predictions_norm.json --bbox-format cxcywh_norm`
+
 Target: $\Delta$ mAP50-95 $> 0$ vs the current baseline on coco128 (even a small gain is acceptable).
 
 ## Run record (required)
