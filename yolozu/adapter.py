@@ -100,6 +100,13 @@ class RTDETRPoseAdapter(ModelAdapter):
         if self._backend is not None:
             return
 
+        # Ensure the in-repo rtdetr_pose package is importable without installation.
+        import sys
+        from pathlib import Path
+
+        repo_root = Path(__file__).resolve().parents[1]
+        sys.path.insert(0, str(repo_root / "rtdetr_pose"))
+
         try:
             import torch
         except ImportError as exc:  # pragma: no cover
