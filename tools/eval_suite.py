@@ -1,4 +1,5 @@
 import argparse
+import glob
 import json
 import sys
 import time
@@ -73,7 +74,10 @@ def main(argv=None):
     gt, index = build_coco_ground_truth(records)
     image_sizes = {img["id"]: (int(img["width"]), int(img["height"])) for img in gt["images"]}
 
-    pred_paths = sorted((repo_root / ".").glob(args.predictions_glob))
+    if Path(args.predictions_glob).is_absolute():
+        pred_paths = [Path(p) for p in sorted(glob.glob(args.predictions_glob))]
+    else:
+        pred_paths = sorted((repo_root / ".").glob(args.predictions_glob))
     if not pred_paths:
         raise SystemExit(f"no predictions matched: {args.predictions_glob}")
 

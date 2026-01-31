@@ -110,6 +110,7 @@ you can score them together:
 - Validate targets: `python3 tools/validate_map_targets.py --targets baselines/yolo26_targets.json`
 - Check pass/fail: `python3 tools/check_map_targets.py --suite reports/eval_suite.json --targets baselines/yolo26_targets.json --key map50_95`
 - Print a table: `python3 tools/print_leaderboard.py --suite reports/eval_suite.json --targets baselines/yolo26_targets.json --key map50_95`
+- Archive the run (commands + hardware + suite output): `python3 tools/import_yolo26_baseline.py --dataset /path/to/coco-yolo --predictions-glob 'reports/pred_yolo26*.json'`
 
 ### Debug without `pycocotools`
 

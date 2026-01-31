@@ -1,0 +1,5 @@
+# Prediction JSONs can be huge; keep run metadata + eval outputs tracked.
+predictions/
+pred_*.json
+predictions*.json
+
