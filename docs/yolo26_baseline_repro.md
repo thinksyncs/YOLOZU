@@ -46,6 +46,20 @@ python3 tools/import_yolo26_baseline.py \
 
 The importer will fail loudly unless **all 5 buckets** are present in the glob: `yolo26n/s/m/l/x`.
 
+### Smoke run on coco128 (optional)
+
+If you only have `data/coco128`, you can do a **non-protocol smoke run**:
+
+```bash
+python3 tools/import_yolo26_baseline.py \
+  --dataset data/coco128 \
+  --predictions-glob 'reports/pred_yolo26*.json' \
+  --protocol none \
+  --split train2017 \
+  --dry-run \
+  --notes 'smoke on coco128 (no pycocotools)'
+```
+
 Outputs:
 - `reports/eval_suite.json` (ignored by git)
 - `baselines/yolo26_runs/<run-id>/eval_suite.json` (tracked)
