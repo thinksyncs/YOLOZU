@@ -22,6 +22,17 @@ python3 tools/validate_predictions.py reports/pred_yolo26n.json
 
 Important: export **pre-NMS** detections if you want true e2e/no-NMS evaluation.
 
+### Exporter skeletons (this repo)
+
+This repo includes Apache-2.0-friendly exporter skeletons you can adapt in your inference environment:
+
+```bash
+python3 tools/export_predictions_onnxrt.py --dataset /path/to/coco-yolo --onnx /path/to/model.onnx --wrap --output reports/pred_yolo26n.json
+python3 tools/export_predictions_trt.py --dataset /path/to/coco-yolo --engine /path/to/model.plan --wrap --output reports/pred_yolo26n.json
+```
+
+Both tools are **NMS-free** (they never run NMS), and they capture run metadata when `--wrap` is enabled.
+
 ## 2) Evaluate + archive in this repo
 
 Run a pinned evaluation and archive the suite JSON plus run metadata (commands + machine info):
@@ -46,4 +57,3 @@ python3 tools/check_map_targets.py \
   --targets baselines/yolo26_targets.json \
   --key map50_95
 ```
-

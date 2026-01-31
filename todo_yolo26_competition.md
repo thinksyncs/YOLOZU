@@ -26,7 +26,7 @@ Constraints:
 - [x] Define/validate predictions schema: `tools/validate_predictions.py`.
 - [x] Normalize class ids (category_id -> class_id) via `labels/<split>/classes.json`: `tools/normalize_predictions.py`.
 - [ ] Support bbox formats commonly produced by inference engines (already supported in eval via `--bbox-format`).
-- [ ] Add a “reference exporter” skeleton for ONNX Runtime / TensorRT (Apache-2.0 code only).
+- [x] Add a “reference exporter” skeleton for ONNX Runtime / TensorRT (Apache-2.0 code only).
 
 ### Evaluation
 - [x] COCO mAP evaluation (e2e = no NMS in evaluator): `tools/eval_coco.py`.
