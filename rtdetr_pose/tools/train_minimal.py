@@ -281,6 +281,11 @@ def main():
     parser.add_argument("--num-queries", type=int, default=10)
     parser.add_argument("--hidden-dim", type=int, default=64)
     parser.add_argument("--num-classes", type=int, default=80)
+    parser.add_argument(
+        "--use-uncertainty",
+        action="store_true",
+        help="Enable uncertainty heads (log_sigma_z/log_sigma_rot) for task alignment.",
+    )
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument(
         "--shuffle",
@@ -328,6 +333,12 @@ def main():
         "--debug-losses",
         action="store_true",
         help="Print loss dict breakdown on step 1",
+    )
+    parser.add_argument(
+        "--task-aligner",
+        choices=("none", "uncertainty"),
+        default="none",
+        help="Multi-task loss alignment strategy (default: none).",
     )
     parser.add_argument("--metrics-jsonl", default=None, help="Append per-step loss/metric report JSONL here.")
     parser.add_argument("--metrics-json", default=None, help="Write final run summary JSON here.")
@@ -401,8 +412,9 @@ def main():
         num_queries=args.num_queries,
         num_decoder_layers=2,
         nhead=4,
+        use_uncertainty=bool(args.use_uncertainty),
     )
-    losses_fn = Losses()
+    losses_fn = Losses(task_aligner=args.task_aligner)
 
     device = torch.device("cpu")
     model.to(device)

@@ -92,8 +92,9 @@ def upright_loss(rot6d_pred, roll_range, pitch_range):
 
 
 class Losses(nn.Module):
-    def __init__(self, weights=None):
+    def __init__(self, weights=None, *, task_aligner: str = "none"):
         super().__init__()
+        self.task_aligner = str(task_aligner)
         self.weights = {
             "cls": 1.0,
             "box": 1.0,
@@ -150,6 +151,7 @@ class Losses(nn.Module):
             total = total + self.weights["box"] * loss_box
 
         log_z_pred = outputs.get("log_z")
+        log_sigma_z = outputs.get("log_sigma_z")
         z_gt = _first_present(targets, ("z_gt", "depth", "z"))
         if log_z_pred is not None and z_gt is not None:
             if isinstance(z_gt, torch.Tensor) and z_gt.ndim == log_z_pred.ndim + 1 and z_gt.shape[-1] == 1:
@@ -175,9 +177,24 @@ class Losses(nn.Module):
                     mask_sel = valid if mask_for_z is None else mask_for_z
                     loss_z = log_depth_loss(log_z_pred[mask_sel], z_gt[mask_sel])
             losses["loss_z"] = loss_z
-            total = total + self.weights["z"] * loss_z
+            if self.task_aligner == "uncertainty" and log_sigma_z is not None:
+                sigma = log_sigma_z
+                if isinstance(sigma, torch.Tensor) and sigma.shape[-1] == 1:
+                    sigma = sigma.squeeze(-1)
+                if mask_for_z is not None:
+                    sigma = sigma[mask_for_z]
+                if sigma.numel() == 0:
+                    sigma_mean = loss_z.detach() * 0.0
+                else:
+                    sigma_mean = sigma.mean()
+                loss_z_aligned = torch.exp(-sigma_mean) * loss_z + sigma_mean
+                losses["loss_z_aligned"] = loss_z_aligned
+                total = total + self.weights["z"] * loss_z_aligned
+            else:
+                total = total + self.weights["z"] * loss_z
 
         rot_pred = outputs.get("rot6d")
+        log_sigma_rot = outputs.get("log_sigma_rot")
         r_gt = _first_present(targets, ("R_gt", "r_gt"))
         sym_rots = targets.get("sym_rots")
         if rot_pred is not None and r_gt is not None:
@@ -191,8 +208,6 @@ class Losses(nn.Module):
             if mask_for_rot is not None:
                 if not bool(mask_for_rot.any()):
                     loss_rot = rot_pred.sum() * 0.0
-                    losses["loss_rot"] = loss_rot
-                    total = total + self.weights["rot"] * loss_rot
                     rot_pred_in = None
                     r_gt_in = None
                 else:
@@ -205,7 +220,21 @@ class Losses(nn.Module):
                 else:
                     loss_rot = rotation_loss(rot_pred_in, r_gt_in)
             losses["loss_rot"] = loss_rot
-            total = total + self.weights["rot"] * loss_rot
+            if self.task_aligner == "uncertainty" and log_sigma_rot is not None:
+                sigma = log_sigma_rot
+                if isinstance(sigma, torch.Tensor) and sigma.shape[-1] == 1:
+                    sigma = sigma.squeeze(-1)
+                if mask_for_rot is not None:
+                    sigma = sigma[mask_for_rot]
+                if sigma.numel() == 0:
+                    sigma_mean = loss_rot.detach() * 0.0
+                else:
+                    sigma_mean = sigma.mean()
+                loss_rot_aligned = torch.exp(-sigma_mean) * loss_rot + sigma_mean
+                losses["loss_rot_aligned"] = loss_rot_aligned
+                total = total + self.weights["rot"] * loss_rot_aligned
+            else:
+                total = total + self.weights["rot"] * loss_rot
 
         offsets_pred = outputs.get("offsets")
         offsets_gt = _first_present(targets, ("offsets", "offsets_gt"))
