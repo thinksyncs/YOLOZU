@@ -1,0 +1,17 @@
+{
+  "base_cmd": "python3 tools/mock_train.py --run-dir {run_dir} --lr {lr} --wd {wd} --imgsz {imgsz}",
+  "param_grid": {
+    "lr": [0.005, 0.01, 0.02],
+    "wd": [0.0005, 0.001],
+    "imgsz": [640]
+  },
+  "run_dir": "runs/hpo/{run_id}",
+  "metrics": {
+    "path": "{run_dir}/metrics.json",
+    "keys": ["metrics.map50_95", "losses.total"]
+  },
+  "result_jsonl": "reports/hpo_sweep.jsonl",
+  "result_csv": "reports/hpo_sweep.csv",
+  "result_md": "reports/hpo_sweep.md",
+  "shell": true
+}
