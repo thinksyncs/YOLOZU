@@ -49,6 +49,8 @@ class TestTrainMinimalAugment(unittest.TestCase):
             jitter_dfy=0.02,
             jitter_dcx=4.0,
             jitter_dcy=4.0,
+            sim_jitter=False,
+            sim_jitter_profile=None,
         )
 
         sample = ds[0]

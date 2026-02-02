@@ -21,6 +21,7 @@ from rtdetr_pose.training import build_query_aligned_targets
 from rtdetr_pose.model import RTDETRPose
 
 from yolozu.metrics_report import append_jsonl, build_report, write_csv_row, write_json
+from yolozu.jitter import default_jitter_profile, sample_intrinsics_jitter
 from yolozu.run_record import build_run_record
 
 
@@ -96,6 +97,17 @@ def build_parser() -> argparse.ArgumentParser:
         "--intrinsics-jitter",
         action="store_true",
         help="Enable intrinsics jitter augmentation on K_gt.",
+    )
+    parser.add_argument(
+        "--sim-jitter",
+        action="store_true",
+        help="Enable SIM-style intrinsics jitter using yolozu.jitter profiles.",
+    )
+    parser.add_argument(
+        "--sim-jitter-profile",
+        type=str,
+        default=None,
+        help="Optional JSON file to override the default SIM jitter profile.",
     )
     parser.add_argument(
         "--jitter-dfx",
@@ -320,6 +332,8 @@ class ManifestDataset(Dataset):
         jitter_dfy,
         jitter_dcx,
         jitter_dcy,
+        sim_jitter,
+        sim_jitter_profile,
     ):
         self.records = records
         self.num_queries = int(num_queries)
@@ -340,6 +354,8 @@ class ManifestDataset(Dataset):
         self.jitter_dfy = float(jitter_dfy)
         self.jitter_dcx = float(jitter_dcx)
         self.jitter_dcy = float(jitter_dcy)
+        self.sim_jitter = bool(sim_jitter)
+        self.sim_jitter_profile = sim_jitter_profile
 
     def _load_rgb_image_tensor(self, image_path: Path, target_size: int) -> "torch.Tensor | None":
         if not image_path.exists():
@@ -491,7 +507,14 @@ class ManifestDataset(Dataset):
             if K_gt is not None and flip:
                 K_gt = K_gt.clone()
                 K_gt[0, 2] = float(target_size - 1.0) - K_gt[0, 2]
-            if K_gt is not None and self.intrinsics_jitter:
+            if K_gt is not None and self.sim_jitter and self.sim_jitter_profile:
+                jitter = sample_intrinsics_jitter(self.sim_jitter_profile, seed=self.seed + int(idx))
+                K_gt = K_gt.clone()
+                K_gt[0, 0] = K_gt[0, 0] * (1.0 + float(jitter.get("dfx", 0.0)))
+                K_gt[1, 1] = K_gt[1, 1] * (1.0 + float(jitter.get("dfy", 0.0)))
+                K_gt[0, 2] = K_gt[0, 2] + float(jitter.get("dcx", 0.0))
+                K_gt[1, 2] = K_gt[1, 2] + float(jitter.get("dcy", 0.0))
+            elif K_gt is not None and self.intrinsics_jitter:
                 K_gt = K_gt.clone()
                 dfx = float((torch.rand((), generator=gen) * 2.0 - 1.0) * self.jitter_dfx)
                 dfy = float((torch.rand((), generator=gen) * 2.0 - 1.0) * self.jitter_dfy)
@@ -754,6 +777,18 @@ def collate(batch):
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(sys.argv[1:] if argv is None else argv)
 
+    sim_profile = None
+    if args.sim_jitter:
+        sim_profile = default_jitter_profile()
+        if args.sim_jitter_profile:
+            path = Path(args.sim_jitter_profile)
+            if not path.exists():
+                raise SystemExit(f"sim jitter profile not found: {path}")
+            try:
+                sim_profile = json.loads(path.read_text(encoding="utf-8"))
+            except Exception as exc:
+                raise SystemExit(f"failed to load sim jitter profile: {path}") from exc
+
     run_record = build_run_record(
         repo_root=repo_root.parent,
         argv=(sys.argv[1:] if argv is None else argv),
@@ -821,6 +856,8 @@ def main(argv: list[str] | None = None) -> int:
         jitter_dfy=args.jitter_dfy,
         jitter_dcx=args.jitter_dcx,
         jitter_dcy=args.jitter_dcy,
+        sim_jitter=args.sim_jitter,
+        sim_jitter_profile=sim_profile,
     )
     loader = DataLoader(
         ds,

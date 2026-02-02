@@ -19,8 +19,8 @@ def _load_train_minimal_module():
 
 
 @unittest.skipIf(torch is None, "torch not installed")
-class TestTrainMinimalIntrinsicsJitter(unittest.TestCase):
-    def test_intrinsics_jitter_changes_k_within_bounds(self):
+class TestTrainMinimalSimJitter(unittest.TestCase):
+    def test_sim_jitter_profile_applied(self):
         mod = _load_train_minimal_module()
 
         record = {
@@ -28,13 +28,18 @@ class TestTrainMinimalIntrinsicsJitter(unittest.TestCase):
             "labels": [{"class_id": 0, "bbox": {"cx": 0.5, "cy": 0.5, "w": 0.2, "h": 0.2}}],
             "K_gt": [[10.0, 0.0, 5.0], [0.0, 12.0, 6.0], [0.0, 0.0, 1.0]],
         }
+        profile = {
+            "intrinsics": {"dfx": 0.1, "dfy": 0.2, "dcx": 1.5, "dcy": 2.5},
+            "extrinsics": {},
+            "rolling_shutter": {"enabled": False, "line_delay": 0.0},
+        }
 
         ds = mod.ManifestDataset(
             [record],
             num_queries=5,
             num_classes=80,
             image_size=10,
-            seed=123,
+            seed=321,
             use_matcher=True,
             synthetic_pose=False,
             z_from_dobj=False,
@@ -44,13 +49,13 @@ class TestTrainMinimalIntrinsicsJitter(unittest.TestCase):
             scale_min=1.0,
             scale_max=1.0,
             hflip_prob=0.0,
-            intrinsics_jitter=True,
-            jitter_dfx=0.1,
-            jitter_dfy=0.1,
-            jitter_dcx=2.0,
-            jitter_dcy=2.0,
-            sim_jitter=False,
-            sim_jitter_profile=None,
+            intrinsics_jitter=False,
+            jitter_dfx=0.0,
+            jitter_dfy=0.0,
+            jitter_dcx=0.0,
+            jitter_dcy=0.0,
+            sim_jitter=True,
+            sim_jitter_profile=profile,
         )
 
         sample = ds[0]
@@ -60,12 +65,12 @@ class TestTrainMinimalIntrinsicsJitter(unittest.TestCase):
 
         self.assertGreaterEqual(fx, 10.0 * (1.0 - 0.1))
         self.assertLessEqual(fx, 10.0 * (1.0 + 0.1))
-        self.assertGreaterEqual(fy, 12.0 * (1.0 - 0.1))
-        self.assertLessEqual(fy, 12.0 * (1.0 + 0.1))
-        self.assertGreaterEqual(cx, 5.0 - 2.0)
-        self.assertLessEqual(cx, 5.0 + 2.0)
-        self.assertGreaterEqual(cy, 6.0 - 2.0)
-        self.assertLessEqual(cy, 6.0 + 2.0)
+        self.assertGreaterEqual(fy, 12.0 * (1.0 - 0.2))
+        self.assertLessEqual(fy, 12.0 * (1.0 + 0.2))
+        self.assertGreaterEqual(cx, 5.0 - 1.5)
+        self.assertLessEqual(cx, 5.0 + 1.5)
+        self.assertGreaterEqual(cy, 6.0 - 2.5)
+        self.assertLessEqual(cy, 6.0 + 2.5)
 
 
 if __name__ == "__main__":
