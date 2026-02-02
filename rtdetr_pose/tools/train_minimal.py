@@ -113,6 +113,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="Probability of random horizontal flip augmentation.",
     )
     parser.add_argument(
+        "--hflip-prob-start",
+        type=float,
+        default=None,
+        help="Optional starting hflip probability for linear schedule.",
+    )
+    parser.add_argument(
+        "--hflip-prob-end",
+        type=float,
+        default=None,
+        help="Optional ending hflip probability for linear schedule.",
+    )
+    parser.add_argument(
         "--intrinsics-jitter",
         action="store_true",
         help="Enable intrinsics jitter augmentation on K_gt.",
@@ -280,6 +292,13 @@ def compute_warmup_lr(base_lr: float, step: int, warmup_steps: int, warmup_init:
         return float(base_lr)
     alpha = float(step) / float(warmup_steps)
     return float(warmup_init + (base_lr - warmup_init) * alpha)
+
+
+def compute_linear_schedule(start: float, end: float, step: int, total_steps: int) -> float:
+    if total_steps <= 1:
+        return float(end)
+    alpha = min(max(float(step) / float(total_steps - 1), 0.0), 1.0)
+    return float(start + (end - start) * alpha)
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -1097,6 +1116,13 @@ def main(argv: list[str] | None = None) -> int:
     last_loss_dict = None
     last_epoch_avg = None
     for epoch in range(int(start_epoch), int(args.epochs)):
+        if args.hflip_prob_start is not None and args.hflip_prob_end is not None:
+            ds.hflip_prob = compute_linear_schedule(
+                float(args.hflip_prob_start),
+                float(args.hflip_prob_end),
+                int(epoch),
+                int(args.epochs),
+            )
         running = 0.0
         steps = 0
         for images, targets in loader:
