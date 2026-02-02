@@ -71,7 +71,8 @@ Current priorities (auto)
 - [x] Minimal trainer entrypoint (1 epoch over coco128; logs loss scalars)
 - [x] Trainer prints GT availability summary for debugging
 - [x] Matching (Hungarian) + staged cost terms (start with cls/box, then add z/rot)
-- [ ] Checkpointing + config-driven runs (resume/repro)
+- [x] Checkpointing + config-driven runs (resume/repro)
+- [x] Run record metadata in metrics/checkpoints (git/versions/argv)
 - [x] Loss/metric integration test: one training step + backward + no NaNs
 
 Notes (2026-01-21)
