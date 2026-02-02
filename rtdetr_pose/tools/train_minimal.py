@@ -489,21 +489,50 @@ class ManifestDataset(Dataset):
                 else:
                     gt_offsets.append([0.0, 0.0])
                     gt_offsets_mask.append(False)
+
+            num_inst = len(gt_labels)
+            if num_inst == 0:
+                gt_labels_t = torch.empty((0,), dtype=torch.long)
+                gt_bbox_t = torch.empty((0, 4), dtype=torch.float32)
+                gt_z_t = torch.empty((0, 1), dtype=torch.float32)
+                gt_z_mask_t = torch.empty((0,), dtype=torch.bool)
+                gt_R_t = torch.empty((0, 3, 3), dtype=torch.float32)
+                gt_R_mask_t = torch.empty((0,), dtype=torch.bool)
+                gt_t_t = torch.empty((0, 3), dtype=torch.float32)
+                gt_t_mask_t = torch.empty((0,), dtype=torch.bool)
+                gt_offsets_t = torch.empty((0, 2), dtype=torch.float32)
+                gt_offsets_mask_t = torch.empty((0,), dtype=torch.bool)
+                gt_M_mask_t = torch.empty((0,), dtype=torch.bool)
+                gt_D_obj_mask_t = torch.empty((0,), dtype=torch.bool)
+            else:
+                gt_labels_t = torch.tensor(gt_labels, dtype=torch.long)
+                gt_bbox_t = torch.tensor(gt_bbox, dtype=torch.float32)
+                gt_z_t = torch.tensor(gt_z, dtype=torch.float32).unsqueeze(-1)
+                gt_z_mask_t = torch.tensor(gt_z_mask, dtype=torch.bool)
+                gt_R_t = torch.stack(gt_R, dim=0)
+                gt_R_mask_t = torch.tensor(gt_R_mask, dtype=torch.bool)
+                gt_t_t = torch.tensor(gt_t, dtype=torch.float32)
+                gt_t_mask_t = torch.tensor(gt_t_mask, dtype=torch.bool)
+                gt_offsets_t = torch.tensor(gt_offsets, dtype=torch.float32)
+                gt_offsets_mask_t = torch.tensor(gt_offsets_mask, dtype=torch.bool)
+                gt_M_mask_t = torch.tensor(gt_M_mask, dtype=torch.bool)
+                gt_D_obj_mask_t = torch.tensor(gt_D_obj_mask, dtype=torch.bool)
+
             return {
                 "image": image,
                 "targets": {
-                    "gt_labels": torch.tensor(gt_labels, dtype=torch.long),
-                    "gt_bbox": torch.tensor(gt_bbox, dtype=torch.float32),
-                    "gt_z": torch.tensor(gt_z, dtype=torch.float32).unsqueeze(-1),
-                    "gt_z_mask": torch.tensor(gt_z_mask, dtype=torch.bool),
-                    "gt_R": torch.stack(gt_R, dim=0),
-                    "gt_R_mask": torch.tensor(gt_R_mask, dtype=torch.bool),
-                    "gt_t": torch.tensor(gt_t, dtype=torch.float32),
-                    "gt_t_mask": torch.tensor(gt_t_mask, dtype=torch.bool),
-                    "gt_offsets": torch.tensor(gt_offsets, dtype=torch.float32),
-                    "gt_offsets_mask": torch.tensor(gt_offsets_mask, dtype=torch.bool),
-                    "gt_M_mask": torch.tensor(gt_M_mask, dtype=torch.bool),
-                    "gt_D_obj_mask": torch.tensor(gt_D_obj_mask, dtype=torch.bool),
+                    "gt_labels": gt_labels_t,
+                    "gt_bbox": gt_bbox_t,
+                    "gt_z": gt_z_t,
+                    "gt_z_mask": gt_z_mask_t,
+                    "gt_R": gt_R_t,
+                    "gt_R_mask": gt_R_mask_t,
+                    "gt_t": gt_t_t,
+                    "gt_t_mask": gt_t_mask_t,
+                    "gt_offsets": gt_offsets_t,
+                    "gt_offsets_mask": gt_offsets_mask_t,
+                    "gt_M_mask": gt_M_mask_t,
+                    "gt_D_obj_mask": gt_D_obj_mask_t,
                     **({"K_gt": K_gt} if K_gt is not None else {}),
                     "image_hw": image_hw,
                 },
@@ -524,10 +553,81 @@ class ManifestDataset(Dataset):
         return {"image": image, "targets": {"labels": labels, "bbox": bbox}}
 
 
+def _pad_field(targets, key, max_len, *, pad_value=0.0, dtype=None):
+    if max_len == 0:
+        return None
+    tail = None
+    for tgt in targets:
+        value = tgt.get(key)
+        if isinstance(value, torch.Tensor):
+            if dtype is None:
+                dtype = value.dtype
+            tail = value.shape[1:]
+            break
+    if dtype is None:
+        return None
+    if tail is None:
+        tail = ()
+
+    rows = []
+    for tgt in targets:
+        value = tgt.get(key)
+        if not isinstance(value, torch.Tensor):
+            value = torch.empty((0, *tail), dtype=dtype)
+        pad_len = max_len - value.shape[0]
+        if pad_len < 0:
+            raise ValueError(f"{key} has more instances than max_len")
+        if pad_len == 0:
+            padded = value
+        else:
+            pad = torch.full((pad_len, *tail), pad_value, dtype=dtype)
+            padded = torch.cat([value, pad], dim=0)
+        rows.append(padded)
+    return torch.stack(rows, dim=0)
+
+
 def collate(batch):
     images = torch.stack([item["image"] for item in batch], dim=0)
     targets = [item["targets"] for item in batch]
-    return images, targets
+    if not targets or "gt_labels" not in targets[0]:
+        return images, targets
+
+    counts = torch.tensor(
+        [int(tgt.get("gt_labels").shape[0]) if isinstance(tgt.get("gt_labels"), torch.Tensor) else 0 for tgt in targets],
+        dtype=torch.long,
+    )
+    max_len = int(counts.max().item()) if counts.numel() else 0
+    if max_len == 0:
+        padded = {
+            "gt_count": counts,
+            "gt_mask": torch.zeros((len(targets), 0), dtype=torch.bool),
+        }
+        return images, {"per_sample": targets, "padded": padded}
+
+    padded = {
+        "gt_count": counts,
+        "gt_mask": (torch.arange(max_len).unsqueeze(0) < counts.unsqueeze(1)),
+        "gt_labels": _pad_field(targets, "gt_labels", max_len, pad_value=-1, dtype=torch.long),
+        "gt_bbox": _pad_field(targets, "gt_bbox", max_len, pad_value=0.0, dtype=torch.float32),
+    }
+
+    optional_fields = [
+        ("gt_z", 0.0, torch.float32),
+        ("gt_z_mask", False, torch.bool),
+        ("gt_R", 0.0, torch.float32),
+        ("gt_R_mask", False, torch.bool),
+        ("gt_t", 0.0, torch.float32),
+        ("gt_t_mask", False, torch.bool),
+        ("gt_offsets", 0.0, torch.float32),
+        ("gt_offsets_mask", False, torch.bool),
+        ("gt_M_mask", False, torch.bool),
+        ("gt_D_obj_mask", False, torch.bool),
+    ]
+    for key, pad_value, dtype in optional_fields:
+        if any(key in tgt for tgt in targets):
+            padded[key] = _pad_field(targets, key, max_len, pad_value=pad_value, dtype=dtype)
+
+    return images, {"per_sample": targets, "padded": padded}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -645,10 +745,11 @@ def main(argv: list[str] | None = None) -> int:
             out = model(images)
 
             if args.use_matcher:
+                per_sample = targets.get("per_sample") if isinstance(targets, dict) else targets
                 aligned = build_query_aligned_targets(
                     out["logits"],
                     out["bbox"],
-                    targets,
+                    per_sample,
                     num_queries=args.num_queries,
                     cost_cls=args.cost_cls,
                     cost_bbox=args.cost_bbox,
