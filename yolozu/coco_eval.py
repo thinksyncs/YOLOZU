@@ -140,7 +140,18 @@ def evaluate_coco_map(gt: dict[str, Any], dt: list[dict[str, Any]]) -> dict[str,
     coco_gt.dataset = gt
     coco_gt.createIndex()
 
-    coco_dt = coco_gt.loadRes(dt) if dt else coco_gt.loadRes([])
+    if not dt:
+        return {
+            "metrics": {
+                "map50_95": 0.0,
+                "map50": 0.0,
+                "map75": 0.0,
+                "ar100": 0.0,
+            },
+            "stats": [],
+        }
+
+    coco_dt = coco_gt.loadRes(dt)
     coco_eval = COCOeval(coco_gt, coco_dt, iouType="bbox")
     coco_eval.evaluate()
     coco_eval.accumulate()

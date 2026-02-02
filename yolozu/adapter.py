@@ -139,7 +139,16 @@ class RTDETRPoseAdapter(ModelAdapter):
             state = torch.load(self.checkpoint_path, map_location="cpu")
             if isinstance(state, dict) and "state_dict" in state:
                 state = state["state_dict"]
-            model.load_state_dict(state, strict=False)
+            if isinstance(state, dict):
+                model_state = model.state_dict()
+                filtered = {
+                    k: v
+                    for k, v in state.items()
+                    if k in model_state and hasattr(v, "shape") and v.shape == model_state[k].shape
+                }
+                model.load_state_dict(filtered, strict=False)
+            else:
+                model.load_state_dict(state, strict=False)
 
         model.to(self.device)
 

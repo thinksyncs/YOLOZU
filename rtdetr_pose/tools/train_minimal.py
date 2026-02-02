@@ -1026,13 +1026,49 @@ def main(argv: list[str] | None = None) -> int:
         generator=(torch.Generator().manual_seed(int(args.seed)) if args.deterministic else None),
     )
 
+    model_cfg = None
+    if args.config:
+        try:
+            from rtdetr_pose.config import load_config
+        except Exception:
+            load_config = None
+        if load_config is not None:
+            try:
+                model_cfg = load_config(args.config).model
+            except Exception:
+                model_cfg = None
+
+    model_num_queries = model_cfg.num_queries if model_cfg is not None else args.num_queries
+    args.num_queries = int(model_num_queries)
+
     model = RTDETRPose(
-        num_classes=args.num_classes,
-        hidden_dim=args.hidden_dim,
-        num_queries=args.num_queries,
-        num_decoder_layers=2,
-        nhead=4,
-        use_uncertainty=bool(args.use_uncertainty),
+        num_classes=(model_cfg.num_classes if model_cfg is not None else args.num_classes),
+        hidden_dim=(model_cfg.hidden_dim if model_cfg is not None else args.hidden_dim),
+        num_queries=model_num_queries,
+        num_decoder_layers=(model_cfg.num_decoder_layers if model_cfg is not None else 2),
+        nhead=(model_cfg.nhead if model_cfg is not None else 4),
+        use_uncertainty=(model_cfg.use_uncertainty if model_cfg is not None else bool(args.use_uncertainty)),
+        stem_channels=(getattr(model_cfg, "stem_channels", None) if model_cfg is not None else None) or 32,
+        backbone_channels=(
+            tuple(getattr(model_cfg, "backbone_channels", ()))
+            if model_cfg is not None and getattr(model_cfg, "backbone_channels", None) is not None
+            else (64, 128, 256)
+        ),
+        stage_blocks=(
+            tuple(getattr(model_cfg, "stage_blocks", ()))
+            if model_cfg is not None and getattr(model_cfg, "stage_blocks", None) is not None
+            else (1, 2, 2)
+        ),
+        num_encoder_layers=(
+            getattr(model_cfg, "num_encoder_layers", None) if model_cfg is not None else None
+        )
+        or 1,
+        encoder_dim_feedforward=(
+            getattr(model_cfg, "encoder_dim_feedforward", None) if model_cfg is not None else None
+        ),
+        decoder_dim_feedforward=(
+            getattr(model_cfg, "decoder_dim_feedforward", None) if model_cfg is not None else None
+        ),
     )
     losses_fn = Losses(task_aligner=args.task_aligner)
 
@@ -1074,7 +1110,7 @@ def main(argv: list[str] | None = None) -> int:
                     out["logits"],
                     out["bbox"],
                     per_sample,
-                    num_queries=args.num_queries,
+                    num_queries=model_num_queries,
                     cost_cls=args.cost_cls,
                     cost_bbox=args.cost_bbox,
                     log_z_pred=out.get("log_z"),
