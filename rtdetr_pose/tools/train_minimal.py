@@ -33,6 +33,7 @@ class ManifestDataset(Dataset):
         synthetic_pose,
         z_from_dobj,
         load_aux,
+        real_images,
     ):
         self.records = records
         self.num_queries = int(num_queries)
@@ -43,6 +44,36 @@ class ManifestDataset(Dataset):
         self.synthetic_pose = bool(synthetic_pose)
         self.z_from_dobj = bool(z_from_dobj)
         self.load_aux = bool(load_aux)
+        self.real_images = bool(real_images)
+
+    def _load_rgb_image_tensor(self, image_path: Path) -> "torch.Tensor | None":
+        if not image_path.exists():
+            return None
+        try:
+            from PIL import Image
+        except Exception as exc:
+            raise SystemExit(
+                "Pillow is required for --real-images. Install it (e.g. pip install Pillow) or omit --real-images."
+            ) from exc
+        try:
+            import numpy as np
+        except Exception as exc:
+            raise SystemExit(
+                "NumPy is required for --real-images. Install it (e.g. pip install numpy) or omit --real-images."
+            ) from exc
+
+        try:
+            img = Image.open(image_path).convert("RGB")
+        except Exception:
+            return None
+
+        if self.image_size > 0:
+            img = img.resize((self.image_size, self.image_size), resample=Image.BILINEAR)
+        arr = np.asarray(img, dtype=np.float32)
+        if arr.ndim != 3 or arr.shape[2] != 3:
+            return None
+        arr = arr / 255.0
+        return torch.from_numpy(arr).permute(2, 0, 1).contiguous()
 
     def _load_2d(self, value):
         if value is None:
@@ -82,11 +113,19 @@ class ManifestDataset(Dataset):
     def __getitem__(self, idx):
         record = self.records[idx]
 
-        # We intentionally do NOT decode JPEGs here (keeps deps minimal).
-        # This is a training-loop scaffold: it exercises model/loss/optimizer plumbing.
+        # This is a training-loop scaffold.
+        # By default we use synthetic images (keeps deps minimal), but an optional
+        # mode can load real JPEGs from record['image_path'].
+        image = None
+        if self.real_images:
+            image_path_raw = record.get("image_path")
+            if image_path_raw:
+                image = self._load_rgb_image_tensor(Path(str(image_path_raw)))
+
         gen = torch.Generator()
         gen.manual_seed(self.seed + int(idx))
-        image = torch.rand(3, self.image_size, self.image_size, generator=gen)
+        if image is None:
+            image = torch.rand(3, self.image_size, self.image_size, generator=gen)
 
         instances = record.get("labels") or []
         if self.use_matcher:
@@ -278,6 +317,11 @@ def main():
     parser.add_argument("--max-steps", type=int, default=30, help="Cap steps per epoch")
     parser.add_argument("--log-every", type=int, default=10, help="Print every N steps")
     parser.add_argument("--image-size", type=int, default=64)
+    parser.add_argument(
+        "--real-images",
+        action="store_true",
+        help="Load real images via record['image_path'] (requires Pillow). Default uses synthetic images.",
+    )
     parser.add_argument("--num-queries", type=int, default=10)
     parser.add_argument("--hidden-dim", type=int, default=64)
     parser.add_argument("--num-classes", type=int, default=80)
@@ -396,6 +440,7 @@ def main():
         synthetic_pose=args.synthetic_pose,
         z_from_dobj=args.z_from_dobj,
         load_aux=args.load_aux,
+        real_images=args.real_images,
     )
     loader = DataLoader(
         ds,

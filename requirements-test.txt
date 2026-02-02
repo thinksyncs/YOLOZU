@@ -7,5 +7,8 @@
 
 torch>=2.1
 
+# Optional (used by tools/rtdetr_pose train_minimal when --real-images enabled)
+Pillow>=10.0
+
 # Optional: lets you run `pytest` even though tests use `unittest`.
 pytest>=7.0
