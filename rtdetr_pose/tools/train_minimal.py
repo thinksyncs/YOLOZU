@@ -68,6 +68,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--epochs", type=int, default=1)
     parser.add_argument("--batch-size", type=int, default=2)
     parser.add_argument("--lr", type=float, default=1e-4)
+    parser.add_argument(
+        "--lr-warmup-steps",
+        type=int,
+        default=0,
+        help="Linear warmup steps for learning rate (0 disables warmup).",
+    )
+    parser.add_argument(
+        "--lr-warmup-init",
+        type=float,
+        default=0.0,
+        help="Initial learning rate value at step 0 for warmup.",
+    )
     parser.add_argument("--max-steps", type=int, default=30, help="Cap steps per epoch")
     parser.add_argument("--log-every", type=int, default=10, help="Print every N steps")
     parser.add_argument("--image-size", type=int, default=64)
@@ -251,6 +263,17 @@ def _rotation_matrix_from_rpy(roll_rad: float, pitch_rad: float, yaw_rad: float)
     ry = torch.tensor([[cp, 0.0, sp], [0.0, 1.0, 0.0], [-sp, 0.0, cp]], dtype=torch.float32)
     rz = torch.tensor([[cy, -sy, 0.0], [sy, cy, 0.0], [0.0, 0.0, 1.0]], dtype=torch.float32)
     return rz @ ry @ rx
+
+
+def compute_warmup_lr(base_lr: float, step: int, warmup_steps: int, warmup_init: float) -> float:
+    if warmup_steps <= 0:
+        return float(base_lr)
+    if step <= 0:
+        return float(warmup_init)
+    if step >= warmup_steps:
+        return float(base_lr)
+    alpha = float(step) / float(warmup_steps)
+    return float(warmup_init + (base_lr - warmup_init) * alpha)
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -1099,6 +1122,16 @@ def main(argv: list[str] | None = None) -> int:
             optim.zero_grad(set_to_none=True)
             loss.backward()
             optim.step()
+
+            if args.lr_warmup_steps and int(args.lr_warmup_steps) > 0:
+                lr_now = compute_warmup_lr(
+                    float(args.lr),
+                    int(global_step),
+                    int(args.lr_warmup_steps),
+                    float(args.lr_warmup_init),
+                )
+                for group in optim.param_groups:
+                    group["lr"] = lr_now
 
             running += float(loss.detach().cpu())
             steps += 1
