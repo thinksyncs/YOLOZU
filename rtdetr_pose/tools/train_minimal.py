@@ -69,6 +69,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--batch-size", type=int, default=2)
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument(
+        "--device",
+        type=str,
+        default="cuda" if torch.cuda.is_available() else "cpu",
+        help="Torch device for training (e.g., cpu, cuda, cuda:0).",
+    )
+    parser.add_argument(
         "--clip-grad-norm",
         type=float,
         default=0.0,
@@ -973,6 +979,21 @@ def main(argv: list[str] | None = None) -> int:
         if not dataset_root.exists():
             dataset_root = repo_root.parent / "data" / "coco128"
 
+    model_cfg = None
+    if args.config:
+        try:
+            from rtdetr_pose.config import load_config
+        except Exception:
+            load_config = None
+        if load_config is not None:
+            try:
+                model_cfg = load_config(args.config).model
+            except Exception:
+                model_cfg = None
+    if model_cfg is not None:
+        args.num_queries = int(model_cfg.num_queries)
+        args.num_classes = int(model_cfg.num_classes)
+
     manifest = build_manifest(dataset_root, split=args.split)
     records = manifest.get("images") or []
     if not records:
@@ -1045,18 +1066,6 @@ def main(argv: list[str] | None = None) -> int:
         generator=(torch.Generator().manual_seed(int(args.seed)) if args.deterministic else None),
     )
 
-    model_cfg = None
-    if args.config:
-        try:
-            from rtdetr_pose.config import load_config
-        except Exception:
-            load_config = None
-        if load_config is not None:
-            try:
-                model_cfg = load_config(args.config).model
-            except Exception:
-                model_cfg = None
-
     model_num_queries = model_cfg.num_queries if model_cfg is not None else args.num_queries
     args.num_queries = int(model_num_queries)
 
@@ -1091,7 +1100,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     losses_fn = Losses(task_aligner=args.task_aligner)
 
-    device = torch.device("cpu")
+    device_str = str(args.device).strip() if args.device is not None else "cpu"
+    if device_str.startswith("cuda") and not torch.cuda.is_available():
+        print("warning: cuda requested but not available; falling back to cpu")
+        device_str = "cpu"
+    device = torch.device(device_str)
     model.to(device)
 
     optim = torch.optim.AdamW(model.parameters(), lr=args.lr)

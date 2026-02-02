@@ -148,3 +148,40 @@ metrics: coco128 mAP50-95=... (baseline=..., delta=...)
 predictions_json: /path/to/predictions.json
 hardware: <gpu> | framework: <version>
 ```
+
+## Coco128 GPU run (2026-02-02)
+
+This run uses the minimal RTDETRPose config with Hungarian matching enabled.
+
+Command lines:
+
+```bash
+python3 rtdetr_pose/tools/train_minimal.py \
+  --config reports/rtdetr_pose_minimal_config.json \
+  --dataset-root data/coco128 --split train2017 --real-images \
+  --image-size 320 --batch-size 8 --epochs 20 --max-steps 0 \
+  --lr 1e-4 --device cuda --use-matcher \
+  --checkpoint-out reports/rtdetr_pose_ckpt_coco128_gpu_matcher.pt
+
+python3 tools/export_predictions.py \
+  --adapter rtdetr_pose --dataset data/coco128 --split train2017 \
+  --device cuda --config reports/rtdetr_pose_minimal_config.json \
+  --image-size 320 --score-threshold 0.001 --max-detections 10 \
+  --checkpoint reports/rtdetr_pose_ckpt_coco128_gpu_matcher.pt \
+  --output reports/pred_coco128_rtdetr_pose_gpu_matcher.json
+
+python3 tools/eval_coco.py \
+  --dataset data/coco128 --split train2017 \
+  --predictions reports/pred_coco128_rtdetr_pose_gpu_matcher.json \
+  --bbox-format cxcywh_norm \
+  --output reports/coco_eval_rtdetr_pose_gpu_matcher.json
+```
+
+Results:
+
+- Baseline mAP50-95 (reports/coco_eval_rtdetr_pose.json): 1.829e-06
+- New mAP50-95 (reports/coco_eval_rtdetr_pose_gpu_matcher.json): 0.000622
+- $\Delta$ mAP50-95: +0.000620
+- Predictions JSON: reports/pred_coco128_rtdetr_pose_gpu_matcher.json
+- Checkpoint: reports/rtdetr_pose_ckpt_coco128_gpu_matcher.pt
+- Hardware: NVIDIA RTX A4500
