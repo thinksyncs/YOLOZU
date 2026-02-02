@@ -70,6 +70,29 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--log-every", type=int, default=10, help="Print every N steps")
     parser.add_argument("--image-size", type=int, default=64)
     parser.add_argument(
+        "--multiscale",
+        action="store_true",
+        help="Enable random multiscale resize around --image-size.",
+    )
+    parser.add_argument(
+        "--scale-min",
+        type=float,
+        default=0.8,
+        help="Lower bound for multiscale resize (relative to --image-size).",
+    )
+    parser.add_argument(
+        "--scale-max",
+        type=float,
+        default=1.2,
+        help="Upper bound for multiscale resize (relative to --image-size).",
+    )
+    parser.add_argument(
+        "--hflip-prob",
+        type=float,
+        default=0.0,
+        help="Probability of random horizontal flip augmentation.",
+    )
+    parser.add_argument(
         "--real-images",
         action="store_true",
         help="Load real images via record['image_path'] (requires Pillow). Default uses synthetic images.",
@@ -259,6 +282,10 @@ class ManifestDataset(Dataset):
         z_from_dobj,
         load_aux,
         real_images,
+        multiscale,
+        scale_min,
+        scale_max,
+        hflip_prob,
     ):
         self.records = records
         self.num_queries = int(num_queries)
@@ -270,8 +297,12 @@ class ManifestDataset(Dataset):
         self.z_from_dobj = bool(z_from_dobj)
         self.load_aux = bool(load_aux)
         self.real_images = bool(real_images)
+        self.multiscale = bool(multiscale)
+        self.scale_min = float(scale_min)
+        self.scale_max = float(scale_max)
+        self.hflip_prob = float(hflip_prob)
 
-    def _load_rgb_image_tensor(self, image_path: Path) -> "torch.Tensor | None":
+    def _load_rgb_image_tensor(self, image_path: Path, target_size: int) -> "torch.Tensor | None":
         if not image_path.exists():
             return None
         try:
@@ -292,8 +323,8 @@ class ManifestDataset(Dataset):
         except Exception:
             return None
 
-        if self.image_size > 0:
-            img = img.resize((self.image_size, self.image_size), resample=Image.BILINEAR)
+        if target_size > 0:
+            img = img.resize((target_size, target_size), resample=Image.BILINEAR)
         arr = np.asarray(img, dtype=np.float32)
         if arr.ndim != 3 or arr.shape[2] != 3:
             return None
@@ -338,6 +369,23 @@ class ManifestDataset(Dataset):
     def __getitem__(self, idx):
         record = self.records[idx]
 
+        gen = torch.Generator()
+        gen.manual_seed(self.seed + int(idx))
+
+        base_size = max(1, int(self.image_size))
+        scale = 1.0
+        if self.multiscale:
+            lo = min(self.scale_min, self.scale_max)
+            hi = max(self.scale_min, self.scale_max)
+            if hi > 0 and lo > 0:
+                scale = float(torch.rand((), generator=gen) * (hi - lo) + lo)
+        target_size = max(1, int(round(base_size * scale)))
+        scale_factor = float(target_size) / float(base_size)
+
+        flip = False
+        if self.hflip_prob > 0:
+            flip = bool(torch.rand((), generator=gen) < float(self.hflip_prob))
+
         # This is a training-loop scaffold.
         # By default we use synthetic images (keeps deps minimal), but an optional
         # mode can load real JPEGs from record['image_path'].
@@ -345,12 +393,20 @@ class ManifestDataset(Dataset):
         if self.real_images:
             image_path_raw = record.get("image_path")
             if image_path_raw:
-                image = self._load_rgb_image_tensor(Path(str(image_path_raw)))
-
-        gen = torch.Generator()
-        gen.manual_seed(self.seed + int(idx))
+                image = self._load_rgb_image_tensor(Path(str(image_path_raw)), target_size)
         if image is None:
-            image = torch.rand(3, self.image_size, self.image_size, generator=gen)
+            image = torch.rand(3, target_size, target_size, generator=gen)
+
+        if image.shape[-1] != target_size or image.shape[-2] != target_size:
+            image = torch.nn.functional.interpolate(
+                image.unsqueeze(0),
+                size=(target_size, target_size),
+                mode="bilinear",
+                align_corners=False,
+            ).squeeze(0)
+
+        if flip:
+            image = torch.flip(image, dims=(2,))
 
         instances = record.get("labels") or []
         if self.use_matcher:
@@ -369,7 +425,7 @@ class ManifestDataset(Dataset):
             gt_D_obj_mask = []
 
             # We don't decode images, so default HW is the generated tensor size.
-            image_hw = torch.tensor([float(self.image_size), float(self.image_size)], dtype=torch.float32)
+            image_hw = torch.tensor([float(target_size), float(target_size)], dtype=torch.float32)
 
             # Prefer real intrinsics when present; else synthesize if requested.
             K_gt = None
@@ -387,20 +443,29 @@ class ManifestDataset(Dataset):
                     dtype=torch.float32,
                 )
 
+            if K_gt is not None and scale_factor != 1.0:
+                K_gt = K_gt.clone()
+                K_gt[0, 0] *= scale_factor
+                K_gt[1, 1] *= scale_factor
+                K_gt[0, 2] *= scale_factor
+                K_gt[1, 2] *= scale_factor
+            if K_gt is not None and flip:
+                K_gt = K_gt.clone()
+                K_gt[0, 2] = float(target_size - 1.0) - K_gt[0, 2]
+
             for inst_i, inst in enumerate(instances):
                 class_id = int(inst.get("class_id", -1))
                 if not (0 <= class_id < self.num_classes):
                     continue
                 bb = inst.get("bbox") or {}
+                cx = float(bb.get("cx", 0.0))
+                cy = float(bb.get("cy", 0.0))
+                w = float(bb.get("w", 0.0))
+                h = float(bb.get("h", 0.0))
+                if flip:
+                    cx = 1.0 - cx
                 gt_labels.append(class_id)
-                gt_bbox.append(
-                    [
-                        float(bb.get("cx", 0.0)),
-                        float(bb.get("cy", 0.0)),
-                        float(bb.get("w", 0.0)),
-                        float(bb.get("h", 0.0)),
-                    ]
-                )
+                gt_bbox.append([cx, cy, w, h])
 
                 # Real (t/R/offsets) if present, otherwise optional synthetic fallback.
                 t_i = full.get("t_gt", [None])[inst_i] if full.get("t_gt") is not None else None
@@ -481,7 +546,11 @@ class ManifestDataset(Dataset):
 
                 # offsets
                 if off_i is not None:
-                    gt_offsets.append([float(off_i[0]), float(off_i[1])])
+                    du = float(off_i[0]) * scale_factor
+                    dv = float(off_i[1]) * scale_factor
+                    if flip:
+                        du = -du
+                    gt_offsets.append([du, dv])
                     gt_offsets_mask.append(True)
                 elif self.synthetic_pose:
                     gt_offsets.append([0.0, 0.0])
@@ -545,7 +614,10 @@ class ManifestDataset(Dataset):
             if 0 <= class_id < self.num_classes:
                 labels[qi] = class_id
             bb = inst.get("bbox") or {}
-            bbox[qi, 0] = float(bb.get("cx", 0.0))
+            cx = float(bb.get("cx", 0.0))
+            if flip:
+                cx = 1.0 - cx
+            bbox[qi, 0] = cx
             bbox[qi, 1] = float(bb.get("cy", 0.0))
             bbox[qi, 2] = float(bb.get("w", 0.0))
             bbox[qi, 3] = float(bb.get("h", 0.0))
@@ -691,6 +763,10 @@ def main(argv: list[str] | None = None) -> int:
         z_from_dobj=args.z_from_dobj,
         load_aux=args.load_aux,
         real_images=args.real_images,
+        multiscale=args.multiscale,
+        scale_min=args.scale_min,
+        scale_max=args.scale_max,
+        hflip_prob=args.hflip_prob,
     )
     loader = DataLoader(
         ds,
