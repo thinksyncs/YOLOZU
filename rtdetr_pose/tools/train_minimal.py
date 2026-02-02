@@ -1,5 +1,6 @@
 import argparse
 import json
+import math
 import sys
 from pathlib import Path
 from typing import Any
@@ -21,7 +22,7 @@ from rtdetr_pose.training import build_query_aligned_targets
 from rtdetr_pose.model import RTDETRPose
 
 from yolozu.metrics_report import append_jsonl, build_report, write_csv_row, write_json
-from yolozu.jitter import default_jitter_profile, sample_intrinsics_jitter
+from yolozu.jitter import default_jitter_profile, sample_intrinsics_jitter, sample_extrinsics_jitter
 from yolozu.run_record import build_run_record
 
 
@@ -109,6 +110,22 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Optional JSON file to override the default SIM jitter profile.",
     )
+    parser.add_argument(
+        "--sim-jitter-extrinsics",
+        action="store_true",
+        help="Apply SIM profile extrinsics jitter to gt_t/gt_R.",
+    )
+    parser.add_argument(
+        "--extrinsics-jitter",
+        action="store_true",
+        help="Enable manual extrinsics jitter on gt_t/gt_R.",
+    )
+    parser.add_argument("--jitter-dx", type=float, default=0.01, help="Translation jitter range in meters.")
+    parser.add_argument("--jitter-dy", type=float, default=0.01, help="Translation jitter range in meters.")
+    parser.add_argument("--jitter-dz", type=float, default=0.02, help="Translation jitter range in meters.")
+    parser.add_argument("--jitter-droll", type=float, default=1.0, help="Roll jitter range in degrees.")
+    parser.add_argument("--jitter-dpitch", type=float, default=1.0, help="Pitch jitter range in degrees.")
+    parser.add_argument("--jitter-dyaw", type=float, default=2.0, help="Yaw jitter range in degrees.")
     parser.add_argument(
         "--jitter-dfx",
         type=float,
@@ -223,6 +240,19 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _rotation_matrix_from_rpy(roll_rad: float, pitch_rad: float, yaw_rad: float) -> "torch.Tensor":
+    cr = math.cos(roll_rad)
+    sr = math.sin(roll_rad)
+    cp = math.cos(pitch_rad)
+    sp = math.sin(pitch_rad)
+    cy = math.cos(yaw_rad)
+    sy = math.sin(yaw_rad)
+    rx = torch.tensor([[1.0, 0.0, 0.0], [0.0, cr, -sr], [0.0, sr, cr]], dtype=torch.float32)
+    ry = torch.tensor([[cp, 0.0, sp], [0.0, 1.0, 0.0], [-sp, 0.0, cp]], dtype=torch.float32)
+    rz = torch.tensor([[cy, -sy, 0.0], [sy, cy, 0.0], [0.0, 0.0, 1.0]], dtype=torch.float32)
+    return rz @ ry @ rx
+
+
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = build_parser()
 
@@ -334,6 +364,14 @@ class ManifestDataset(Dataset):
         jitter_dcy,
         sim_jitter,
         sim_jitter_profile,
+        sim_jitter_extrinsics,
+        extrinsics_jitter,
+        jitter_dx,
+        jitter_dy,
+        jitter_dz,
+        jitter_droll,
+        jitter_dpitch,
+        jitter_dyaw,
     ):
         self.records = records
         self.num_queries = int(num_queries)
@@ -356,6 +394,14 @@ class ManifestDataset(Dataset):
         self.jitter_dcy = float(jitter_dcy)
         self.sim_jitter = bool(sim_jitter)
         self.sim_jitter_profile = sim_jitter_profile
+        self.sim_jitter_extrinsics = bool(sim_jitter_extrinsics)
+        self.extrinsics_jitter = bool(extrinsics_jitter)
+        self.jitter_dx = float(jitter_dx)
+        self.jitter_dy = float(jitter_dy)
+        self.jitter_dz = float(jitter_dz)
+        self.jitter_droll = float(jitter_droll)
+        self.jitter_dpitch = float(jitter_dpitch)
+        self.jitter_dyaw = float(jitter_dyaw)
 
     def _load_rgb_image_tensor(self, image_path: Path, target_size: int) -> "torch.Tensor | None":
         if not image_path.exists():
@@ -635,6 +681,34 @@ class ManifestDataset(Dataset):
                     gt_offsets.append([0.0, 0.0])
                     gt_offsets_mask.append(False)
 
+            if (self.sim_jitter and self.sim_jitter_profile and self.sim_jitter_extrinsics) or self.extrinsics_jitter:
+                if self.sim_jitter and self.sim_jitter_profile and self.sim_jitter_extrinsics:
+                    jitter = sample_extrinsics_jitter(self.sim_jitter_profile, seed=self.seed + int(idx))
+                    dx = float(jitter.get("dx", 0.0))
+                    dy = float(jitter.get("dy", 0.0))
+                    dz = float(jitter.get("dz", 0.0))
+                    droll = float(jitter.get("droll", 0.0))
+                    dpitch = float(jitter.get("dpitch", 0.0))
+                    dyaw = float(jitter.get("dyaw", 0.0))
+                else:
+                    dx = float((torch.rand((), generator=gen) * 2.0 - 1.0) * self.jitter_dx)
+                    dy = float((torch.rand((), generator=gen) * 2.0 - 1.0) * self.jitter_dy)
+                    dz = float((torch.rand((), generator=gen) * 2.0 - 1.0) * self.jitter_dz)
+                    droll = float((torch.rand((), generator=gen) * 2.0 - 1.0) * self.jitter_droll)
+                    dpitch = float((torch.rand((), generator=gen) * 2.0 - 1.0) * self.jitter_dpitch)
+                    dyaw = float((torch.rand((), generator=gen) * 2.0 - 1.0) * self.jitter_dyaw)
+
+                for j in range(len(gt_t)):
+                    if gt_t_mask[j]:
+                        gt_t[j] = [gt_t[j][0] + dx, gt_t[j][1] + dy, gt_t[j][2] + dz]
+                if any(gt_R_mask):
+                    r_delta = _rotation_matrix_from_rpy(
+                        math.radians(droll),
+                        math.radians(dpitch),
+                        math.radians(dyaw),
+                    )
+                    gt_R = [r_delta @ r if mask else r for r, mask in zip(gt_R, gt_R_mask)]
+
             num_inst = len(gt_labels)
             m_tensor = None
             d_tensor = None
@@ -904,6 +978,14 @@ def main(argv: list[str] | None = None) -> int:
         jitter_dcy=args.jitter_dcy,
         sim_jitter=args.sim_jitter,
         sim_jitter_profile=sim_profile,
+        sim_jitter_extrinsics=args.sim_jitter_extrinsics,
+        extrinsics_jitter=args.extrinsics_jitter,
+        jitter_dx=args.jitter_dx,
+        jitter_dy=args.jitter_dy,
+        jitter_dz=args.jitter_dz,
+        jitter_droll=args.jitter_droll,
+        jitter_dpitch=args.jitter_dpitch,
+        jitter_dyaw=args.jitter_dyaw,
     )
     loader = DataLoader(
         ds,

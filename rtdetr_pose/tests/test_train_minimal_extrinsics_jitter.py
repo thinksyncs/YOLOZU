@@ -1,4 +1,5 @@
 import importlib.util
+import math
 import unittest
 from pathlib import Path
 
@@ -19,18 +20,19 @@ def _load_train_minimal_module():
 
 
 @unittest.skipIf(torch is None, "torch not installed")
-class TestTrainMinimalSimJitter(unittest.TestCase):
-    def test_sim_jitter_profile_applied(self):
+class TestTrainMinimalExtrinsicsJitter(unittest.TestCase):
+    def test_sim_extrinsics_jitter_applies(self):
         mod = _load_train_minimal_module()
 
         record = {
             "image_path": "",
             "labels": [{"class_id": 0, "bbox": {"cx": 0.5, "cy": 0.5, "w": 0.2, "h": 0.2}}],
-            "K_gt": [[10.0, 0.0, 5.0], [0.0, 12.0, 6.0], [0.0, 0.0, 1.0]],
+            "t_gt": [[0.0, 0.0, 1.0]],
+            "R_gt": [[[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]],
         }
         profile = {
-            "intrinsics": {"dfx": 0.1, "dfy": 0.2, "dcx": 1.5, "dcy": 2.5},
-            "extrinsics": {},
+            "intrinsics": {"dfx": 0.0, "dfy": 0.0, "dcx": 0.0, "dcy": 0.0},
+            "extrinsics": {"dx": 0.05, "dy": 0.01, "dz": 0.02, "droll": 1.0, "dpitch": 2.0, "dyaw": 3.0},
             "rolling_shutter": {"enabled": False, "line_delay": 0.0},
         }
 
@@ -39,7 +41,7 @@ class TestTrainMinimalSimJitter(unittest.TestCase):
             num_queries=5,
             num_classes=80,
             image_size=10,
-            seed=321,
+            seed=42,
             use_matcher=True,
             synthetic_pose=False,
             z_from_dobj=False,
@@ -56,29 +58,35 @@ class TestTrainMinimalSimJitter(unittest.TestCase):
             jitter_dcy=0.0,
             sim_jitter=True,
             sim_jitter_profile=profile,
-            sim_jitter_extrinsics=False,
+            sim_jitter_extrinsics=True,
             extrinsics_jitter=False,
-            jitter_dx=0.01,
-            jitter_dy=0.01,
-            jitter_dz=0.02,
-            jitter_droll=1.0,
-            jitter_dpitch=1.0,
-            jitter_dyaw=2.0,
+            jitter_dx=0.0,
+            jitter_dy=0.0,
+            jitter_dz=0.0,
+            jitter_droll=0.0,
+            jitter_dpitch=0.0,
+            jitter_dyaw=0.0,
         )
 
         sample = ds[0]
-        k = sample["targets"]["K_gt"]
-        fx, fy = float(k[0, 0]), float(k[1, 1])
-        cx, cy = float(k[0, 2]), float(k[1, 2])
+        t = sample["targets"]["gt_t"][0]
+        r = sample["targets"]["gt_R"][0]
 
-        self.assertGreaterEqual(fx, 10.0 * (1.0 - 0.1))
-        self.assertLessEqual(fx, 10.0 * (1.0 + 0.1))
-        self.assertGreaterEqual(fy, 12.0 * (1.0 - 0.2))
-        self.assertLessEqual(fy, 12.0 * (1.0 + 0.2))
-        self.assertGreaterEqual(cx, 5.0 - 1.5)
-        self.assertLessEqual(cx, 5.0 + 1.5)
-        self.assertGreaterEqual(cy, 6.0 - 2.5)
-        self.assertLessEqual(cy, 6.0 + 2.5)
+        jitter = mod.sample_extrinsics_jitter(profile, seed=42)
+        expected_t = torch.tensor([
+            0.0 + jitter["dx"],
+            0.0 + jitter["dy"],
+            1.0 + jitter["dz"],
+        ])
+        r_delta = mod._rotation_matrix_from_rpy(
+            math.radians(jitter["droll"]),
+            math.radians(jitter["dpitch"]),
+            math.radians(jitter["dyaw"]),
+        )
+        expected_r = r_delta @ torch.eye(3)
+
+        self.assertTrue(torch.allclose(t, expected_t, atol=1e-6))
+        self.assertTrue(torch.allclose(r, expected_r, atol=1e-6))
 
 
 if __name__ == "__main__":

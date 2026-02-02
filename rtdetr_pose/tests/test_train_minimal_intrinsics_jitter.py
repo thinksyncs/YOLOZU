@@ -51,6 +51,14 @@ class TestTrainMinimalIntrinsicsJitter(unittest.TestCase):
             jitter_dcy=2.0,
             sim_jitter=False,
             sim_jitter_profile=None,
+            sim_jitter_extrinsics=False,
+            extrinsics_jitter=False,
+            jitter_dx=0.01,
+            jitter_dy=0.01,
+            jitter_dz=0.02,
+            jitter_droll=1.0,
+            jitter_dpitch=1.0,
+            jitter_dyaw=2.0,
         )
 
         sample = ds[0]
