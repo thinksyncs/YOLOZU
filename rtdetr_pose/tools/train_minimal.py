@@ -331,7 +331,7 @@ def load_checkpoint_into(model: "torch.nn.Module", optim: "torch.optim.Optimizer
     path = Path(path)
     if not path.exists():
         raise SystemExit(f"checkpoint not found: {path}")
-    obj = torch.load(path, map_location="cpu")
+    obj = torch.load(path, map_location="cpu", weights_only=False)
     meta: dict[str, Any] = {"path": str(path)}
 
     if isinstance(obj, dict) and "model_state_dict" in obj:

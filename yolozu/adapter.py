@@ -136,7 +136,7 @@ class RTDETRPoseAdapter(ModelAdapter):
         ).eval()
 
         if self.checkpoint_path:
-            state = torch.load(self.checkpoint_path, map_location="cpu")
+            state = torch.load(self.checkpoint_path, map_location="cpu", weights_only=False)
             if isinstance(state, dict) and "state_dict" in state:
                 state = state["state_dict"]
             if isinstance(state, dict):
