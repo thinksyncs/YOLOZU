@@ -1,6 +1,8 @@
 import argparse
+import json
 import sys
 from pathlib import Path
+from typing import Any
 
 repo_root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(repo_root))
@@ -19,6 +21,220 @@ from rtdetr_pose.training import build_query_aligned_targets
 from rtdetr_pose.model import RTDETRPose
 
 from yolozu.metrics_report import append_jsonl, build_report, write_csv_row, write_json
+
+
+def load_config_file(path: str | Path) -> dict[str, Any]:
+    path = Path(path)
+    if not path.exists():
+        raise SystemExit(f"config not found: {path}")
+
+    suffix = path.suffix.lower()
+    if suffix in (".yaml", ".yml"):
+        try:
+            import yaml
+        except Exception as exc:  # pragma: no cover
+            raise SystemExit("PyYAML is required for YAML configs; install requirements.txt") from exc
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        return data or {}
+
+    if suffix == ".json":
+        return json.loads(path.read_text(encoding="utf-8"))
+
+    # Fallback: try JSON then YAML.
+    text = path.read_text(encoding="utf-8")
+    try:
+        return json.loads(text)
+    except Exception:
+        try:
+            import yaml
+        except Exception as exc:  # pragma: no cover
+            raise SystemExit("PyYAML is required for YAML configs; install requirements.txt") from exc
+        data = yaml.safe_load(text)
+        return data or {}
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Minimal RTDETRPose training scaffold (CPU).")
+    parser.add_argument(
+        "--config",
+        default=None,
+        help="Optional YAML/JSON config file. Values become argparse defaults; explicit CLI flags override.",
+    )
+    parser.add_argument("--dataset-root", type=str, default="", help="Path to data/coco128")
+    parser.add_argument("--split", type=str, default="train2017")
+    parser.add_argument("--epochs", type=int, default=1)
+    parser.add_argument("--batch-size", type=int, default=2)
+    parser.add_argument("--lr", type=float, default=1e-4)
+    parser.add_argument("--max-steps", type=int, default=30, help="Cap steps per epoch")
+    parser.add_argument("--log-every", type=int, default=10, help="Print every N steps")
+    parser.add_argument("--image-size", type=int, default=64)
+    parser.add_argument(
+        "--real-images",
+        action="store_true",
+        help="Load real images via record['image_path'] (requires Pillow). Default uses synthetic images.",
+    )
+    parser.add_argument("--num-queries", type=int, default=10)
+    parser.add_argument("--hidden-dim", type=int, default=64)
+    parser.add_argument("--num-classes", type=int, default=80)
+    parser.add_argument(
+        "--use-uncertainty",
+        action="store_true",
+        help="Enable uncertainty heads (log_sigma_z/log_sigma_rot) for task alignment.",
+    )
+    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument(
+        "--shuffle",
+        default=True,
+        action=argparse.BooleanOptionalAction,
+        help="Shuffle dataset each epoch (default: true).",
+    )
+    parser.add_argument(
+        "--deterministic",
+        action="store_true",
+        help="Enable deterministic data order via DataLoader generator (seeded).",
+    )
+    parser.add_argument("--use-matcher", action="store_true", help="Use Hungarian matching")
+    parser.add_argument("--cost-cls", type=float, default=1.0)
+    parser.add_argument("--cost-bbox", type=float, default=5.0)
+    parser.add_argument("--cost-z", type=float, default=0.0, help="Optional matching cost for depth")
+    parser.add_argument(
+        "--cost-rot",
+        type=float,
+        default=0.0,
+        help="Optional matching cost for rotation (geodesic angle)",
+    )
+    parser.add_argument(
+        "--synthetic-pose",
+        action="store_true",
+        help="Generate synthetic z/R GT per instance (scaffold only)",
+    )
+    parser.add_argument(
+        "--z-from-dobj",
+        action="store_true",
+        help="When GT t is missing, derive z (and optionally t if K is available) from D_obj at bbox center",
+    )
+    parser.add_argument(
+        "--load-aux",
+        action="store_true",
+        help="Allow loading mask/depth arrays from paths (.json/.npy) for z-from-dobj; default keeps lazy paths",
+    )
+    parser.add_argument(
+        "--cost-t",
+        type=float,
+        default=0.0,
+        help="Optional matching cost for translation recovered from (bbox, offsets, z, K')",
+    )
+    parser.add_argument(
+        "--debug-losses",
+        action="store_true",
+        help="Print loss dict breakdown on step 1",
+    )
+    parser.add_argument(
+        "--task-aligner",
+        choices=("none", "uncertainty"),
+        default="none",
+        help="Multi-task loss alignment strategy (default: none).",
+    )
+    parser.add_argument("--metrics-jsonl", default=None, help="Append per-step loss/metric report JSONL here.")
+    parser.add_argument("--metrics-json", default=None, help="Write final run summary JSON here.")
+    parser.add_argument("--metrics-csv", default=None, help="Write final run summary CSV (single row) here.")
+
+    # Checkpointing / resume
+    parser.add_argument("--resume-from", default=None, help="Resume weights or full checkpoint bundle from this path.")
+    parser.add_argument(
+        "--checkpoint-bundle-out",
+        default=None,
+        help="Write a full checkpoint bundle (model+optimizer+progress) to this path at end.",
+    )
+    parser.add_argument(
+        "--checkpoint-every",
+        type=int,
+        default=0,
+        help="If >0 and --checkpoint-bundle-out is set, also save intermediate bundles every N steps.",
+    )
+
+    # Back-compat: weights-only checkpoint
+    parser.add_argument("--checkpoint-out", default=None, help="Write model state_dict to this path at end.")
+    return parser
+
+
+def parse_args(argv: list[str]) -> argparse.Namespace:
+    parser = build_parser()
+
+    # Two-stage parse so config can set defaults.
+    pre, _ = parser.parse_known_args(argv)
+    if pre.config:
+        cfg = load_config_file(pre.config)
+        if not isinstance(cfg, dict):
+            raise SystemExit(f"config must be a dict/object at top-level: {pre.config}")
+        # Only apply keys that argparse knows.
+        known = {a.dest for a in parser._actions if getattr(a, "dest", None)}
+        defaults: dict[str, Any] = {}
+        for key, value in cfg.items():
+            if key in known:
+                defaults[key] = value
+        parser.set_defaults(**defaults)
+
+    return parser.parse_args(argv)
+
+
+def load_checkpoint_into(model: "torch.nn.Module", optim: "torch.optim.Optimizer | None", path: str | Path) -> dict[str, Any]:
+    path = Path(path)
+    if not path.exists():
+        raise SystemExit(f"checkpoint not found: {path}")
+    obj = torch.load(path, map_location="cpu")
+    meta: dict[str, Any] = {"path": str(path)}
+
+    if isinstance(obj, dict) and "model_state_dict" in obj:
+        model.load_state_dict(obj["model_state_dict"])
+        if optim is not None and isinstance(obj.get("optim_state_dict"), dict):
+            try:
+                optim.load_state_dict(obj["optim_state_dict"])
+                meta["optim_loaded"] = True
+            except Exception:
+                meta["optim_loaded"] = False
+        meta.update({k: obj.get(k) for k in ("epoch", "global_step") if k in obj})
+        return meta
+
+    # Assume weights-only state_dict
+    if isinstance(obj, dict):
+        model.load_state_dict(obj)
+        meta["optim_loaded"] = False
+        return meta
+
+    raise SystemExit(f"unrecognized checkpoint format: {path}")
+
+
+def save_checkpoint_bundle(
+    path: str | Path,
+    *,
+    model: "torch.nn.Module",
+    optim: "torch.optim.Optimizer | None",
+    args: argparse.Namespace,
+    epoch: int,
+    global_step: int,
+    last_epoch_steps: int,
+    last_epoch_avg: float | None,
+    last_loss_dict: dict[str, Any] | None,
+) -> None:
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload: dict[str, Any] = {
+        "schema_version": 1,
+        "epoch": int(epoch),
+        "global_step": int(global_step),
+        "last_epoch_steps": int(last_epoch_steps),
+        "last_epoch_avg": float(last_epoch_avg) if last_epoch_avg is not None else None,
+        "model_state_dict": model.state_dict(),
+        "args": vars(args),
+    }
+    if optim is not None:
+        payload["optim_state_dict"] = optim.state_dict()
+    if last_loss_dict is not None:
+        payload["last_loss"] = {
+            k: float(v.detach().cpu()) for k, v in last_loss_dict.items() if hasattr(v, "detach")
+        }
+    torch.save(payload, path)
 
 
 class ManifestDataset(Dataset):
@@ -305,90 +521,8 @@ def collate(batch):
     return images, targets
 
 
-
-
-def main():
-    parser = argparse.ArgumentParser(description="Minimal RTDETRPose training scaffold (CPU).")
-    parser.add_argument("--dataset-root", type=str, default="", help="Path to data/coco128")
-    parser.add_argument("--split", type=str, default="train2017")
-    parser.add_argument("--epochs", type=int, default=1)
-    parser.add_argument("--batch-size", type=int, default=2)
-    parser.add_argument("--lr", type=float, default=1e-4)
-    parser.add_argument("--max-steps", type=int, default=30, help="Cap steps per epoch")
-    parser.add_argument("--log-every", type=int, default=10, help="Print every N steps")
-    parser.add_argument("--image-size", type=int, default=64)
-    parser.add_argument(
-        "--real-images",
-        action="store_true",
-        help="Load real images via record['image_path'] (requires Pillow). Default uses synthetic images.",
-    )
-    parser.add_argument("--num-queries", type=int, default=10)
-    parser.add_argument("--hidden-dim", type=int, default=64)
-    parser.add_argument("--num-classes", type=int, default=80)
-    parser.add_argument(
-        "--use-uncertainty",
-        action="store_true",
-        help="Enable uncertainty heads (log_sigma_z/log_sigma_rot) for task alignment.",
-    )
-    parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument(
-        "--shuffle",
-        default=True,
-        action=argparse.BooleanOptionalAction,
-        help="Shuffle dataset each epoch (default: true).",
-    )
-    parser.add_argument(
-        "--deterministic",
-        action="store_true",
-        help="Enable deterministic data order via DataLoader generator (seeded).",
-    )
-    parser.add_argument("--use-matcher", action="store_true", help="Use Hungarian matching")
-    parser.add_argument("--cost-cls", type=float, default=1.0)
-    parser.add_argument("--cost-bbox", type=float, default=5.0)
-    parser.add_argument("--cost-z", type=float, default=0.0, help="Optional matching cost for depth")
-    parser.add_argument(
-        "--cost-rot",
-        type=float,
-        default=0.0,
-        help="Optional matching cost for rotation (geodesic angle)",
-    )
-    parser.add_argument(
-        "--synthetic-pose",
-        action="store_true",
-        help="Generate synthetic z/R GT per instance (scaffold only)",
-    )
-    parser.add_argument(
-        "--z-from-dobj",
-        action="store_true",
-        help="When GT t is missing, derive z (and optionally t if K is available) from D_obj at bbox center",
-    )
-    parser.add_argument(
-        "--load-aux",
-        action="store_true",
-        help="Allow loading mask/depth arrays from paths (.json/.npy) for z-from-dobj; default keeps lazy paths",
-    )
-    parser.add_argument(
-        "--cost-t",
-        type=float,
-        default=0.0,
-        help="Optional matching cost for translation recovered from (bbox, offsets, z, K')",
-    )
-    parser.add_argument(
-        "--debug-losses",
-        action="store_true",
-        help="Print loss dict breakdown on step 1",
-    )
-    parser.add_argument(
-        "--task-aligner",
-        choices=("none", "uncertainty"),
-        default="none",
-        help="Multi-task loss alignment strategy (default: none).",
-    )
-    parser.add_argument("--metrics-jsonl", default=None, help="Append per-step loss/metric report JSONL here.")
-    parser.add_argument("--metrics-json", default=None, help="Write final run summary JSON here.")
-    parser.add_argument("--metrics-csv", default=None, help="Write final run summary CSV (single row) here.")
-    parser.add_argument("--checkpoint-out", default=None, help="Write model state_dict to this path at end.")
-    args = parser.parse_args()
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(sys.argv[1:] if argv is None else argv)
 
     torch.manual_seed(args.seed)
 
@@ -467,10 +601,26 @@ def main():
 
     optim = torch.optim.AdamW(model.parameters(), lr=args.lr)
 
+    start_epoch = 0
+    global_step = 0
+    if args.resume_from:
+        meta = load_checkpoint_into(model, optim, args.resume_from)
+        if meta.get("epoch") is not None:
+            try:
+                start_epoch = int(meta["epoch"]) + 1
+            except Exception:
+                start_epoch = 0
+        if meta.get("global_step") is not None:
+            try:
+                global_step = int(meta["global_step"])
+            except Exception:
+                global_step = 0
+        print(f"resumed_from={meta.get('path')} start_epoch={start_epoch} global_step={global_step}")
+
     model.train()
     last_loss_dict = None
     last_epoch_avg = None
-    for epoch in range(int(args.epochs)):
+    for epoch in range(int(start_epoch), int(args.epochs)):
         running = 0.0
         steps = 0
         for images, targets in loader:
@@ -540,18 +690,41 @@ def main():
 
             running += float(loss.detach().cpu())
             steps += 1
+            global_step += 1
 
             if steps == 1 or (args.log_every and steps % int(args.log_every) == 0):
                 avg = running / steps
-                print(f"epoch={epoch} step={steps} loss={avg:.4f}")
+                print(f"epoch={epoch} step={steps} global_step={global_step} loss={avg:.4f}")
                 if args.metrics_jsonl:
                     losses_out = {k: float(v.detach().cpu()) for k, v in loss_dict.items() if hasattr(v, "detach")}
                     report = build_report(
                         losses=losses_out,
                         metrics={"loss_avg": float(avg)},
-                        meta={"kind": "train_step", "epoch": int(epoch), "step": int(steps)},
+                        meta={
+                            "kind": "train_step",
+                            "epoch": int(epoch),
+                            "step": int(steps),
+                            "global_step": int(global_step),
+                        },
                     )
                     append_jsonl(args.metrics_jsonl, report)
+
+            if args.checkpoint_bundle_out and args.checkpoint_every and int(args.checkpoint_every) > 0:
+                every = int(args.checkpoint_every)
+                if global_step % every == 0:
+                    bundle_path = Path(args.checkpoint_bundle_out)
+                    stepped = bundle_path.with_name(f"{bundle_path.stem}.step{global_step}{bundle_path.suffix or '.pt'}")
+                    save_checkpoint_bundle(
+                        stepped,
+                        model=model,
+                        optim=optim,
+                        args=args,
+                        epoch=epoch,
+                        global_step=global_step,
+                        last_epoch_steps=steps,
+                        last_epoch_avg=(running / max(1, steps)),
+                        last_loss_dict=loss_dict,
+                    )
 
             if args.max_steps and steps >= int(args.max_steps):
                 break
@@ -586,6 +759,21 @@ def main():
         ckpt_path.parent.mkdir(parents=True, exist_ok=True)
         torch.save(model.state_dict(), ckpt_path)
 
+    if args.checkpoint_bundle_out:
+        save_checkpoint_bundle(
+            args.checkpoint_bundle_out,
+            model=model,
+            optim=optim,
+            args=args,
+            epoch=int(args.epochs) - 1,
+            global_step=int(global_step),
+            last_epoch_steps=int(args.max_steps),
+            last_epoch_avg=last_epoch_avg,
+            last_loss_dict=last_loss_dict,
+        )
+
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
