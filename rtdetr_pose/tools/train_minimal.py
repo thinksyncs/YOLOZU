@@ -478,6 +478,8 @@ class ManifestDataset(Dataset):
             gt_offsets_mask = []
             gt_M_mask = []
             gt_D_obj_mask = []
+            gt_M = []
+            gt_D_obj = []
 
             # We don't decode images, so default HW is the generated tensor size.
             image_hw = torch.tensor([float(target_size), float(target_size)], dtype=torch.float32)
@@ -552,6 +554,8 @@ class ManifestDataset(Dataset):
                 gt_D_obj_mask.append(
                     bool(full.get("D_obj_mask", [False])[inst_i]) if full.get("D_obj_mask") else False
                 )
+                gt_M.append(m_loaded)
+                gt_D_obj.append(d_loaded)
 
                 # z/t
                 if t_i is not None:
@@ -632,6 +636,44 @@ class ManifestDataset(Dataset):
                     gt_offsets_mask.append(False)
 
             num_inst = len(gt_labels)
+            m_tensor = None
+            d_tensor = None
+            if self.load_aux and num_inst > 0:
+                for item in gt_M:
+                    if item is not None:
+                        m_tensor = torch.as_tensor(item, dtype=torch.float32)
+                        break
+                if m_tensor is not None:
+                    m_hw = tuple(m_tensor.shape)
+                    stacked = []
+                    for item in gt_M:
+                        if item is None:
+                            stacked.append(torch.zeros(m_hw, dtype=torch.float32))
+                            continue
+                        t = torch.as_tensor(item, dtype=torch.float32)
+                        if tuple(t.shape) != m_hw:
+                            stacked.append(torch.zeros(m_hw, dtype=torch.float32))
+                        else:
+                            stacked.append(t)
+                    m_tensor = torch.stack(stacked, dim=0)
+
+                for item in gt_D_obj:
+                    if item is not None:
+                        d_tensor = torch.as_tensor(item, dtype=torch.float32)
+                        break
+                if d_tensor is not None:
+                    d_hw = tuple(d_tensor.shape)
+                    stacked = []
+                    for item in gt_D_obj:
+                        if item is None:
+                            stacked.append(torch.zeros(d_hw, dtype=torch.float32))
+                            continue
+                        t = torch.as_tensor(item, dtype=torch.float32)
+                        if tuple(t.shape) != d_hw:
+                            stacked.append(torch.zeros(d_hw, dtype=torch.float32))
+                        else:
+                            stacked.append(t)
+                    d_tensor = torch.stack(stacked, dim=0)
             if num_inst == 0:
                 gt_labels_t = torch.empty((0,), dtype=torch.long)
                 gt_bbox_t = torch.empty((0, 4), dtype=torch.float32)
@@ -674,6 +716,8 @@ class ManifestDataset(Dataset):
                     "gt_offsets_mask": gt_offsets_mask_t,
                     "gt_M_mask": gt_M_mask_t,
                     "gt_D_obj_mask": gt_D_obj_mask_t,
+                    **({"gt_M": m_tensor} if m_tensor is not None else {}),
+                    **({"gt_D_obj": d_tensor} if d_tensor is not None else {}),
                     **({"K_gt": K_gt} if K_gt is not None else {}),
                     "image_hw": image_hw,
                 },
@@ -766,6 +810,8 @@ def collate(batch):
         ("gt_offsets_mask", False, torch.bool),
         ("gt_M_mask", False, torch.bool),
         ("gt_D_obj_mask", False, torch.bool),
+        ("gt_M", 0.0, torch.float32),
+        ("gt_D_obj", 0.0, torch.float32),
     ]
     for key, pad_value, dtype in optional_fields:
         if any(key in tgt for tgt in targets):
