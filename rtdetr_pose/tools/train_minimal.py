@@ -21,6 +21,7 @@ from rtdetr_pose.training import build_query_aligned_targets
 from rtdetr_pose.model import RTDETRPose
 
 from yolozu.metrics_report import append_jsonl, build_report, write_csv_row, write_json
+from yolozu.run_record import build_run_record
 
 
 def load_config_file(path: str | Path) -> dict[str, Any]:
@@ -216,6 +217,7 @@ def save_checkpoint_bundle(
     last_epoch_steps: int,
     last_epoch_avg: float | None,
     last_loss_dict: dict[str, Any] | None,
+    run_record: dict[str, Any] | None = None,
 ) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -227,6 +229,13 @@ def save_checkpoint_bundle(
         "last_epoch_avg": float(last_epoch_avg) if last_epoch_avg is not None else None,
         "model_state_dict": model.state_dict(),
         "args": vars(args),
+        "run_record": run_record
+        if run_record is not None
+        else build_run_record(
+            repo_root=repo_root.parent,
+            args=vars(args),
+            dataset_root=(getattr(args, "dataset_root", "") or None),
+        ),
     }
     if optim is not None:
         payload["optim_state_dict"] = optim.state_dict()
@@ -524,6 +533,13 @@ def collate(batch):
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(sys.argv[1:] if argv is None else argv)
 
+    run_record = build_run_record(
+        repo_root=repo_root.parent,
+        argv=(sys.argv[1:] if argv is None else argv),
+        args=vars(args),
+        dataset_root=(args.dataset_root or None),
+    )
+
     torch.manual_seed(args.seed)
 
     if args.dataset_root:
@@ -724,6 +740,7 @@ def main(argv: list[str] | None = None) -> int:
                         last_epoch_steps=steps,
                         last_epoch_avg=(running / max(1, steps)),
                         last_loss_dict=loss_dict,
+                        run_record=run_record,
                     )
 
             if args.max_steps and steps >= int(args.max_steps):
@@ -748,7 +765,11 @@ def main(argv: list[str] | None = None) -> int:
         metrics_out = {"epochs": int(args.epochs), "max_steps": int(args.max_steps)}
         if last_epoch_avg is not None:
             metrics_out["loss_avg_last_epoch"] = float(last_epoch_avg)
-        summary = build_report(losses=losses_out, metrics=metrics_out, meta={"kind": "train_run"})
+        summary = build_report(
+            losses=losses_out,
+            metrics=metrics_out,
+            meta={"kind": "train_run", "run_record": run_record},
+        )
         if args.metrics_json:
             write_json(args.metrics_json, summary)
         if args.metrics_csv:
@@ -770,6 +791,7 @@ def main(argv: list[str] | None = None) -> int:
             last_epoch_steps=int(args.max_steps),
             last_epoch_avg=last_epoch_avg,
             last_loss_dict=last_loss_dict,
+            run_record=run_record,
         )
 
     return 0
