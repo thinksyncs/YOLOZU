@@ -69,6 +69,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--batch-size", type=int, default=2)
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument(
+        "--clip-grad-norm",
+        type=float,
+        default=0.0,
+        help="If >0, clip gradients to this max norm before optimizer step.",
+    )
+    parser.add_argument(
         "--lr-warmup-steps",
         type=int,
         default=0,
@@ -1121,6 +1127,8 @@ def main(argv: list[str] | None = None) -> int:
 
             optim.zero_grad(set_to_none=True)
             loss.backward()
+            if args.clip_grad_norm and float(args.clip_grad_norm) > 0:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), float(args.clip_grad_norm))
             optim.step()
 
             if args.lr_warmup_steps and int(args.lr_warmup_steps) > 0:
