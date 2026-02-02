@@ -44,6 +44,11 @@ class TestTrainMinimalAugment(unittest.TestCase):
             scale_min=0.5,
             scale_max=0.5,
             hflip_prob=1.0,
+            intrinsics_jitter=False,
+            jitter_dfx=0.02,
+            jitter_dfy=0.02,
+            jitter_dcx=4.0,
+            jitter_dcy=4.0,
         )
 
         sample = ds[0]

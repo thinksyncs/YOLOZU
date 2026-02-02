@@ -93,6 +93,35 @@ def build_parser() -> argparse.ArgumentParser:
         help="Probability of random horizontal flip augmentation.",
     )
     parser.add_argument(
+        "--intrinsics-jitter",
+        action="store_true",
+        help="Enable intrinsics jitter augmentation on K_gt.",
+    )
+    parser.add_argument(
+        "--jitter-dfx",
+        type=float,
+        default=0.02,
+        help="Relative fx jitter range (uniform in [-dfx, dfx]).",
+    )
+    parser.add_argument(
+        "--jitter-dfy",
+        type=float,
+        default=0.02,
+        help="Relative fy jitter range (uniform in [-dfy, dfy]).",
+    )
+    parser.add_argument(
+        "--jitter-dcx",
+        type=float,
+        default=4.0,
+        help="Absolute cx jitter range in pixels (uniform in [-dcx, dcx]).",
+    )
+    parser.add_argument(
+        "--jitter-dcy",
+        type=float,
+        default=4.0,
+        help="Absolute cy jitter range in pixels (uniform in [-dcy, dcy]).",
+    )
+    parser.add_argument(
         "--real-images",
         action="store_true",
         help="Load real images via record['image_path'] (requires Pillow). Default uses synthetic images.",
@@ -286,6 +315,11 @@ class ManifestDataset(Dataset):
         scale_min,
         scale_max,
         hflip_prob,
+        intrinsics_jitter,
+        jitter_dfx,
+        jitter_dfy,
+        jitter_dcx,
+        jitter_dcy,
     ):
         self.records = records
         self.num_queries = int(num_queries)
@@ -301,6 +335,11 @@ class ManifestDataset(Dataset):
         self.scale_min = float(scale_min)
         self.scale_max = float(scale_max)
         self.hflip_prob = float(hflip_prob)
+        self.intrinsics_jitter = bool(intrinsics_jitter)
+        self.jitter_dfx = float(jitter_dfx)
+        self.jitter_dfy = float(jitter_dfy)
+        self.jitter_dcx = float(jitter_dcx)
+        self.jitter_dcy = float(jitter_dcy)
 
     def _load_rgb_image_tensor(self, image_path: Path, target_size: int) -> "torch.Tensor | None":
         if not image_path.exists():
@@ -452,6 +491,16 @@ class ManifestDataset(Dataset):
             if K_gt is not None and flip:
                 K_gt = K_gt.clone()
                 K_gt[0, 2] = float(target_size - 1.0) - K_gt[0, 2]
+            if K_gt is not None and self.intrinsics_jitter:
+                K_gt = K_gt.clone()
+                dfx = float((torch.rand((), generator=gen) * 2.0 - 1.0) * self.jitter_dfx)
+                dfy = float((torch.rand((), generator=gen) * 2.0 - 1.0) * self.jitter_dfy)
+                dcx = float((torch.rand((), generator=gen) * 2.0 - 1.0) * self.jitter_dcx)
+                dcy = float((torch.rand((), generator=gen) * 2.0 - 1.0) * self.jitter_dcy)
+                K_gt[0, 0] = K_gt[0, 0] * (1.0 + dfx)
+                K_gt[1, 1] = K_gt[1, 1] * (1.0 + dfy)
+                K_gt[0, 2] = K_gt[0, 2] + dcx
+                K_gt[1, 2] = K_gt[1, 2] + dcy
 
             for inst_i, inst in enumerate(instances):
                 class_id = int(inst.get("class_id", -1))
@@ -767,6 +816,11 @@ def main(argv: list[str] | None = None) -> int:
         scale_min=args.scale_min,
         scale_max=args.scale_max,
         hflip_prob=args.hflip_prob,
+        intrinsics_jitter=args.intrinsics_jitter,
+        jitter_dfx=args.jitter_dfx,
+        jitter_dfy=args.jitter_dfy,
+        jitter_dcx=args.jitter_dcx,
+        jitter_dcy=args.jitter_dcy,
     )
     loader = DataLoader(
         ds,
