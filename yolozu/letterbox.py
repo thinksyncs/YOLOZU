@@ -19,13 +19,18 @@ def compute_letterbox(*, orig_w: int, orig_h: int, input_size: int = 640) -> Let
     scale = min(float(input_size) / float(orig_w), float(input_size) / float(orig_h))
     new_w = int(round(orig_w * scale))
     new_h = int(round(orig_h * scale))
-    pad_x = (float(input_size) - float(new_w)) / 2.0
-    pad_y = (float(input_size) - float(new_h)) / 2.0
+    pad_w = float(input_size) - float(new_w)
+    pad_h = float(input_size) - float(new_h)
+    pad_x = pad_w / 2.0
+    pad_y = pad_h / 2.0
+    # Match Ultralytics LetterBox rounding for top/left padding.
+    left = float(round(pad_x - 0.1))
+    top = float(round(pad_y - 0.1))
     return Letterbox(
         input_size=int(input_size),
         scale=float(scale),
-        pad_x=float(pad_x),
-        pad_y=float(pad_y),
+        pad_x=float(left),
+        pad_y=float(top),
         new_w=int(new_w),
         new_h=int(new_h),
     )

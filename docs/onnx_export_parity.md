@@ -11,6 +11,16 @@ Important:
 - Use the same preprocessing (imgsz=640 + letterbox) and output format (`cxcywh_norm`).
 - Do not apply NMS (e2e/no-NMS protocol).
 
+### End2end ONNX models (combined output)
+
+Some end2end exports emit a single output tensor shaped $(1,N,6)$ (or $(N,6)$) with
+`[x1, y1, x2, y2, score, class_id]` in input-image coordinates. For these models:
+
+- Use `--combined-output` and `--combined-format xyxy_score_class`.
+- Set `--boxes-scale abs` (coordinates are already in pixels).
+- Use `--min-score 0.0` to avoid dropping low-confidence entries that may still
+  exist in the PyTorch reference output.
+
 ## Run parity checker
 
 ```bash
@@ -21,6 +31,33 @@ python3 tools/check_predictions_parity.py \
   --score-atol 1e-4 \
   --bbox-atol 1e-4
 ```
+
+If end2end parity is still slightly off, relax tolerances (e.g. $\text{IoU} \ge 0.96$,
+`score_atol=5e-3`, `bbox_atol=1e-2`) and document the residual mismatch count in your
+report.
+
+### Raw head output + NMS (unified postprocess)
+
+If your export emits raw head output (e.g. shape $(1,84,8400)$), decode and run NMS in
+`export_predictions_onnxrt.py`:
+
+```bash
+python3 tools/export_predictions_onnxrt.py \
+  --dataset /path/to/dataset \
+  --onnx /path/to/model.onnx \
+  --input-name images \
+  --raw-output output0 \
+  --raw-format yolo_84 \
+  --boxes-format xyxy \
+  --boxes-scale abs \
+  --min-score 0.001 \
+  --nms-iou 0.7 \
+  --topk 300 \
+  --output /path/to/pred_onnxrt.json
+```
+
+This path applies class-aware NMS (matching Ultralytics) and produces the same
+postprocess as the PyTorch reference.
 
 The checker exits non-zero and prints a JSON report if any image/detection mismatches.
 
