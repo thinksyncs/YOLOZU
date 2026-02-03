@@ -48,6 +48,7 @@ python3 tools/export_predictions_onnxrt.py \
   --input-name images \
   --raw-output output0 \
   --raw-format yolo_84 \
+  --raw-postprocess ultralytics \
   --boxes-format xyxy \
   --boxes-scale abs \
   --min-score 0.001 \
@@ -58,6 +59,12 @@ python3 tools/export_predictions_onnxrt.py \
 
 This path applies class-aware NMS (matching Ultralytics) and produces the same
 postprocess as the PyTorch reference.
+
+**Note:** even with Ultralytics postprocess, raw-output parity can still diverge
+because tiny numerical differences in raw logits ($\le 2.5\times 10^{-3}$ observed)
+change NMS decisions. If parity fails with large `missing_match` counts, treat it
+as NMS sensitivity rather than a decode bug and consider using the end2end
+combined output path for parity checks.
 
 The checker exits non-zero and prints a JSON report if any image/detection mismatches.
 

@@ -54,6 +54,12 @@ def _parse_args(argv):
         help="Layout for --raw-output (default: yolo_84).",
     )
     p.add_argument(
+        "--raw-postprocess",
+        choices=("native", "ultralytics"),
+        default="native",
+        help="Postprocess for --raw-output (default: native).",
+    )
+    p.add_argument(
         "--boxes-format",
         choices=("xyxy",),
         default="xyxy",
@@ -246,6 +252,52 @@ def _decode_raw_output(
     return boxes_xyxy[keep_idx], scores[keep_idx], class_ids[keep_idx]
 
 
+def _decode_raw_ultralytics(
+    raw,
+    *,
+    min_score: float,
+    iou_thresh: float,
+    max_det: int,
+    agnostic: bool,
+):
+    try:
+        import torch  # type: ignore
+        from ultralytics.utils import nms as u_nms  # type: ignore
+    except Exception as exc:  # pragma: no cover
+        raise RuntimeError("ultralytics + torch are required for raw-postprocess=ultralytics") from exc
+
+    arr = raw
+    if arr.ndim == 3 and arr.shape[0] == 1:
+        arr = arr[0]
+    if arr.ndim != 2:
+        raise ValueError(f"unsupported raw output shape: {arr.shape}")
+    if arr.shape[1] in (84, 85) and arr.shape[0] not in (84, 85):
+        arr = arr.T
+    if arr.shape[0] not in (84, 85):
+        raise ValueError(f"unsupported raw output shape: {arr.shape}")
+    pred = torch.as_tensor(arr[None, ...], dtype=torch.float32)
+
+    outputs = u_nms.non_max_suppression(
+        pred,
+        conf_thres=float(min_score),
+        iou_thres=float(iou_thresh),
+        classes=None,
+        agnostic=bool(agnostic),
+        max_det=int(max_det),
+        nc=0,
+        end2end=False,
+        rotated=False,
+        return_idxs=False,
+    )
+    if not outputs or outputs[0] is None or len(outputs[0]) == 0:
+        return np.zeros((0, 4), dtype=np.float32), np.zeros((0,), dtype=np.float32), np.zeros((0,), dtype=np.int64)
+    out = outputs[0].detach().cpu().numpy()
+    boxes = out[:, :4]
+    scores = out[:, 4]
+    class_ids = out[:, 5].astype(int)
+    return boxes, scores, class_ids
+
+
 def main(argv=None):
     args = _parse_args(sys.argv[1:] if argv is None else argv)
 
@@ -369,13 +421,22 @@ def main(argv=None):
             raw = outputs.get(args.raw_output)
             if raw is None:
                 raise ValueError(f"missing raw output: {args.raw_output}")
-            boxes_t, scores_t, class_t = _decode_raw_output(
-                np.asarray(raw),
-                min_score=float(args.min_score),
-                iou_thresh=float(args.nms_iou),
-                max_det=int(args.topk),
-                agnostic=bool(args.agnostic_nms),
-            )
+            if args.raw_postprocess == "ultralytics":
+                boxes_t, scores_t, class_t = _decode_raw_ultralytics(
+                    np.asarray(raw),
+                    min_score=float(args.min_score),
+                    iou_thresh=float(args.nms_iou),
+                    max_det=int(args.topk),
+                    agnostic=bool(args.agnostic_nms),
+                )
+            else:
+                boxes_t, scores_t, class_t = _decode_raw_output(
+                    np.asarray(raw),
+                    min_score=float(args.min_score),
+                    iou_thresh=float(args.nms_iou),
+                    max_det=int(args.topk),
+                    agnostic=bool(args.agnostic_nms),
+                )
         else:
             boxes_t, scores_t, class_t = _resolve_boxes_and_scores(
                 outputs, boxes_key=args.boxes_output, scores_key=args.scores_output, class_key=args.class_output
@@ -408,6 +469,13 @@ def main(argv=None):
             idx = idx[: max(0, int(args.topk))]
 
         detections = []
+        use_ultra_scale = bool(args.raw_output and args.raw_postprocess == "ultralytics")
+        if use_ultra_scale:
+            try:
+                import torch  # type: ignore
+                from ultralytics.utils import ops as u_ops  # type: ignore
+            except Exception as exc:  # pragma: no cover
+                raise RuntimeError("ultralytics + torch are required for raw-postprocess=ultralytics") from exc
         for i in idx:
             b = boxes[i].tolist()
             if args.boxes_format != "xyxy":
@@ -426,7 +494,16 @@ def main(argv=None):
             else:
                 x1, y1, x2, y2 = (float(b[0]), float(b[1]), float(b[2]), float(b[3]))
 
-            orig_xyxy = input_xyxy_to_orig_xyxy((x1, y1, x2, y2), letterbox=letterbox, orig_w=orig_w, orig_h=orig_h)
+            if use_ultra_scale:
+                scaled = u_ops.scale_boxes(
+                    (input_size, input_size),
+                    torch.tensor([[x1, y1, x2, y2]], dtype=torch.float32),
+                    (orig_h, orig_w),
+                )
+                sx1, sy1, sx2, sy2 = scaled[0].tolist()
+                orig_xyxy = (float(sx1), float(sy1), float(sx2), float(sy2))
+            else:
+                orig_xyxy = input_xyxy_to_orig_xyxy((x1, y1, x2, y2), letterbox=letterbox, orig_w=orig_w, orig_h=orig_h)
             bbox = orig_xyxy_to_cxcywh_norm(orig_xyxy, orig_w=orig_w, orig_h=orig_h)
 
             detections.append({"class_id": int(class_ids[i]), "score": float(scores[i]), "bbox": bbox})
@@ -453,6 +530,7 @@ def main(argv=None):
         "combined_format": args.combined_format,
         "raw_output": args.raw_output,
         "raw_format": args.raw_format,
+        "raw_postprocess": args.raw_postprocess,
         "boxes_format": args.boxes_format,
         "boxes_scale": args.boxes_scale,
         "min_score": args.min_score,
