@@ -1217,6 +1217,7 @@ def main(argv: list[str] | None = None) -> int:
             if model_cfg is not None and getattr(model_cfg, "stage_blocks", None) is not None
             else (1, 2, 2)
         ),
+        use_sppf=(getattr(model_cfg, "use_sppf", True) if model_cfg is not None else True),
         num_encoder_layers=(
             getattr(model_cfg, "num_encoder_layers", None) if model_cfg is not None else None
         )

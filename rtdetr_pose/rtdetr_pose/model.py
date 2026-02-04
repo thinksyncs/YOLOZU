@@ -279,6 +279,7 @@ class RTDETRPose(nn.Module):
         stem_channels=32,
         backbone_channels=(64, 128, 256),
         stage_blocks=(1, 2, 2),
+        use_sppf=True,
         num_encoder_layers=1,
         num_decoder_layers=3,
         nhead=8,
@@ -290,6 +291,7 @@ class RTDETRPose(nn.Module):
             stem_channels=stem_channels,
             stage_channels=backbone_channels,
             stage_blocks=stage_blocks,
+            use_sppf=bool(use_sppf),
         )
         self.position = SinePositionEmbedding(hidden_dim)
         self.encoder = HybridEncoder(

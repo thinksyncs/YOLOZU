@@ -12,6 +12,7 @@
     "stem_channels": 32,
     "backbone_channels": [64, 128, 256],
     "stage_blocks": [1, 2, 2],
+    "use_sppf": true,
     "num_encoder_layers": 1,
     "num_decoder_layers": 3,
     "nhead": 8,
