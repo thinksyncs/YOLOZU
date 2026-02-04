@@ -159,3 +159,25 @@ combined output path for parity checks.
 
 The checker exits non-zero and prints a JSON report if any image/detection mismatches.
 
+## TensorRT parity (PyTorch vs TRT)
+
+If you have a TensorRT engine and a PyTorch reference JSON, you can run an end-to-end
+parity check that exports TRT predictions and compares them to the PyTorch reference:
+
+```bash
+python3 tools/check_predictions_parity_trt.py \
+  --reference /path/to/pred_ref.json \
+  --engine /path/to/model.plan \
+  --dataset /path/to/coco-yolo \
+  --input-name images \
+  --boxes-output boxes \
+  --scores-output scores \
+  --output /path/to/pred_trt.json \
+  --image-size 640 \
+  --iou-thresh 0.99 \
+  --score-atol 1e-4 \
+  --bbox-atol 1e-4
+```
+
+This tool reuses `export_predictions_trt.py` and then runs `check_predictions_parity.py`.
+
