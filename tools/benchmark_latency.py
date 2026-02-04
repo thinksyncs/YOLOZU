@@ -30,6 +30,8 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     p.add_argument("--notes", default=None, help="Short notes to include in report meta.")
     p.add_argument("--notes-file", default=None, help="Path to notes text/markdown to embed in meta.")
     p.add_argument("--run-id", default=None, help="Optional run id for comparison; default is UTC timestamp.")
+    p.add_argument("--target-fps", type=float, default=None, help="Optional minimum FPS target.")
+    p.add_argument("--target-latency-ms", type=float, default=None, help="Optional maximum mean latency target (ms).")
     return p.parse_args(argv)
 
 
@@ -111,6 +113,10 @@ def main(argv: list[str] | None = None) -> int:
         notes_text = notes_path.read_text()
 
     run_id = args.run_id or config.get("run_id") or _now_utc().replace(":", "-")
+    target_fps = args.target_fps if args.target_fps is not None else config.get("target_fps")
+    target_latency_ms = (
+        args.target_latency_ms if args.target_latency_ms is not None else config.get("target_latency_ms")
+    )
 
     bucket_results: list[dict[str, Any]] = []
     for entry in buckets_cfg:
@@ -153,6 +159,14 @@ def main(argv: list[str] | None = None) -> int:
         "fps_mean": round(sum(fps_values) / len(fps_values), 3) if fps_values else 0.0,
         "latency_ms_mean": round(sum(latency_values) / len(latency_values), 3) if latency_values else 0.0,
     }
+    ok = True
+    if target_fps is not None:
+        ok = ok and summary["fps_mean"] >= float(target_fps)
+    if target_latency_ms is not None:
+        ok = ok and summary["latency_ms_mean"] <= float(target_latency_ms)
+    summary["target_fps"] = None if target_fps is None else float(target_fps)
+    summary["target_latency_ms"] = None if target_latency_ms is None else float(target_latency_ms)
+    summary["ok"] = bool(ok)
 
     meta = {
         "run_id": run_id,
@@ -169,6 +183,10 @@ def main(argv: list[str] | None = None) -> int:
         "notes_text": notes_text,
         "engine_template": args.engine_template or config.get("engine_template"),
         "model_template": args.model_template or config.get("model_template"),
+        "targets": {
+            "fps_min": None if target_fps is None else float(target_fps),
+            "latency_ms_max": None if target_latency_ms is None else float(target_latency_ms),
+        },
     }
 
     report = build_report(metrics={"summary": summary, "buckets": bucket_results}, meta=meta)
@@ -177,6 +195,8 @@ def main(argv: list[str] | None = None) -> int:
         output_abs = repo_root / output_abs
     write_json(output_abs, report)
     print(output_abs)
+    if (target_fps is not None or target_latency_ms is not None) and not ok:
+        return 2
     return 0
 
 
