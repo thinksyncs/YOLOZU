@@ -10,6 +10,88 @@ Goal: ensure an ONNX export produces **numerically equivalent** predictions to a
 Important:
 - Use the same preprocessing (imgsz=640 + letterbox) and output format (`cxcywh_norm`).
 - Do not apply NMS (e2e/no-NMS protocol).
+- Do not apply NMS (e2e/no-NMS protocol).
+
+## YOLO26 (Ultralytics) concrete flow
+
+This is a concrete, end2end/no-NMS parity flow for Ultralytics YOLO26 models.
+
+### 1) Export ONNX (end2end/no-NMS)
+
+Export with NMS disabled and fixed input size 640:
+
+```bash
+yolo export model=yolo26n.pt format=onnx opset=17 imgsz=640 nms=False
+```
+
+If your environment prefers Python, you can also call the Ultralytics export API. Ensure
+`nms=False` (or `end2end=True`) so the export keeps the raw/combined output without NMS.
+
+### 2) Reference predictions (PyTorch)
+
+Run the PyTorch reference using Ultralytics and export YOLOZU JSON (bbox format is `cxcywh_norm`):
+
+```bash
+python3 tools/export_predictions_ultralytics.py \
+  --model yolo26n.pt \
+  --dataset /path/to/coco-yolo \
+  --image-size 640 \
+  --conf 0.001 \
+  --iou 0.7 \
+  --max-det 300 \
+  --end2end \
+  --output /path/to/pred_ref.json
+```
+
+### 3) ONNXRuntime predictions
+
+Inspect ONNX output names (pick one of the flows below):
+
+```bash
+python3 -c "import onnx; m=onnx.load('yolo26n.onnx'); print([o.name for o in m.graph.output])"
+```
+
+**Combined output** (preferred for parity):
+
+```bash
+python3 tools/export_predictions_onnxrt.py \
+  --dataset /path/to/coco-yolo \
+  --onnx yolo26n.onnx \
+  --combined-output output0 \
+  --combined-format xyxy_score_class \
+  --boxes-scale abs \
+  --min-score 0.0 \
+  --output /path/to/pred_onnxrt.json
+```
+
+**Raw head output + NMS** (use only if you cannot export end2end):
+
+```bash
+python3 tools/export_predictions_onnxrt.py \
+  --dataset /path/to/coco-yolo \
+  --onnx yolo26n.onnx \
+  --raw-output output0 \
+  --raw-format yolo_84 \
+  --raw-postprocess ultralytics \
+  --boxes-format xyxy \
+  --boxes-scale abs \
+  --min-score 0.001 \
+  --nms-iou 0.7 \
+  --topk 300 \
+  --output /path/to/pred_onnxrt.json
+```
+
+### 4) Parity check
+
+```bash
+python3 tools/check_predictions_parity.py \
+  --reference /path/to/pred_ref.json \
+  --candidate /path/to/pred_onnxrt.json \
+  --image-size 640 \
+  --iou-thresh 0.99 \
+  --score-atol 1e-4 \
+  --bbox-atol 1e-4
+```
 
 ### End2end ONNX models (combined output)
 
