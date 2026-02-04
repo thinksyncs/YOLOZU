@@ -234,7 +234,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--load-aux",
         action="store_true",
-        help="Allow loading mask/depth arrays from paths (.json/.npy) for z-from-dobj; default keeps lazy paths",
+        help="Allow loading mask/depth arrays from paths (.json/.npy/.png) for z-from-dobj; default keeps lazy paths",
     )
     parser.add_argument(
         "--cost-t",
