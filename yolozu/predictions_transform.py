@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+import random
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -89,6 +90,97 @@ def normalize_class_ids(
             new_dets.append(new_det)
 
         new_entry["detections"] = new_dets
+        out_entries.append(new_entry)
+
+    return TransformResult(entries=out_entries, warnings=warnings)
+
+
+def _entry_image_size(entry: dict[str, Any]) -> tuple[float | None, float | None]:
+    value = entry.get("image_size")
+    if isinstance(value, dict):
+        width = value.get("width")
+        height = value.get("height")
+        try:
+            return (float(width), float(height))
+        except Exception:
+            return (None, None)
+    if isinstance(value, (list, tuple)) and len(value) == 2:
+        try:
+            return (float(value[0]), float(value[1]))
+        except Exception:
+            return (None, None)
+    return (None, None)
+
+
+def apply_tta(
+    entries: Iterable[dict[str, Any]],
+    *,
+    enabled: bool = True,
+    seed: int | None = None,
+    flip_prob: float = 0.5,
+    norm_only: bool = False,
+) -> TransformResult:
+    """Apply a simple test-time augmentation transform to predictions.
+
+    When enabled, a per-detection mask is sampled (seeded) to decide whether
+    to apply a horizontal flip in normalized space (cx -> 1 - cx). If
+    norm_only is False and bbox_abs is present, a best-effort absolute flip is
+    applied using entry.image_size.
+    """
+
+    warnings: list[str] = []
+    out_entries: list[dict[str, Any]] = []
+    rng = random.Random(seed)
+
+    for idx, entry in enumerate(entries):
+        if not isinstance(entry, dict):
+            continue
+        new_entry = dict(entry)
+        dets = new_entry.get("detections") or []
+        if not isinstance(dets, list):
+            dets = []
+
+        new_dets = []
+        mask: list[bool] = []
+
+        for j, det in enumerate(dets):
+            if not isinstance(det, dict):
+                continue
+            new_det = dict(det)
+            apply = bool(enabled) and (rng.random() < float(flip_prob))
+            mask.append(apply)
+
+            if apply:
+                bbox = new_det.get("bbox")
+                if isinstance(bbox, dict) and all(k in bbox for k in ("cx", "cy", "w", "h")):
+                    new_bbox = dict(bbox)
+                    try:
+                        new_bbox["cx"] = 1.0 - float(new_bbox["cx"])
+                    except Exception:
+                        warnings.append(f"predictions[{idx}].detections[{j}]: invalid bbox.cx")
+                    new_det["bbox"] = new_bbox
+                else:
+                    warnings.append(f"predictions[{idx}].detections[{j}]: missing bbox for tta")
+
+                if not norm_only:
+                    bbox_abs = new_det.get("bbox_abs")
+                    if isinstance(bbox_abs, dict) and "cx" in bbox_abs:
+                        width, _ = _entry_image_size(entry)
+                        if width is None:
+                            warnings.append(f"predictions[{idx}].detections[{j}]: missing image_size for bbox_abs")
+                        else:
+                            new_bbox_abs = dict(bbox_abs)
+                            try:
+                                new_bbox_abs["cx"] = float(width) - float(new_bbox_abs["cx"])
+                            except Exception:
+                                warnings.append(f"predictions[{idx}].detections[{j}]: invalid bbox_abs.cx")
+                            new_det["bbox_abs"] = new_bbox_abs
+
+            new_dets.append(new_det)
+
+        new_entry["detections"] = new_dets
+        if enabled:
+            new_entry["tta_mask"] = mask
         out_entries.append(new_entry)
 
     return TransformResult(entries=out_entries, warnings=warnings)
