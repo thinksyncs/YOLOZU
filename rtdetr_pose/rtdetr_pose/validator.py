@@ -154,6 +154,21 @@ def _load_array_from_path(path):
             return json.loads(path.read_text())
         except json.JSONDecodeError:
             return None
+    if suffix == ".png":
+        try:
+            from PIL import Image  # type: ignore
+        except Exception:  # pragma: no cover
+            return None
+        try:
+            img = Image.open(path)
+        except Exception:
+            return None
+        img = img.convert("L")
+        if np is not None:
+            return np.asarray(img)
+        width, height = img.size
+        data = list(img.getdata())
+        return [data[i * width : (i + 1) * width] for i in range(height)]  # pragma: no cover
     if suffix in (".npy", ".npz") and np is not None:
         try:
             loaded = np.load(path)
