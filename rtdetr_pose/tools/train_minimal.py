@@ -92,6 +92,18 @@ def build_parser() -> argparse.ArgumentParser:
         default=0.0,
         help="Initial learning rate value at step 0 for warmup.",
     )
+    parser.add_argument(
+        "--stage-off-steps",
+        type=int,
+        default=0,
+        help="If >0, train offsets-only for this many steps (K loss disabled).",
+    )
+    parser.add_argument(
+        "--stage-k-steps",
+        type=int,
+        default=0,
+        help="If >0, train K-only for this many steps after offsets stage (offset loss disabled).",
+    )
     parser.add_argument("--max-steps", type=int, default=30, help="Cap steps per epoch")
     parser.add_argument("--log-every", type=int, default=10, help="Print every N steps")
     parser.add_argument("--image-size", type=int, default=64)
@@ -323,6 +335,23 @@ def compute_linear_schedule(start: float, end: float, step: int, total_steps: in
         return float(end)
     alpha = min(max(float(step) / float(total_steps - 1), 0.0), 1.0)
     return float(start + (end - start) * alpha)
+
+
+def compute_stage_weights(
+    base: dict[str, float],
+    *,
+    global_step: int,
+    stage_off_steps: int,
+    stage_k_steps: int,
+) -> tuple[dict[str, float], str]:
+    weights = dict(base)
+    if stage_off_steps > 0 and global_step < stage_off_steps:
+        weights["k"] = 0.0
+        return weights, "offsets"
+    if stage_k_steps > 0 and global_step < stage_off_steps + stage_k_steps:
+        weights["off"] = 0.0
+        return weights, "k"
+    return weights, "full"
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -1168,6 +1197,7 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     losses_fn = Losses(task_aligner=args.task_aligner)
+    base_weights = dict(losses_fn.weights)
 
     device_str = str(args.device).strip() if args.device is not None else "cpu"
     if device_str.startswith("cuda") and not torch.cuda.is_available():
@@ -1197,6 +1227,7 @@ def main(argv: list[str] | None = None) -> int:
     model.train()
     last_loss_dict = None
     last_epoch_avg = None
+    last_stage = None
     for epoch in range(int(start_epoch), int(args.epochs)):
         if args.hflip_prob_start is not None and args.hflip_prob_end is not None:
             ds.hflip_prob = compute_linear_schedule(
@@ -1257,6 +1288,17 @@ def main(argv: list[str] | None = None) -> int:
                     "bbox": torch.stack([t["bbox"] for t in targets], dim=0).to(device),
                 }
 
+            staged_weights, stage = compute_stage_weights(
+                base_weights,
+                global_step=int(global_step),
+                stage_off_steps=int(args.stage_off_steps),
+                stage_k_steps=int(args.stage_k_steps),
+            )
+            losses_fn.weights = staged_weights
+            if stage != last_stage:
+                print(f"stage={stage}")
+                last_stage = stage
+
             loss_dict = losses_fn(out, targets)
             loss = loss_dict["loss"]
             last_loss_dict = loss_dict
@@ -1302,6 +1344,7 @@ def main(argv: list[str] | None = None) -> int:
                             "epoch": int(epoch),
                             "step": int(steps),
                             "global_step": int(global_step),
+                            "stage": stage,
                         },
                     )
                     append_jsonl(args.metrics_jsonl, report)
