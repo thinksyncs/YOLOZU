@@ -181,3 +181,22 @@ python3 tools/check_predictions_parity_trt.py \
 
 This tool reuses `export_predictions_trt.py` and then runs `check_predictions_parity.py`.
 
+## End-to-end TRT workflow helper
+
+You can chain build + parity using the helper script:
+
+```bash
+python3 tools/run_trt_workflow.py \
+  --onnx /path/to/model.onnx \
+  --engine /path/to/model.plan \
+  --dataset /path/to/coco-yolo \
+  --reference /path/to/pred_ref.json \
+  --input-name images \
+  --input-shape 1x3x640x640 \
+  --fp16 \
+  --image-size 640
+```
+
+Use `--skip-build` or `--skip-parity` to run only one step, and `--dry-run`
+to print commands without executing them.
+
