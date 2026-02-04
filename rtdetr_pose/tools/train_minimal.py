@@ -11,6 +11,7 @@ sys.path.insert(0, str(repo_root.parent))
 
 try:
     import torch
+    from torch.nn import functional as F
     from torch.utils.data import DataLoader, Dataset
 except ImportError as exc:  # pragma: no cover
     raise SystemExit("torch is required; install requirements-test.txt") from exc
@@ -220,6 +221,17 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=0.0,
         help="Fill value for masked patches (default: 0.0).",
+    )
+    parser.add_argument(
+        "--mim-teacher",
+        action="store_true",
+        help="Enable self-distillation between masked/unmasked images.",
+    )
+    parser.add_argument(
+        "--mim-loss-weight",
+        type=float,
+        default=0.0,
+        help="Weight for MIM distillation loss (default: 0.0).",
     )
     parser.add_argument("--num-queries", type=int, default=10)
     parser.add_argument("--hidden-dim", type=int, default=64)
@@ -655,6 +667,7 @@ class ManifestDataset(Dataset):
         if flip:
             image = torch.flip(image, dims=(2,))
 
+        image_raw = image.clone()
         image, mim_mask_ratio = self._apply_mim_mask(image, generator=gen)
 
         instances = record.get("labels") or []
@@ -925,6 +938,7 @@ class ManifestDataset(Dataset):
 
             return {
                 "image": image,
+                "image_raw": image_raw,
                 "targets": {
                     "gt_labels": gt_labels_t,
                     "gt_bbox": gt_bbox_t,
@@ -961,7 +975,12 @@ class ManifestDataset(Dataset):
             bbox[qi, 2] = float(bb.get("w", 0.0))
             bbox[qi, 3] = float(bb.get("h", 0.0))
 
-        return {"image": image, "targets": {"labels": labels, "bbox": bbox}, "mim_mask_ratio": mim_mask_ratio}
+        return {
+            "image": image,
+            "image_raw": image_raw,
+            "targets": {"labels": labels, "bbox": bbox},
+            "mim_mask_ratio": mim_mask_ratio,
+        }
 
 
 def _pad_field(targets, key, max_len, *, pad_value=0.0, dtype=None):
@@ -999,6 +1018,13 @@ def _pad_field(targets, key, max_len, *, pad_value=0.0, dtype=None):
 
 def collate(batch):
     images = torch.stack([item["image"] for item in batch], dim=0)
+    image_raw = None
+    if all("image_raw" in item and isinstance(item["image_raw"], torch.Tensor) for item in batch):
+        image_raw = torch.stack([item["image_raw"] for item in batch], dim=0)
+    mim_mask_ratio = torch.tensor(
+        [float(item.get("mim_mask_ratio", 0.0)) for item in batch],
+        dtype=torch.float32,
+    )
     targets = [item["targets"] for item in batch]
     if not targets or "gt_labels" not in targets[0]:
         return images, targets
@@ -1013,7 +1039,10 @@ def collate(batch):
             "gt_count": counts,
             "gt_mask": torch.zeros((len(targets), 0), dtype=torch.bool),
         }
-        return images, {"per_sample": targets, "padded": padded}
+        out = {"per_sample": targets, "padded": padded, "mim_mask_ratio": mim_mask_ratio}
+        if image_raw is not None:
+            out["image_raw"] = image_raw
+        return images, out
 
     padded = {
         "gt_count": counts,
@@ -1040,7 +1069,10 @@ def collate(batch):
         if any(key in tgt for tgt in targets):
             padded[key] = _pad_field(targets, key, max_len, pad_value=pad_value, dtype=dtype)
 
-    return images, {"per_sample": targets, "padded": padded}
+    out = {"per_sample": targets, "padded": padded, "mim_mask_ratio": mim_mask_ratio}
+    if image_raw is not None:
+        out["image_raw"] = image_raw
+    return images, out
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1240,8 +1272,27 @@ def main(argv: list[str] | None = None) -> int:
         steps = 0
         for images, targets in loader:
             images = images.to(device)
-
             out = model(images)
+            mim_loss = None
+            if args.mim_teacher and float(args.mim_loss_weight) > 0 and isinstance(targets, dict):
+                image_raw = targets.get("image_raw")
+                if isinstance(image_raw, torch.Tensor):
+                    ratio = targets.get("mim_mask_ratio")
+                    if ratio is None or bool((ratio > 0).any()):
+                        was_training = model.training
+                        if was_training:
+                            model.eval()
+                        with torch.no_grad():
+                            teacher_out = model(image_raw.to(device))
+                        if was_training:
+                            model.train()
+                        loss_items = []
+                        if "logits" in out and "logits" in teacher_out:
+                            loss_items.append(F.mse_loss(out["logits"], teacher_out["logits"]))
+                        if "bbox" in out and "bbox" in teacher_out:
+                            loss_items.append(F.l1_loss(out["bbox"], teacher_out["bbox"]))
+                        if loss_items:
+                            mim_loss = sum(loss_items)
 
             if args.use_matcher:
                 per_sample = targets.get("per_sample") if isinstance(targets, dict) else targets
@@ -1301,6 +1352,11 @@ def main(argv: list[str] | None = None) -> int:
 
             loss_dict = losses_fn(out, targets)
             loss = loss_dict["loss"]
+            if mim_loss is not None:
+                loss = loss + float(args.mim_loss_weight) * mim_loss
+                loss_dict = dict(loss_dict)
+                loss_dict["loss_mim"] = mim_loss
+                loss_dict["loss"] = loss
             last_loss_dict = loss_dict
 
             if steps == 0 and args.debug_losses:
