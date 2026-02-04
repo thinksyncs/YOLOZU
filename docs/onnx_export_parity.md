@@ -30,6 +30,15 @@ python3 tools/check_predictions_parity.py \
   --iou-thresh 0.99 \
   --score-atol 1e-4 \
   --bbox-atol 1e-4
+
+# Optional: if image files are not available, use a fixed size
+python3 tools/check_predictions_parity.py \
+  --reference /path/to/pred_ref.json \
+  --candidate /path/to/pred_onnxrt.json \
+  --image-size 640 \
+  --iou-thresh 0.99 \
+  --score-atol 1e-4 \
+  --bbox-atol 1e-4
 ```
 
 If end2end parity is still slightly off, relax tolerances (e.g. $\text{IoU} \ge 0.96$,

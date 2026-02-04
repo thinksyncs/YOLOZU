@@ -34,7 +34,25 @@ def _parse_args(argv):
     p.add_argument("--score-atol", type=float, default=1e-4, help="Absolute tolerance for score differences.")
     p.add_argument("--bbox-atol", type=float, default=1e-4, help="Absolute tolerance for bbox cx/cy/w/h differences.")
     p.add_argument("--max-images", type=int, default=None, help="Optional cap for number of images.")
+    p.add_argument(
+        "--image-size",
+        default=None,
+        help="Optional fixed image size (e.g. 640 or 640,640) to avoid reading image files.",
+    )
     return p.parse_args(argv)
+
+
+def _parse_image_size(value: str | None) -> tuple[int, int] | None:
+    if not value:
+        return None
+    raw = value.replace("x", ",")
+    parts = [p.strip() for p in raw.split(",") if p.strip()]
+    if len(parts) == 1:
+        size = int(parts[0])
+        return size, size
+    if len(parts) == 2:
+        return int(parts[0]), int(parts[1])
+    raise ValueError("--image-size expects 'N' or 'W,H'")
 
 
 def _load_index(path: str) -> dict[str, list[_Det]]:
@@ -72,8 +90,12 @@ def _match_image(
     iou_thresh: float,
     score_atol: float,
     bbox_atol: float,
+    image_size: tuple[int, int] | None,
 ) -> dict:
-    w, h = get_image_size(image_path)
+    if image_size is None:
+        w, h = get_image_size(image_path)
+    else:
+        w, h = image_size
     ref_xyxy = [cxcywh_norm_to_xyxy_abs(_bbox_tuple_norm(d.bbox), width=w, height=h) for d in ref]
     cand_xyxy = [cxcywh_norm_to_xyxy_abs(_bbox_tuple_norm(d.bbox), width=w, height=h) for d in cand]
 
@@ -153,6 +175,8 @@ def _match_image(
 def main(argv=None):
     args = _parse_args(sys.argv[1:] if argv is None else argv)
 
+    image_size = _parse_image_size(args.image_size)
+
     ref_idx = _load_index(args.reference)
     cand_idx = _load_index(args.candidate)
 
@@ -174,6 +198,7 @@ def main(argv=None):
             iou_thresh=args.iou_thresh,
             score_atol=args.score_atol,
             bbox_atol=args.bbox_atol,
+            image_size=image_size,
         )
         per_image.append(result)
         ok = ok and bool(result["ok"])
