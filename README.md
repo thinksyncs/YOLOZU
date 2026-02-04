@@ -79,6 +79,11 @@ Run a configurable sweep and emit CSV/MD tables:
 Report latency/FPS per YOLO26 bucket and archive runs over time:
 - `docs/benchmark_latency.md`
 
+## TensorRT FP16/INT8 pipeline
+
+Reproducible engine build + parity validation steps:
+- `docs/tensorrt_pipeline.md`
+
 ## External baselines (Apache-2.0-friendly)
 
 This repo does **not** require (or vendor) any GPL/AGPL inference code.
