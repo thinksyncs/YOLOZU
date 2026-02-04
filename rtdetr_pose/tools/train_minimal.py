@@ -493,16 +493,37 @@ class ManifestDataset(Dataset):
             return value
         if not self.load_aux:
             return None
-        if isinstance(value, str):
+        if isinstance(value, (str, Path)):
             path = Path(value)
-            if path.suffix.lower() == ".json":
+            suffix = path.suffix.lower()
+            if suffix == ".json":
                 import json
 
                 try:
                     return json.loads(path.read_text())
                 except Exception:
                     return None
-            if path.suffix.lower() in (".npy", ".npz"):
+            if suffix == ".png":
+                try:
+                    from PIL import Image
+                except Exception as exc:
+                    raise SystemExit(
+                        "Pillow is required for PNG masks. Install it (e.g. pip install Pillow) or use .npy/.json."
+                    ) from exc
+                try:
+                    import numpy as np
+                except Exception:
+                    np = None  # type: ignore
+                try:
+                    img = Image.open(path).convert("L")
+                except Exception:
+                    return None
+                if np is not None:
+                    return np.asarray(img)
+                width, height = img.size
+                data = list(img.getdata())
+                return [data[i * width : (i + 1) * width] for i in range(height)]
+            if suffix in (".npy", ".npz"):
                 try:
                     import numpy as np
                 except Exception:
