@@ -191,6 +191,24 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Load real images via record['image_path'] (requires Pillow). Default uses synthetic images.",
     )
+    parser.add_argument(
+        "--mim-mask-prob",
+        type=float,
+        default=0.0,
+        help="Probability of masking each MIM patch (default: 0.0 disables).",
+    )
+    parser.add_argument(
+        "--mim-mask-size",
+        type=int,
+        default=16,
+        help="Patch size for MIM masking (default: 16).",
+    )
+    parser.add_argument(
+        "--mim-mask-value",
+        type=float,
+        default=0.0,
+        help="Fill value for masked patches (default: 0.0).",
+    )
     parser.add_argument("--num-queries", type=int, default=10)
     parser.add_argument("--hidden-dim", type=int, default=64)
     parser.add_argument("--num-classes", type=int, default=80)
@@ -426,6 +444,9 @@ class ManifestDataset(Dataset):
         jitter_droll,
         jitter_dpitch,
         jitter_dyaw,
+        mim_mask_prob=0.0,
+        mim_mask_size=16,
+        mim_mask_value=0.0,
     ):
         self.records = records
         self.num_queries = int(num_queries)
@@ -456,6 +477,27 @@ class ManifestDataset(Dataset):
         self.jitter_droll = float(jitter_droll)
         self.jitter_dpitch = float(jitter_dpitch)
         self.jitter_dyaw = float(jitter_dyaw)
+        self.mim_mask_prob = float(mim_mask_prob)
+        self.mim_mask_size = int(mim_mask_size)
+        self.mim_mask_value = float(mim_mask_value)
+
+    def _apply_mim_mask(self, image: "torch.Tensor", *, generator: "torch.Generator") -> tuple["torch.Tensor", float]:
+        if self.mim_mask_prob <= 0.0 or self.mim_mask_size <= 0:
+            return image, 0.0
+
+        _, h, w = image.shape
+        grid_h = max(1, int(math.ceil(float(h) / float(self.mim_mask_size))))
+        grid_w = max(1, int(math.ceil(float(w) / float(self.mim_mask_size))))
+        mask = torch.rand((grid_h, grid_w), generator=generator) < float(self.mim_mask_prob)
+        if not bool(mask.any()):
+            return image, 0.0
+
+        mask_full = mask.repeat_interleave(self.mim_mask_size, dim=0).repeat_interleave(self.mim_mask_size, dim=1)
+        mask_full = mask_full[:h, :w]
+        masked = image.clone()
+        masked[:, mask_full] = float(self.mim_mask_value)
+        ratio = float(mask_full.float().mean().item())
+        return masked, ratio
 
     def _load_rgb_image_tensor(self, image_path: Path, target_size: int) -> "torch.Tensor | None":
         if not image_path.exists():
@@ -583,6 +625,8 @@ class ManifestDataset(Dataset):
 
         if flip:
             image = torch.flip(image, dims=(2,))
+
+        image, mim_mask_ratio = self._apply_mim_mask(image, generator=gen)
 
         instances = record.get("labels") or []
         if self.use_matcher:
@@ -870,6 +914,7 @@ class ManifestDataset(Dataset):
                     **({"K_gt": K_gt} if K_gt is not None else {}),
                     "image_hw": image_hw,
                 },
+                "mim_mask_ratio": mim_mask_ratio,
             }
 
         labels = torch.full((self.num_queries,), -1, dtype=torch.long)
@@ -887,7 +932,7 @@ class ManifestDataset(Dataset):
             bbox[qi, 2] = float(bb.get("w", 0.0))
             bbox[qi, 3] = float(bb.get("h", 0.0))
 
-        return {"image": image, "targets": {"labels": labels, "bbox": bbox}}
+        return {"image": image, "targets": {"labels": labels, "bbox": bbox}, "mim_mask_ratio": mim_mask_ratio}
 
 
 def _pad_field(targets, key, max_len, *, pad_value=0.0, dtype=None):
@@ -1076,6 +1121,9 @@ def main(argv: list[str] | None = None) -> int:
         jitter_droll=args.jitter_droll,
         jitter_dpitch=args.jitter_dpitch,
         jitter_dyaw=args.jitter_dyaw,
+        mim_mask_prob=args.mim_mask_prob,
+        mim_mask_size=args.mim_mask_size,
+        mim_mask_value=args.mim_mask_value,
     )
     loader = DataLoader(
         ds,
