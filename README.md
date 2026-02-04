@@ -74,6 +74,11 @@ Reference recipe for external training runs (augment, multiscale, schedule, EMA)
 Run a configurable sweep and emit CSV/MD tables:
 - `docs/hpo_sweep.md`
 
+## Latency/FPS benchmark harness
+
+Report latency/FPS per YOLO26 bucket and archive runs over time:
+- `docs/benchmark_latency.md`
+
 ## External baselines (Apache-2.0-friendly)
 
 This repo does **not** require (or vendor) any GPL/AGPL inference code.

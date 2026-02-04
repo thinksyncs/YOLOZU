@@ -11,7 +11,7 @@ repo_root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(repo_root))
 
 from yolozu.benchmark import measure_latency
-from yolozu.metrics_report import build_report, write_json
+from yolozu.metrics_report import append_jsonl, build_report, write_json
 
 
 _BUCKETS = ("yolo26n", "yolo26s", "yolo26m", "yolo26l", "yolo26x")
@@ -21,6 +21,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     p = argparse.ArgumentParser()
     p.add_argument("--config", default=None, help="Optional JSON config with bucket settings.")
     p.add_argument("--output", default="reports/benchmark_latency.json", help="Where to write the report JSON.")
+    p.add_argument("--history", default=None, help="Optional JSONL path to append the report for comparisons.")
     p.add_argument("--buckets", default=",".join(_BUCKETS), help="Comma-separated bucket list.")
     p.add_argument("--iterations", type=int, default=200, help="Benchmark iterations per bucket.")
     p.add_argument("--warmup", type=int, default=20, help="Warmup iterations per bucket.")
@@ -102,6 +103,7 @@ def main(argv: list[str] | None = None) -> int:
         buckets_cfg = _bucket_list(args.buckets)
 
     output_path = config.get("output") or args.output
+    history_path = config.get("history") or args.history
 
     notes_text = None
     if args.notes_file:
@@ -176,6 +178,11 @@ def main(argv: list[str] | None = None) -> int:
     if not output_abs.is_absolute():
         output_abs = repo_root / output_abs
     write_json(output_abs, report)
+    if history_path:
+        history_abs = Path(history_path)
+        if not history_abs.is_absolute():
+            history_abs = repo_root / history_abs
+        append_jsonl(history_abs, report)
     print(output_abs)
     return 0
 
