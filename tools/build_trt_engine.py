@@ -50,6 +50,18 @@ def _parse_shape(text: str) -> tuple[int, int, int, int]:
     return parts[0], parts[1], parts[2], parts[3]
 
 
+def _resolve_input_name(network, requested: str) -> str:
+    if not hasattr(network, "num_inputs"):
+        return requested
+    inputs = [network.get_input(i).name for i in range(network.num_inputs)]
+    if requested in inputs:
+        return requested
+    if inputs:
+        print(f"warning: input '{requested}' not found, using '{inputs[0]}'")
+        return inputs[0]
+    return requested
+
+
 class _ImageCalibrator:
     def __init__(self, *, dataset_root: Path, input_size: int, input_name: str, max_images: int, cache_path: Path | None):
         if np is None:
@@ -177,6 +189,8 @@ def main(argv=None):
         config = builder.create_builder_config()
         config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, int(args.workspace_mb) * 1024 * 1024)
 
+        input_name = _resolve_input_name(network, args.input_name)
+
         if args.fp16:
             if builder.platform_has_fast_fp16:
                 config.set_flag(trt.BuilderFlag.FP16)
@@ -229,7 +243,7 @@ def main(argv=None):
             config.int8_calibrator = calibrator
 
         profile = builder.create_optimization_profile()
-        profile.set_shape(args.input_name, input_shape, input_shape, input_shape)
+        profile.set_shape(input_name, input_shape, input_shape, input_shape)
         config.add_optimization_profile(profile)
 
         engine = builder.build_engine(network, config)
@@ -244,7 +258,7 @@ def main(argv=None):
         "onnx_sha256": _sha256(onnx_path),
         "engine": str(engine_path),
         "engine_sha256": _sha256(engine_path),
-        "input_name": args.input_name,
+        "input_name": input_name,
         "input_shape": "x".join([str(v) for v in input_shape]),
         "fp16": bool(args.fp16),
         "int8": bool(args.int8),
