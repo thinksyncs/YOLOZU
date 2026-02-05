@@ -1273,6 +1273,12 @@ def main(argv: list[str] | None = None) -> int:
         steps = 0
         for images, targets in loader:
             images = images.to(device)
+            mim_ratio = None
+            if isinstance(targets, dict) and "mim_mask_ratio" in targets:
+                try:
+                    mim_ratio = float(targets["mim_mask_ratio"].mean().detach().cpu())
+                except Exception:
+                    mim_ratio = None
             out = model(images)
             mim_loss = None
             if args.mim_teacher and float(args.mim_loss_weight) > 0 and isinstance(targets, dict):
@@ -1390,12 +1396,18 @@ def main(argv: list[str] | None = None) -> int:
 
             if steps == 1 or (args.log_every and steps % int(args.log_every) == 0):
                 avg = running / steps
-                print(f"epoch={epoch} step={steps} global_step={global_step} loss={avg:.4f}")
+                suffix = ""
+                if mim_ratio is not None:
+                    suffix = f" mim_mask_ratio={mim_ratio:.3f}"
+                print(f"epoch={epoch} step={steps} global_step={global_step} loss={avg:.4f}{suffix}")
                 if args.metrics_jsonl:
                     losses_out = {k: float(v.detach().cpu()) for k, v in loss_dict.items() if hasattr(v, "detach")}
+                    metrics_out = {"loss_avg": float(avg)}
+                    if mim_ratio is not None:
+                        metrics_out["mim_mask_ratio"] = float(mim_ratio)
                     report = build_report(
                         losses=losses_out,
-                        metrics={"loss_avg": float(avg)},
+                        metrics=metrics_out,
                         meta={
                             "kind": "train_step",
                             "epoch": int(epoch),
@@ -1432,9 +1444,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"epoch={epoch} done steps={steps} loss={avg:.4f}")
         if args.metrics_jsonl and last_loss_dict is not None:
             losses_out = {k: float(v.detach().cpu()) for k, v in last_loss_dict.items() if hasattr(v, "detach")}
+            metrics_out = {"loss_avg": float(avg), "steps": int(steps)}
+            if mim_ratio is not None:
+                metrics_out["mim_mask_ratio"] = float(mim_ratio)
             report = build_report(
                 losses=losses_out,
-                metrics={"loss_avg": float(avg), "steps": int(steps)},
+                metrics=metrics_out,
                 meta={"kind": "train_epoch", "epoch": int(epoch)},
             )
             append_jsonl(args.metrics_jsonl, report)
@@ -1443,7 +1458,12 @@ def main(argv: list[str] | None = None) -> int:
         losses_out = {}
         if last_loss_dict is not None:
             losses_out = {k: float(v.detach().cpu()) for k, v in last_loss_dict.items() if hasattr(v, "detach")}
-        metrics_out = {"epochs": int(args.epochs), "max_steps": int(args.max_steps)}
+        metrics_out = {
+            "epochs": int(args.epochs),
+            "max_steps": int(args.max_steps),
+            "stage_off_steps": int(args.stage_off_steps),
+            "stage_k_steps": int(args.stage_k_steps),
+        }
         if last_epoch_avg is not None:
             metrics_out["loss_avg_last_epoch"] = float(last_epoch_avg)
         summary = build_report(
