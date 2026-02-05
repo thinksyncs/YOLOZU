@@ -32,3 +32,8 @@ jobs:
         run: |
           python -m unittest
 
+      - name: Scenario smoke run
+        run: |
+          bash tools/fetch_coco128.sh
+          python tools/run_scenarios.py --adapter dummy --max-images 10
+
