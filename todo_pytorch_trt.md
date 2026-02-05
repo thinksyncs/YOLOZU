@@ -139,7 +139,7 @@ Start next (着手)
 - [x] Wire metric aggregation/mAP/AR with prediction JSON (COCOeval).
 
 ## Stage 4) Training pipeline (per spec §6, §10, §11)
-- [ ] Data augmentation + SIM jitter integration.
+- [x] Data augmentation + SIM jitter integration.
 - [x] Hungarian matching with staged cost terms.
 - [ ] MIM teacher + masking + loss schedule.
 - [x] Staged training: offsets first, then GlobalKHead.
