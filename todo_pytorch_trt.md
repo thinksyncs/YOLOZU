@@ -140,7 +140,7 @@ Start next (着手)
 
 ## Stage 4) Training pipeline (per spec §6, §10, §11)
 - [ ] Data augmentation + SIM jitter integration.
-- [ ] Hungarian matching with staged cost terms.
+- [x] Hungarian matching with staged cost terms.
 - [ ] MIM teacher + masking + loss schedule.
 - [x] Staged training: offsets first, then GlobalKHead.
 

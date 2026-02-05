@@ -282,10 +282,22 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--cost-bbox", type=float, default=5.0)
     parser.add_argument("--cost-z", type=float, default=0.0, help="Optional matching cost for depth")
     parser.add_argument(
+        "--cost-z-start-step",
+        type=int,
+        default=0,
+        help="Delay enabling cost-z until this global step (default: 0).",
+    )
+    parser.add_argument(
         "--cost-rot",
         type=float,
         default=0.0,
         help="Optional matching cost for rotation (geodesic angle)",
+    )
+    parser.add_argument(
+        "--cost-rot-start-step",
+        type=int,
+        default=0,
+        help="Delay enabling cost-rot until this global step (default: 0).",
     )
     parser.add_argument(
         "--synthetic-pose",
@@ -307,6 +319,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=0.0,
         help="Optional matching cost for translation recovered from (bbox, offsets, z, K')",
+    )
+    parser.add_argument(
+        "--cost-t-start-step",
+        type=int,
+        default=0,
+        help="Delay enabling cost-t until this global step (default: 0).",
     )
     parser.add_argument(
         "--debug-losses",
@@ -410,6 +428,24 @@ def compute_stage_weights(
         weights["off"] = 0.0
         return weights, "k"
     return weights, "full"
+
+
+def compute_stage_costs(
+    base: dict[str, float],
+    *,
+    global_step: int,
+    cost_z_start_step: int,
+    cost_rot_start_step: int,
+    cost_t_start_step: int,
+) -> dict[str, float]:
+    costs = dict(base)
+    if global_step < int(cost_z_start_step):
+        costs["cost_z"] = 0.0
+    if global_step < int(cost_rot_start_step):
+        costs["cost_rot"] = 0.0
+    if global_step < int(cost_t_start_step):
+        costs["cost_t"] = 0.0
+    return costs
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -1365,6 +1401,17 @@ def main(argv: list[str] | None = None) -> int:
                             mim_loss = sum(loss_items)
 
             if args.use_matcher:
+                staged_costs = compute_stage_costs(
+                    {
+                        "cost_z": float(args.cost_z),
+                        "cost_rot": float(args.cost_rot),
+                        "cost_t": float(args.cost_t),
+                    },
+                    global_step=int(global_step),
+                    cost_z_start_step=int(args.cost_z_start_step),
+                    cost_rot_start_step=int(args.cost_rot_start_step),
+                    cost_t_start_step=int(args.cost_t_start_step),
+                )
                 per_sample = targets.get("per_sample") if isinstance(targets, dict) else targets
                 aligned = build_query_aligned_targets(
                     out["logits"],
@@ -1375,11 +1422,11 @@ def main(argv: list[str] | None = None) -> int:
                     cost_bbox=args.cost_bbox,
                     log_z_pred=out.get("log_z"),
                     rot6d_pred=out.get("rot6d"),
-                    cost_z=args.cost_z,
-                    cost_rot=args.cost_rot,
+                    cost_z=staged_costs["cost_z"],
+                    cost_rot=staged_costs["cost_rot"],
                     offsets_pred=out.get("offsets"),
                     k_delta=out.get("k_delta"),
-                    cost_t=args.cost_t,
+                    cost_t=staged_costs["cost_t"],
                 )
                 out = dict(out)
                 # For box regression we train in normalized space.
