@@ -77,10 +77,12 @@ Reference recipe for external training runs (augment, multiscale, schedule, EMA)
 ## Quick CLI
 
 Run training and test flows with simple commands:
-- `./yolozu train train_setting.yaml`
-- `./yolozu test test_setting.yaml`
+- `python -m yolozu train train_setting.yaml`
+- `python -m yolozu test test_setting.yaml`
+- `./tools/yolozu train train_setting.yaml`
+- `./tools/yolozu test test_setting.yaml`
 
-If the script isn't executable, use `python yolozu ...` or `chmod +x yolozu`.
+You can also add `tools/` to your PATH or create a shell alias for `yolozu`.
 
 ## Hyperparameter sweep harness
 
