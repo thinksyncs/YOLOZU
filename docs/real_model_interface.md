@@ -6,7 +6,7 @@ scaffold. It is Apache-2.0-compatible and already wired into the adapter layer.
 ## Entry points
 
 Training (CPU scaffold, metrics output):
-- `python3 rtdetr_pose/tools/train_minimal.py --dataset-root data/coco128 --epochs 1 --metrics-json reports/train_metrics.json`
+- `python3 rtdetr_pose/tools/train_minimal.py --dataset-root data/coco128 --max-steps 50 --metrics-jsonl reports/train_metrics.jsonl --metrics-csv reports/train_metrics.csv`
 - Optional checkpoint save: `--checkpoint-out /path/to/checkpoint.pt`
 
 Inference / predictions export:
@@ -16,7 +16,7 @@ Scenario runner (metrics pipeline):
 - `python3 tools/run_scenarios.py --adapter rtdetr_pose --dataset data/coco128 --checkpoint /path/to/checkpoint.pt --max-images 50`
 
 Baseline report (real outputs + fps):
-- `./.venv/bin/python tools/run_baseline.py --adapter rtdetr_pose --dataset data/coco128 --max-images 50 --output reports/baseline.json`
+- `python3 tools/run_baseline.py --adapter rtdetr_pose --dataset data/coco128 --max-images 50 --output reports/baseline.json`
 
 Export (ONNX):
 - `python3 -c "from rtdetr_pose.export import export_onnx; ..."` (see `rtdetr_pose/rtdetr_pose/export.py`)

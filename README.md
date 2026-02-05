@@ -1,38 +1,125 @@
-# YOLOZU
+# YOLOZU (萬)
 
-Real-time monocular RGB pipeline for object detection, depth, and 6DoF pose estimation (RT-DETR-based).
+Pronunciation: Yaoyorozu (yorozu). Official ASCII name: YOLOZU.
 
-- Spec: [rt_detr_6dof_geom_mim_spec_en_v0_4.md](rt_detr_6dof_geom_mim_spec_en_v0_4.md)
-- Notes/TODOs: [todo_symmetry_commonsense_realtime.md](todo_symmetry_commonsense_realtime.md)
+YOLOZU is a lightweight evaluation + scaffolding repo for **real-time monocular RGB** detection + depth + 6DoF pose (RT-DETR-based).
+
+Recommended deployment path (canonical): PyTorch → ONNX → TensorRT (TRT).
+
+It focuses on:
+- CPU-minimum dev/tests (GPU optional)
+- A versioned predictions-JSON contract for evaluation
+- Minimal training scaffold (RT-DETR pose) with useful defaults (metrics, progress, export)
+
+## Documentation
+
+Start here: [docs/training_inference_export.md](docs/training_inference_export.md)
+
+- Repo feature summary: [docs/yolozu_spec.md](docs/yolozu_spec.md)
+- Model/spec note: [rt_detr_6dof_geom_mim_spec_en_v0_4.md](rt_detr_6dof_geom_mim_spec_en_v0_4.md)
+- Training / inference / export quick steps: [docs/training_inference_export.md](docs/training_inference_export.md)
+- Predictions schema (stable): [docs/predictions_schema.md](docs/predictions_schema.md)
+- Adapter contract (stable): [docs/adapter_contract.md](docs/adapter_contract.md)
 - License policy: [docs/license_policy.md](docs/license_policy.md)
-- Predictions schema: [docs/predictions_schema.md](docs/predictions_schema.md)
-- Adapter contract: [docs/adapter_contract.md](docs/adapter_contract.md)
 
----
+## Quick start (coco128)
 
-## Copy-light: toppymicroservices
+1) Install test dependencies (CPU PyTorch is OK for local dev):
 
-Use these as lightweight landing-page/app-store/one-pager blurbs (edit freely).
+```bash
+python3 -m pip install -r requirements-test.txt
+```
 
+2) Fetch the tiny dataset (once):
 
-`toppymicroservices` is a pragmatic microservices stack for shipping AI-backed APIs reliably.
+```bash
+bash tools/fetch_coco128.sh
+```
 
+3) Run a minimal check (pytest):
 
----
+```bash
+pytest -q
+```
 
-## Testing (tiny COCO)
-- Install deps (CPU PyTorch): `python3 -m pip install -r requirements-test.txt`
-- Fetch dataset (once): `bash tools/fetch_coco128.sh`
-- Dataset: `data/coco128` (YOLO-format COCO subset, fetched from official COCO hosting).
-- Smoke test: `python3 -m unittest tests/test_coco128_smoke.py`
-- Core checks: `python3 -m unittest tests/test_config_loader.py tests/test_symmetry.py tests/test_metrics.py tests/test_gates_constraints.py tests/test_geometry_pipeline.py tests/test_jitter.py tests/test_scenario_suite.py tests/test_benchmark.py`
-- Dataset manifest: `python3 tools/build_manifest.py`
-- Adapter run: `python3 tools/run_scenarios.py`
+### GPU notes
+- GPU is supported (training/inference): install CUDA-enabled PyTorch in your environment and use `--device cuda:0`.
+- CI/dev does not require GPU; many checks are CPU-friendly.
 
-### Notes
-- GPU is not required for development/tests; CPU-only PyTorch is supported.
-- If you need CUDA, install PyTorch separately for your GPU and then run: `python3 -m pip install -r requirements.txt`
-- Dev extras: `python3 -m pip install -r requirements-dev.txt`
+## CLI (simple train/test)
+
+Run flows with YAML settings:
+
+```bash
+python -m yolozu train train_setting.yaml
+python -m yolozu test test_setting.yaml
+```
+
+Or use the wrapper:
+
+```bash
+./tools/yolozu train train_setting.yaml
+./tools/yolozu test test_setting.yaml
+```
+
+Templates:
+- `train_setting.yaml`
+- `test_setting.yaml`
+
+## Training scaffold (RT-DETR pose)
+
+The minimal trainer is implemented in `rtdetr_pose/tools/train_minimal.py`.
+
+What it provides out-of-the-box:
+- Optimizers: AdamW or SGD
+- LR warmup + schedule (`none`, `linear`, `cos`)
+- Progress display (tqdm) + per-step loss logging
+- Metrics written by default:
+  - JSONL: `reports/train_metrics.jsonl`
+  - CSV: `reports/train_metrics.csv`
+- Optional TensorBoard logging: `--tensorboard-logdir reports/tb`
+
+Plot a loss curve (requires matplotlib):
+
+```bash
+python3 tools/plot_metrics.py --jsonl reports/train_metrics.jsonl --out reports/train_loss.png
+```
+
+### ONNX export
+
+ONNX export runs **by default after training**.
+
+Control it via flags in the minimal trainer:
+- `--export-onnx` / `--no-export-onnx`
+- `--onnx-out <path>`
+- `--onnx-opset <int>`
+
+## Dataset format (YOLO + optional metadata)
+
+Base dataset format:
+- Images: `images/<split>/*.(jpg|png|...)`
+- Labels: `labels/<split>/*.txt` (YOLO: `class cx cy w h` normalized)
+
+Optional per-image metadata (JSON): `labels/<split>/<image>.json`
+- Masks/seg: `mask_path` / `mask` / `M`
+- Depth: `depth_path` / `depth` / `D_obj`
+- Pose: `R_gt` / `t_gt` (or `pose`)
+- Intrinsics: `K_gt` / `intrinsics`
+
+### Mask-only labels (seg -> bbox/class)
+
+If YOLO txt labels are missing and a mask is provided, bbox+class can be derived from masks.
+Details (including color/instance modes and multi-PNG-per-class options) are documented in:
+- [rtdetr_pose/README.md](rtdetr_pose/README.md)
+
+## Evaluation / contracts (stable)
+
+This repo evaluates models through a stable predictions JSON format:
+- Schema doc: [docs/predictions_schema.md](docs/predictions_schema.md)
+- Machine-readable schema: [schemas/predictions.schema.json](schemas/predictions.schema.json)
+
+Adapters power `tools/export_predictions.py --adapter <name>` and follow:
+- [docs/adapter_contract.md](docs/adapter_contract.md)
 
 ## Precomputed predictions workflow (no torch required)
 
@@ -40,7 +127,7 @@ If you run real inference elsewhere (PyTorch/TensorRT/etc.), you can evaluate th
 
 - Export predictions (in an environment where the adapter can run):
   - `python3 tools/export_predictions.py --adapter rtdetr_pose --checkpoint /path/to.ckpt --max-images 50 --wrap --output reports/predictions.json`
-  - TTA (post-transform): `python3 tools/export_predictions.py --adapter rtdetr_pose --tta --tta-seed 0 --tta-flip-prob 0.5 --wrap --output reports/predictions_tta.json`
+  - TTA (input transforms): `python3 tools/export_predictions.py --adapter rtdetr_pose --tta --tta-seed 0 --tta-flip-prob 0.5 --wrap --output reports/predictions_tta.json`
 - Validate the JSON:
   - `python3 tools/validate_predictions.py reports/predictions.json`
 - Consume predictions locally:
@@ -78,16 +165,6 @@ Reference recipe for external training runs (augment, multiscale, schedule, EMA)
 ## Training, inference, export (quick steps)
 
 - `docs/training_inference_export.md`
-
-## Quick CLI
-
-Run training and test flows with simple commands:
-- `python -m yolozu train train_setting.yaml`
-- `python -m yolozu test test_setting.yaml`
-- `./tools/yolozu train train_setting.yaml`
-- `./tools/yolozu test test_setting.yaml`
-
-You can also add `tools/` to your PATH or create a shell alias for `yolozu`.
 
 ## Hyperparameter sweep harness
 

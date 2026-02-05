@@ -37,6 +37,8 @@ Use the adapter tools to run inference and produce predictions JSON.
 Optional TTA:
 - python3 tools/export_predictions.py --adapter rtdetr_pose --tta --tta-seed 0 --tta-flip-prob 0.5 --wrap --output reports/predictions_tta.json
 
+Note: TTA here refers to simple **input transforms** (e.g. flips), not postprocess transforms.
+
 ## Export predictions for evaluation
 
 If you run inference externally (PyTorch/TensorRT/ONNX), export to the YOLOZU predictions schema.

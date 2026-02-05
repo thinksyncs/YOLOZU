@@ -10,7 +10,7 @@ Goal: ensure an ONNX export produces **numerically equivalent** predictions to a
 Important:
 - Use the same preprocessing (imgsz=640 + letterbox) and output format (`cxcywh_norm`).
 - Do not apply NMS (e2e/no-NMS protocol).
-- Do not apply NMS (e2e/no-NMS protocol).
+ 
 
 ## YOLO26 (Ultralytics) concrete flow
 
