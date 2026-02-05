@@ -21,6 +21,12 @@ Common options:
 - --cost-z 1.0 --cost-rot 1.0 --cost-t 1.0
 - --cost-z-start-step 500 --cost-rot-start-step 1000 --cost-t-start-step 1500
 - --checkpoint-out reports/rtdetr_pose_ckpt.pt
+- --metrics-jsonl reports/train_metrics.jsonl
+- --metrics-csv reports/train_metrics.csv
+- --tensorboard-logdir reports/tb
+
+Plot loss curve (requires matplotlib):
+- python3 tools/plot_metrics.py --jsonl reports/train_metrics.jsonl --out reports/train_loss.png
 
 ## Inference (adapter run)
 

@@ -2,6 +2,7 @@ import argparse
 import json
 import math
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +16,16 @@ try:
     from torch.utils.data import DataLoader, Dataset
 except ImportError as exc:  # pragma: no cover
     raise SystemExit("torch is required; install requirements-test.txt") from exc
+
+try:  # pragma: no cover - optional dependency
+    from torch.utils.tensorboard import SummaryWriter
+except Exception:  # pragma: no cover
+    SummaryWriter = None
+
+try:
+    from tqdm import tqdm
+except Exception:  # pragma: no cover
+    tqdm = None
 
 from rtdetr_pose.dataset import build_manifest
 from rtdetr_pose.dataset import extract_full_gt_targets, depth_at_bbox_center
@@ -107,7 +118,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="If >0, train K-only for this many steps after offsets stage (offset loss disabled).",
     )
     parser.add_argument("--max-steps", type=int, default=30, help="Cap steps per epoch")
-    parser.add_argument("--log-every", type=int, default=10, help="Print every N steps")
+    parser.add_argument("--log-every", type=int, default=1, help="Print every N steps")
     parser.add_argument("--image-size", type=int, default=64)
     parser.add_argument(
         "--multiscale",
@@ -338,9 +349,28 @@ def build_parser() -> argparse.ArgumentParser:
         default="none",
         help="Multi-task loss alignment strategy (default: none).",
     )
-    parser.add_argument("--metrics-jsonl", default=None, help="Append per-step loss/metric report JSONL here.")
+    parser.add_argument(
+        "--metrics-jsonl",
+        default="reports/train_metrics.jsonl",
+        help="Append per-step loss/metric report JSONL here.",
+    )
     parser.add_argument("--metrics-json", default=None, help="Write final run summary JSON here.")
-    parser.add_argument("--metrics-csv", default=None, help="Write final run summary CSV (single row) here.")
+    parser.add_argument(
+        "--metrics-csv",
+        default="reports/train_metrics.csv",
+        help="Write final run summary CSV (single row) here.",
+    )
+    parser.add_argument(
+        "--progress",
+        default=True,
+        action=argparse.BooleanOptionalAction,
+        help="Show progress bar with live loss (default: true).",
+    )
+    parser.add_argument(
+        "--tensorboard-logdir",
+        default=None,
+        help="Optional TensorBoard log directory (enables scalar logging).",
+    )
 
     # Training-time tricks (optional)
     parser.add_argument(
@@ -1295,6 +1325,10 @@ def main(argv: list[str] | None = None) -> int:
         dataset_root=(args.dataset_root or None),
     )
 
+    writer = None
+    if args.tensorboard_logdir and SummaryWriter is not None:
+        writer = SummaryWriter(log_dir=str(args.tensorboard_logdir))
+
     torch.manual_seed(args.seed)
 
     if args.dataset_root:
@@ -1475,7 +1509,11 @@ def main(argv: list[str] | None = None) -> int:
             )
         running = 0.0
         steps = 0
-        for images, targets in loader:
+        epoch_start = time.time()
+        iterator = loader
+        if args.progress and tqdm is not None:
+            iterator = tqdm(loader, desc=f"epoch {epoch}")
+        for images, targets in iterator:
             mim_mask_prob, mim_weight = compute_mim_schedule(
                 step=int(global_step),
                 total_steps=int(total_steps_est),
@@ -1639,6 +1677,21 @@ def main(argv: list[str] | None = None) -> int:
                     suffix = f" mim_mask_ratio={mim_ratio:.3f}"
                 suffix += f" mim_mask_prob={mim_mask_prob:.3f} mim_weight={mim_weight:.3f}"
                 print(f"epoch={epoch} step={steps} global_step={global_step} loss={avg:.4f}{suffix}")
+                if args.progress and tqdm is not None:
+                    postfix = {"loss": f"{avg:.4f}", "stage": stage}
+                    if mim_ratio is not None:
+                        postfix["mim_ratio"] = f"{mim_ratio:.3f}"
+                    iterator.set_postfix(postfix)
+                if writer is not None:
+                    writer.add_scalar("train/loss_avg", float(avg), int(global_step))
+                    if mim_ratio is not None:
+                        writer.add_scalar("train/mim_mask_ratio", float(mim_ratio), int(global_step))
+                    writer.add_scalar("train/mim_mask_prob", float(mim_mask_prob), int(global_step))
+                    writer.add_scalar("train/mim_weight", float(mim_weight), int(global_step))
+                    writer.add_text("train/stage", str(stage), int(global_step))
+                    for key, val in loss_dict.items():
+                        if hasattr(val, "detach"):
+                            writer.add_scalar(f"train/{key}", float(val.detach().cpu()), int(global_step))
                 if args.metrics_jsonl:
                     losses_out = {k: float(v.detach().cpu()) for k, v in loss_dict.items() if hasattr(v, "detach")}
                     metrics_out = {"loss_avg": float(avg)}
@@ -1683,6 +1736,9 @@ def main(argv: list[str] | None = None) -> int:
         avg = running / max(1, steps)
         last_epoch_avg = float(avg)
         print(f"epoch={epoch} done steps={steps} loss={avg:.4f}")
+        if writer is not None:
+            writer.add_scalar("train/epoch_loss", float(avg), int(epoch))
+            writer.add_scalar("train/epoch_seconds", float(time.time() - epoch_start), int(epoch))
         if args.metrics_jsonl and last_loss_dict is not None:
             losses_out = {k: float(v.detach().cpu()) for k, v in last_loss_dict.items() if hasattr(v, "detach")}
             metrics_out = {"loss_avg": float(avg), "steps": int(steps)}
@@ -1750,6 +1806,10 @@ def main(argv: list[str] | None = None) -> int:
             opset_version=int(args.onnx_opset),
         )
         print(onnx_path)
+
+    if writer is not None:
+        writer.flush()
+        writer.close()
 
     return 0
 
