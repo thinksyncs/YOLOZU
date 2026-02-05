@@ -38,6 +38,7 @@ If you run real inference elsewhere (PyTorch/TensorRT/etc.), you can evaluate th
 
 - Export predictions (in an environment where the adapter can run):
   - `python3 tools/export_predictions.py --adapter rtdetr_pose --checkpoint /path/to.ckpt --max-images 50 --wrap --output reports/predictions.json`
+  - TTA (post-transform): `python3 tools/export_predictions.py --adapter rtdetr_pose --tta --tta-seed 0 --tta-flip-prob 0.5 --wrap --output reports/predictions_tta.json`
 - Validate the JSON:
   - `python3 tools/validate_predictions.py reports/predictions.json`
 - Consume predictions locally:
