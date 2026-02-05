@@ -2,9 +2,13 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Any, Iterable
+from typing import TYPE_CHECKING, Any, Iterable
 
 from yolozu.boxes import iou_xyxy_abs
+
+
+if TYPE_CHECKING:  # pragma: no cover
+    import torch
 
 
 def _as_float_list(value: Any) -> list[float] | None:
@@ -156,7 +160,7 @@ def _match_dets_to_gts(
     return out
 
 
-def _compose_k_delta(per_det: list[float] | None, shared: "torch.Tensor") -> "torch.Tensor":
+def _compose_k_delta(per_det: list[float] | None, shared: torch.Tensor) -> torch.Tensor:
     # Compose multiplicative dfx/dfy, additive dcx/dcy.
     # per_det may be None.
     import torch
