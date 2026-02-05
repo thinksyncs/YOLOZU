@@ -157,7 +157,7 @@ Start next (着手)
 
 ## Stage 7) Evaluation + scenario suite (per spec §6)
 - [ ] Scenario suite run (symmetry, tabletop, depth extremes, jitter).
-- [ ] Single report output: fps, mAP/Recall, depth error, pose error, rejection rate.
+- [x] Single report output: fps, mAP/Recall, depth error, pose error, rejection rate.
 - [ ] CI smoke run on tiny COCO subset.
 
 ## Stage 8) Documentation + handoff
