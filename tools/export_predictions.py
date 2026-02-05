@@ -84,7 +84,25 @@ def _parse_args(argv):
     parser.add_argument("--tta-seed", type=int, default=None, help="Seed for TTA randomness.")
     parser.add_argument("--tta-flip-prob", type=float, default=0.5, help="Flip probability for TTA.")
     parser.add_argument("--tta-norm-only", action="store_true", help="Update only normalized bbox values for TTA.")
+    parser.add_argument("--tta-log-out", default=None, help="Optional path to write TTA log JSON.")
     return parser.parse_args(argv)
+
+
+def _summarize_tta(predictions, *, warnings):
+    total = 0
+    applied = 0
+    for entry in predictions:
+        mask = entry.get("tta_mask") if isinstance(entry, dict) else None
+        if isinstance(mask, list):
+            total += len(mask)
+            applied += sum(1 for flag in mask if flag)
+    ratio = float(applied) / float(total) if total else 0.0
+    return {
+        "detections": int(total),
+        "applied": int(applied),
+        "applied_ratio": float(ratio),
+        "warnings": list(warnings),
+    }
 
 
 def main(argv=None):
@@ -119,6 +137,7 @@ def main(argv=None):
     predictions = adapter.predict(records)
 
     tta_warnings = []
+    tta_summary = None
     if args.tta:
         tta = apply_tta(
             predictions,
@@ -129,6 +148,7 @@ def main(argv=None):
         )
         predictions = tta.entries
         tta_warnings = tta.warnings
+        tta_summary = _summarize_tta(predictions, warnings=tta_warnings)
 
     output_path = repo_root / args.output
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -148,6 +168,7 @@ def main(argv=None):
                     "flip_prob": float(args.tta_flip_prob),
                     "norm_only": bool(args.tta_norm_only),
                     "warnings": tta_warnings,
+                    "summary": tta_summary,
                 },
             },
         }
@@ -156,6 +177,25 @@ def main(argv=None):
         output_path.write_text(json.dumps(predictions, indent=2, sort_keys=True))
 
     print(output_path)
+
+    if args.tta_log_out and args.tta:
+        log_path = Path(args.tta_log_out)
+        if not log_path.is_absolute():
+            log_path = repo_root / log_path
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_payload = {
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "output": str(output_path),
+            "tta": {
+                "enabled": bool(args.tta),
+                "seed": args.tta_seed,
+                "flip_prob": float(args.tta_flip_prob),
+                "norm_only": bool(args.tta_norm_only),
+                "summary": tta_summary,
+            },
+        }
+        log_path.write_text(json.dumps(log_payload, indent=2, sort_keys=True))
+        print(log_path)
 
 
 if __name__ == "__main__":
