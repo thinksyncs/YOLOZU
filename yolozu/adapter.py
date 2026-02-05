@@ -2,6 +2,15 @@ class ModelAdapter:
     def predict(self, records):
         raise NotImplementedError
 
+    def supports_ttt(self) -> bool:
+        return False
+
+    def get_model(self):
+        return None
+
+    def build_loader(self, records, *, batch_size: int = 1):
+        raise RuntimeError("this adapter does not support TTT")
+
 
 class DummyAdapter(ModelAdapter):
     def predict(self, records):
@@ -161,6 +170,31 @@ class RTDETRPoseAdapter(ModelAdapter):
             return x.unsqueeze(0)
 
         self._backend = {"torch": torch, "model": model, "preprocess": preprocess}
+
+    def supports_ttt(self) -> bool:
+        return True
+
+    def get_model(self):
+        self._ensure_backend()
+        return self._backend["model"]
+
+    def build_loader(self, records, *, batch_size: int = 1):
+        self._ensure_backend()
+        torch = self._backend["torch"]
+        preprocess = self._backend["preprocess"]
+
+        if batch_size <= 0:
+            raise ValueError("batch_size must be > 0")
+
+        batch = []
+        for record in records:
+            x = preprocess(record["image"]).to(self.device)
+            batch.append(x)
+            if len(batch) >= int(batch_size):
+                yield torch.cat(batch, dim=0)
+                batch = []
+        if batch:
+            yield torch.cat(batch, dim=0)
 
     def predict(self, records):
         self._ensure_backend()

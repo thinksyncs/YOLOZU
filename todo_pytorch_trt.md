@@ -161,5 +161,8 @@ Start next (着手)
 - [ ] CI smoke run on tiny COCO subset.
 
 ## Stage 8) Documentation + handoff
-- [ ] Update spec/checklist with actual implementation references.
+- [x] Update spec/checklist with actual implementation references.
+  - Spec summary: `docs/yolozu_spec.md`
+  - TTT integration notes: `docs/ttt_integration_plan.md`
+  - CLI entrypoint: `tools/export_predictions.py` (`--ttt`, `--ttt-method`, `--ttt-log-out`)
 - [x] Document training/inference commands and export steps.

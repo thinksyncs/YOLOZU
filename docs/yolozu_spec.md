@@ -51,7 +51,10 @@ YOLOZU is a lightweight evaluation and scaffolding repo for real‑time monocula
 
 ### 8) Test‑time adaptation (TTA/TTT)
 - TTA transforms (flip‑based) with logging (prediction-space post-transform).
-- TTT utilities (MIM + Tent runners) are available as library code; integration into `tools/export_predictions.py` is planned (see `docs/ttt_integration_plan.md`).
+- TTT (Tent/MIM) is integrated into `tools/export_predictions.py` via `--ttt`.
+  - Runs strictly **pre-prediction** to keep output schema unchanged.
+  - Meta logging: when `--wrap` is used, writes `meta.ttt` including config + `report` (losses, updated_param_count, mask_ratio for MIM).
+  - See `docs/ttt_integration_plan.md` for the up-to-date interface notes.
 
 ### 9) CLI convenience
 - `python -m yolozu train train_setting.yaml`
