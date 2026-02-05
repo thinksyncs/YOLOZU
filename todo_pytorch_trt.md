@@ -162,4 +162,4 @@ Start next (着手)
 
 ## Stage 8) Documentation + handoff
 - [ ] Update spec/checklist with actual implementation references.
-- [ ] Document training/inference commands and export steps.
+- [x] Document training/inference commands and export steps.

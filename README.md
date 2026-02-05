@@ -70,6 +70,10 @@ Note:
 Reference recipe for external training runs (augment, multiscale, schedule, EMA):
 - `docs/training_recipe_v1.md`
 
+## Training, inference, export (quick steps)
+
+- `docs/training_inference_export.md`
+
 ## Hyperparameter sweep harness
 
 Run a configurable sweep and emit CSV/MD tables:
