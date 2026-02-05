@@ -1,11 +1,12 @@
 import argparse
+import json
 import sys
 from pathlib import Path
 
 repo_root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(repo_root))
 
-from yolozu.predictions import load_predictions_entries, validate_predictions_entries  # noqa: E402
+from yolozu.predictions import normalize_predictions_payload, validate_predictions_entries, validate_wrapped_meta  # noqa: E402
 
 
 def _parse_args(argv):
@@ -22,7 +23,10 @@ def _parse_args(argv):
 def main(argv=None):
     args = _parse_args(sys.argv[1:] if argv is None else argv)
 
-    entries = load_predictions_entries(args.predictions)
+    raw = json.loads(Path(args.predictions).read_text())
+    entries, meta = normalize_predictions_payload(raw)
+    if meta is not None:
+        validate_wrapped_meta(meta)
     result = validate_predictions_entries(entries, strict=args.strict)
 
     if result.warnings:

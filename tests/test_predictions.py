@@ -9,7 +9,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from yolozu.predictions import (
     load_predictions_entries,
     load_predictions_index,
+    load_predictions_payload,
     validate_predictions_entries,
+    validate_predictions_payload,
 )
 
 
@@ -30,6 +32,80 @@ class TestPredictionsIO(unittest.TestCase):
             p.write_text(json.dumps(payload))
             entries = load_predictions_entries(p)
             self.assertEqual(entries[0]["image"], "a.jpg")
+
+    def test_load_payload_preserves_meta(self):
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td) / "preds.json"
+            payload = {"predictions": [{"image": "a.jpg", "detections": []}], "meta": {"timestamp": "x"}}
+            p.write_text(json.dumps(payload))
+            entries, meta = load_predictions_payload(p)
+            self.assertEqual(entries[0]["image"], "a.jpg")
+            self.assertEqual(meta, {"timestamp": "x"})
+
+    def test_validate_wrapped_meta_contract_ok(self):
+        payload = {
+            "predictions": [{"image": "a.jpg", "detections": []}],
+            "meta": {
+                "timestamp": "2026-02-05T00:00:00Z",
+                "adapter": "dummy",
+                "config": "rtdetr_pose/configs/base.json",
+                "checkpoint": None,
+                "images": 1,
+                "tta": {
+                    "enabled": False,
+                    "seed": None,
+                    "flip_prob": 0.5,
+                    "norm_only": False,
+                    "warnings": [],
+                    "summary": None,
+                },
+                "ttt": {
+                    "enabled": False,
+                    "method": "tent",
+                    "steps": 1,
+                    "batch_size": 1,
+                    "lr": 1e-4,
+                    "update_filter": "all",
+                    "include": None,
+                    "exclude": None,
+                    "max_batches": 1,
+                    "seed": None,
+                    "mim": {"mask_prob": 0.6, "patch_size": 16, "mask_value": 0.0},
+                    "report": None,
+                },
+            },
+        }
+        res = validate_predictions_payload(payload, strict=False)
+        self.assertIsInstance(res.warnings, list)
+
+    def test_validate_wrapped_meta_contract_rejects_bad_types(self):
+        payload = {
+            "predictions": [{"image": "a.jpg", "detections": []}],
+            "meta": {
+                "timestamp": "2026-02-05T00:00:00Z",
+                "adapter": "dummy",
+                "config": "rtdetr_pose/configs/base.json",
+                "images": "1",
+                "tta": {"enabled": False, "seed": None, "flip_prob": 0.5, "norm_only": False, "warnings": [], "summary": None},
+                "ttt": {
+                    "enabled": False,
+                    "method": "tent",
+                    "steps": 1,
+                    "batch_size": 1,
+                    "lr": 1e-4,
+                    "update_filter": "all",
+                    "include": None,
+                    "exclude": None,
+                    "max_batches": 1,
+                    "seed": None,
+                    "mim": {"mask_prob": 0.6, "patch_size": 16, "mask_value": 0.0},
+                    "report": None,
+                },
+            },
+        }
+        with self.assertRaises(ValueError) as ctx:
+            validate_predictions_payload(payload, strict=False)
+        self.assertIn("meta.images", str(ctx.exception))
 
     def test_load_index_adds_basename_alias(self):
         with tempfile.TemporaryDirectory() as td:
