@@ -13,6 +13,7 @@
     "backbone_channels": [64, 128, 256],
     "stage_blocks": [1, 2, 2],
     "use_sppf": true,
+    "use_level_embed": true,
     "num_encoder_layers": 1,
     "num_decoder_layers": 3,
     "nhead": 8,

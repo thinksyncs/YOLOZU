@@ -1228,6 +1228,7 @@ def main(argv: list[str] | None = None) -> int:
         decoder_dim_feedforward=(
             getattr(model_cfg, "decoder_dim_feedforward", None) if model_cfg is not None else None
         ),
+        use_level_embed=(getattr(model_cfg, "use_level_embed", True) if model_cfg is not None else True),
     )
     losses_fn = Losses(task_aligner=args.task_aligner)
     base_weights = dict(losses_fn.weights)

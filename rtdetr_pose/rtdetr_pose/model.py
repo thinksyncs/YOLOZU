@@ -182,10 +182,22 @@ class FPNPAN(nn.Module):
 
 
 class HybridEncoder(nn.Module):
-    def __init__(self, in_channels, hidden_dim, num_layers=1, nhead=8, dim_feedforward=None):
+    def __init__(
+        self,
+        in_channels,
+        hidden_dim,
+        num_layers=1,
+        nhead=8,
+        dim_feedforward=None,
+        use_level_embed=True,
+    ):
         super().__init__()
         self.fpn = FPNPAN(in_channels=in_channels, out_channels=hidden_dim)
         self.num_layers = num_layers
+        self.use_level_embed = bool(use_level_embed)
+        self.level_embed = None
+        if self.use_level_embed:
+            self.level_embed = nn.Parameter(torch.zeros(len(in_channels), hidden_dim))
         dim_feedforward = dim_feedforward or hidden_dim * 4
         if num_layers > 0:
             layer = nn.TransformerEncoderLayer(
@@ -201,8 +213,18 @@ class HybridEncoder(nn.Module):
 
     def forward(self, features, pos_embed):
         features = self.fpn(features)
-        memory = torch.cat([feat.flatten(2).permute(0, 2, 1) for feat in features], dim=1)
-        pos = torch.cat(pos_embed, dim=1)
+        memories = []
+        pos_list = []
+        for idx, feat in enumerate(features):
+            mem = feat.flatten(2).permute(0, 2, 1)
+            pos = pos_embed[idx]
+            if self.level_embed is not None:
+                level = self.level_embed[idx].view(1, 1, -1)
+                pos = pos + level
+            memories.append(mem)
+            pos_list.append(pos)
+        memory = torch.cat(memories, dim=1)
+        pos = torch.cat(pos_list, dim=1)
         memory = memory + pos
         if self.encoder is not None:
             memory = self.encoder(memory)
@@ -285,6 +307,7 @@ class RTDETRPose(nn.Module):
         nhead=8,
         encoder_dim_feedforward=None,
         decoder_dim_feedforward=None,
+        use_level_embed=True,
     ):
         super().__init__()
         self.backbone = CSPResNet(
@@ -300,6 +323,7 @@ class RTDETRPose(nn.Module):
             num_layers=num_encoder_layers,
             nhead=nhead,
             dim_feedforward=encoder_dim_feedforward,
+            use_level_embed=use_level_embed,
         )
         self.decoder = RTDETRDecoder(
             hidden_dim=hidden_dim,
