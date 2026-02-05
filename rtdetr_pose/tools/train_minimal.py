@@ -82,6 +82,36 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--batch-size", type=int, default=2)
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument(
+        "--optimizer",
+        choices=("adamw", "sgd"),
+        default="adamw",
+        help="Optimizer to use (default: adamw).",
+    )
+    parser.add_argument(
+        "--momentum",
+        type=float,
+        default=0.9,
+        help="SGD momentum (default: 0.9).",
+    )
+    parser.add_argument(
+        "--weight-decay",
+        type=float,
+        default=0.01,
+        help="Weight decay for optimizer (default: 0.01).",
+    )
+    parser.add_argument(
+        "--scheduler",
+        choices=("none", "cos", "linear"),
+        default="none",
+        help="LR schedule after warmup (default: none).",
+    )
+    parser.add_argument(
+        "--min-lr",
+        type=float,
+        default=0.0,
+        help="Minimum LR for linear/cos schedules (default: 0.0).",
+    )
+    parser.add_argument(
         "--device",
         type=str,
         default="cuda" if torch.cuda.is_available() else "cpu",
@@ -457,6 +487,25 @@ def compute_linear_schedule(start: float, end: float, step: int, total_steps: in
         return float(end)
     alpha = min(max(float(step) / float(total_steps - 1), 0.0), 1.0)
     return float(start + (end - start) * alpha)
+
+
+def compute_schedule_lr(
+    *,
+    base_lr: float,
+    min_lr: float,
+    step: int,
+    total_steps: int,
+    schedule: str,
+) -> float:
+    if schedule == "linear":
+        return compute_linear_schedule(float(base_lr), float(min_lr), int(step), int(total_steps))
+    if schedule == "cos":
+        if total_steps <= 1:
+            return float(min_lr)
+        alpha = min(max(float(step) / float(total_steps - 1), 0.0), 1.0)
+        cos_val = 0.5 * (1.0 + math.cos(math.pi * alpha))
+        return float(min_lr + (base_lr - min_lr) * cos_val)
+    return float(base_lr)
 
 
 def compute_mim_schedule(
@@ -1568,7 +1617,19 @@ def main(argv: list[str] | None = None) -> int:
     device = torch.device(device_str)
     model.to(device)
 
-    optim = torch.optim.AdamW(model.parameters(), lr=args.lr)
+    if args.optimizer == "sgd":
+        optim = torch.optim.SGD(
+            model.parameters(),
+            lr=float(args.lr),
+            momentum=float(args.momentum),
+            weight_decay=float(args.weight_decay),
+        )
+    else:
+        optim = torch.optim.AdamW(
+            model.parameters(),
+            lr=float(args.lr),
+            weight_decay=float(args.weight_decay),
+        )
 
     start_epoch = 0
     global_step = 0
@@ -1759,8 +1820,16 @@ def main(argv: list[str] | None = None) -> int:
                     int(args.lr_warmup_steps),
                     float(args.lr_warmup_init),
                 )
-                for group in optim.param_groups:
-                    group["lr"] = lr_now
+            else:
+                lr_now = compute_schedule_lr(
+                    base_lr=float(args.lr),
+                    min_lr=float(args.min_lr),
+                    step=int(global_step),
+                    total_steps=int(total_steps_est),
+                    schedule=str(args.scheduler),
+                )
+            for group in optim.param_groups:
+                group["lr"] = lr_now
 
             running += float(loss.detach().cpu())
             steps += 1
@@ -1780,6 +1849,7 @@ def main(argv: list[str] | None = None) -> int:
                     iterator.set_postfix(postfix)
                 if writer is not None:
                     writer.add_scalar("train/loss_avg", float(avg), int(global_step))
+                    writer.add_scalar("train/lr", float(lr_now), int(global_step))
                     if mim_ratio is not None:
                         writer.add_scalar("train/mim_mask_ratio", float(mim_ratio), int(global_step))
                     writer.add_scalar("train/mim_mask_prob", float(mim_mask_prob), int(global_step))
