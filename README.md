@@ -11,6 +11,17 @@ It focuses on:
 - A versioned predictions-JSON contract for evaluation
 - Minimal training scaffold (RT-DETR pose) with useful defaults (metrics, progress, export)
 
+## Feature highlights (what you can do)
+
+- Dataset I/O: YOLO-format images/labels + optional per-image JSON metadata.
+- Stable evaluation contract: versioned predictions-JSON schema + adapter contract.
+- Inference/export: `tools/export_predictions.py` produces predictions JSON from adapters.
+- Test-time adaptation options:
+  - TTA: lightweight prediction-space post-transform (`--tta`).
+  - TTT: pre-prediction test-time training (Tent or MIM) via `--ttt` (adapter + torch required).
+- Evaluation: COCO mAP conversion/eval and scenario suite reporting.
+- Training scaffold: minimal RT-DETR pose trainer with metrics output, ONNX export, and optional LoRA.
+
 ## Documentation
 
 Start here: [docs/training_inference_export.md](docs/training_inference_export.md)
@@ -128,6 +139,10 @@ If you run real inference elsewhere (PyTorch/TensorRT/etc.), you can evaluate th
 - Export predictions (in an environment where the adapter can run):
   - `python3 tools/export_predictions.py --adapter rtdetr_pose --checkpoint /path/to.ckpt --max-images 50 --wrap --output reports/predictions.json`
   - TTA (prediction-space transform): `python3 tools/export_predictions.py --adapter rtdetr_pose --tta --tta-seed 0 --tta-flip-prob 0.5 --wrap --output reports/predictions_tta.json`
+  - TTT (pre-prediction test-time training; updates model weights in-memory):
+    - Tent: `python3 tools/export_predictions.py --adapter rtdetr_pose --ttt --ttt-method tent --ttt-steps 5 --ttt-lr 1e-4 --wrap --output reports/predictions_ttt_tent.json`
+    - MIM: `python3 tools/export_predictions.py --adapter rtdetr_pose --ttt --ttt-method mim --ttt-steps 5 --ttt-mask-prob 0.6 --ttt-patch-size 16 --wrap --output reports/predictions_ttt_mim.json`
+    - Optional log: add `--ttt-log-out reports/ttt_log.json`
 - Validate the JSON:
   - `python3 tools/validate_predictions.py reports/predictions.json`
 - Consume predictions locally:

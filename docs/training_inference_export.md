@@ -39,6 +39,16 @@ Optional TTA:
 
 Note: TTA here is a lightweight **prediction-space transform** (a post-transform on the exported bboxes). It does not rerun the model on augmented inputs.
 
+Optional TTT (test-time training, pre-prediction):
+- Tent (entropy minimization):
+	- python3 tools/export_predictions.py --adapter rtdetr_pose --ttt --ttt-method tent --ttt-steps 5 --ttt-lr 1e-4 --wrap --output reports/predictions_ttt_tent.json
+- MIM (masked image modeling):
+	- python3 tools/export_predictions.py --adapter rtdetr_pose --ttt --ttt-method mim --ttt-steps 5 --ttt-mask-prob 0.6 --ttt-patch-size 16 --wrap --output reports/predictions_ttt_mim.json
+
+Notes:
+- TTT requires an adapter that supports `get_model()` + `build_loader()` and requires torch.
+- TTT updates model parameters in-memory before calling `adapter.predict(records)`.
+
 ## Export predictions for evaluation
 
 If you run inference externally (PyTorch/TensorRT/ONNX), export to the YOLOZU predictions schema.
