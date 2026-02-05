@@ -47,6 +47,13 @@ Output per image (from `RTDETRPoseAdapter`):
 - `image`: original path
 - `detections`: list of dicts with `class_id`, `score`, `bbox` (cxcywh_norm), and optional pose fields
 
+### Units & intrinsics (common pitfall)
+
+- `intrinsics` / `K` / `K_gt` are expected in **pixel units** $(fx, fy, cx, cy)$.
+- They must match the **image coordinate system used by the model outputs** (i.e., after any resize/letterbox preprocessing).
+- `log_z`/`z` and the derived `t_xyz` are in the **same length unit as your dataset** (YOLOZU does not convert mm↔m).
+- `k_delta` is a small correction on top of a provided baseline intrinsics; it is not a per-image Newton/Hessian optimizer.
+
 ## Deterministic predictions (for tests)
 
 - Use fixed seeds (`--seed`) and `--deterministic` in `train_minimal.py`

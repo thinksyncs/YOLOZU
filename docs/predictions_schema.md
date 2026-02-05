@@ -77,6 +77,37 @@ Optional:
 - For `cxcywh_norm`, `cx,cy,w,h` are relative to the image width/height.
 - Use `--bbox-format` to override at evaluation time.
 
+## Units & coordinate frames (important)
+
+YOLOZU does not automatically convert units. All geometry is computed in the **units you provide**.
+
+- `intrinsics` / `K` / `K_gt`:
+  - Interpreted as $(fx, fy, cx, cy)$ in **pixels**, in the **same image coordinate system** as the bbox values used for translation recovery.
+  - If you resize/letterbox images before inference, you must provide intrinsics for the *post-transform* image.
+- `bbox` + `offsets`:
+  - Translation recovery uses bbox center in **pixels**.
+  - If `--bbox-format cxcywh_norm` is used, bbox is first converted to pixels using the entry `image_size` / `image_hw`.
+  - `offsets` (if present) are treated as **pixel offsets** $(du, dv)$.
+- `log_z` / `z`:
+  - Used as the depth/translation $z$ component.
+  - Whatever unit your dataset uses (e.g., meters or millimeters) becomes the unit of `t_xyz`.
+  - Recommendation: store depth and translation in **meters** for interoperability.
+- `k_delta` / `k_prime`:
+  - `k_delta = [dfx, dfy, dcx, dcy]` is a **correction** applied to the provided intrinsics:
+    - $fx' = fx \cdot (1 + dfx)$
+    - $fy' = fy \cdot (1 + dfy)$
+    - $cx' = cx + dcx$
+    - $cy' = cy + dcy$
+  - This is not a full intrinsics estimator; it adjusts a given baseline K.
+
+### Intrinsics after resize/letterbox (rule of thumb)
+
+If the original image is resized by $(s_x, s_y)$ and padded by $(p_x, p_y)$ (pixels), then:
+
+$$
+fx' = fx\,s_x,\quad fy' = fy\,s_y,\quad cx' = cx\,s_x + p_x,\quad cy' = cy\,s_y + p_y
+$$
+
 ## Schema file
 A JSON Schema file is provided at:
 - `schemas/predictions.schema.json`

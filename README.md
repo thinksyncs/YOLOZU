@@ -117,6 +117,9 @@ Optional per-image metadata (JSON): `labels/<split>/<image>.json`
 - Pose: `R_gt` / `t_gt` (or `pose`)
 - Intrinsics: `K_gt` / `intrinsics`
 
+Notes on units (pixels vs mm/m) and intrinsics coordinate frames:
+- [docs/predictions_schema.md](docs/predictions_schema.md)
+
 ### Mask-only labels (seg -> bbox/class)
 
 If YOLO txt labels are missing and a mask is provided, bbox+class can be derived from masks.
