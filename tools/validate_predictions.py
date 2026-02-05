@@ -5,7 +5,7 @@ from pathlib import Path
 repo_root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(repo_root))
 
-from yolozu.predictions import load_predictions_entries, validate_predictions_entries
+from yolozu.predictions import load_predictions_entries, validate_predictions_entries  # noqa: E402
 
 
 def _parse_args(argv):
