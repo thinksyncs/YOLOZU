@@ -19,6 +19,8 @@ class ModelConfig:
     stem_channels: int = 32
     backbone_channels: list[int] = field(default_factory=lambda: [64, 128, 256])
     stage_blocks: list[int] = field(default_factory=lambda: [1, 2, 2])
+    use_sppf: bool = True
+    use_level_embed: bool = True
     num_encoder_layers: int = 1
     num_decoder_layers: int = 3
     nhead: int = 8

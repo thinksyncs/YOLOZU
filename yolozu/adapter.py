@@ -124,6 +124,7 @@ class RTDETRPoseAdapter(ModelAdapter):
             ) from exc
 
         from PIL import Image
+        import numpy as np
 
         from rtdetr_pose.config import load_config
         from rtdetr_pose.model import RTDETRPose
@@ -161,13 +162,60 @@ class RTDETRPoseAdapter(ModelAdapter):
 
         model.to(self.device)
 
-        def preprocess(path):
+        def _parse_intrinsics(value):
+            if value is None:
+                return None
+            if isinstance(value, dict) and all(k in value for k in ("fx", "fy", "cx", "cy")):
+                return {
+                    "fx": float(value["fx"]),
+                    "fy": float(value["fy"]),
+                    "cx": float(value["cx"]),
+                    "cy": float(value["cy"]),
+                }
+            if isinstance(value, (list, tuple)) and len(value) == 3:
+                try:
+                    fx = float(value[0][0])
+                    fy = float(value[1][1])
+                    cx = float(value[0][2])
+                    cy = float(value[1][2])
+                    return {"fx": fx, "fy": fy, "cx": cx, "cy": cy}
+                except Exception:
+                    return None
+            return None
+
+        def preprocess(record_or_path):
+            path = record_or_path["image"] if isinstance(record_or_path, dict) else record_or_path
             img = Image.open(path).convert("RGB")
-            img = img.resize(self.image_size)
-            x = torch.tensor(list(img.getdata()), dtype=torch.float32)
-            x = x.view(self.image_size[1], self.image_size[0], 3).permute(2, 0, 1)
-            x = x / 255.0
-            return x.unsqueeze(0)
+            orig_w, orig_h = img.size
+            dst_w, dst_h = int(self.image_size[0]), int(self.image_size[1])
+            img = img.resize((dst_w, dst_h), resample=Image.BILINEAR)
+
+            arr = np.asarray(img, dtype=np.float32)
+            if arr.ndim != 3 or arr.shape[2] != 3:
+                raise RuntimeError("invalid RGB image array")
+            arr = arr / 255.0
+            x = torch.from_numpy(arr).permute(2, 0, 1).contiguous().unsqueeze(0)
+
+            meta = {
+                "orig_size": {"width": int(orig_w), "height": int(orig_h)},
+                "input_size": {"width": int(dst_w), "height": int(dst_h)},
+                "scale_xy": {"x": float(dst_w) / float(orig_w) if orig_w else None, "y": float(dst_h) / float(orig_h) if orig_h else None},
+                "method": "resize",
+                "normalize": "0_1",
+            }
+
+            intr = None
+            if isinstance(record_or_path, dict):
+                for key in ("intrinsics", "K_gt", "K"):
+                    intr = _parse_intrinsics(record_or_path.get(key))
+                    if intr is not None:
+                        break
+            if intr is not None and orig_w and orig_h:
+                sx = float(dst_w) / float(orig_w)
+                sy = float(dst_h) / float(orig_h)
+                intr = {"fx": float(intr["fx"]) * sx, "fy": float(intr["fy"]) * sy, "cx": float(intr["cx"]) * sx, "cy": float(intr["cy"]) * sy}
+
+            return x.unsqueeze(0) if x.ndim == 3 else x, meta, intr
 
         self._backend = {"torch": torch, "model": model, "preprocess": preprocess}
 
@@ -188,7 +236,8 @@ class RTDETRPoseAdapter(ModelAdapter):
 
         batch = []
         for record in records:
-            x = preprocess(record["image"]).to(self.device)
+            x, _, _ = preprocess(record)
+            x = x.to(self.device)
             batch.append(x)
             if len(batch) >= int(batch_size):
                 yield torch.cat(batch, dim=0)
@@ -205,7 +254,8 @@ class RTDETRPoseAdapter(ModelAdapter):
         outputs = []
         for record in records:
             image_path = record["image"]
-            x = preprocess(image_path).to(self.device)
+            x, pp_meta, intrinsics = preprocess(record)
+            x = x.to(self.device)
             with torch.no_grad():
                 out = model(x)
 
@@ -238,5 +288,13 @@ class RTDETRPoseAdapter(ModelAdapter):
                 }
                 detections.append(det)
 
-            outputs.append({"image": image_path, "detections": detections})
+            entry = {
+                "image": image_path,
+                "detections": detections,
+                "image_size": pp_meta.get("input_size"),
+                "preprocess": pp_meta,
+            }
+            if intrinsics is not None:
+                entry["intrinsics"] = intrinsics
+            outputs.append(entry)
         return outputs
