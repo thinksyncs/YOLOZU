@@ -211,6 +211,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="Probability of masking each MIM patch (default: 0.0 disables).",
     )
     parser.add_argument(
+        "--mim-mask-prob-start",
+        type=float,
+        default=None,
+        help="Optional start value for MIM mask prob schedule.",
+    )
+    parser.add_argument(
+        "--mim-mask-prob-end",
+        type=float,
+        default=None,
+        help="Optional end value for MIM mask prob schedule.",
+    )
+    parser.add_argument(
         "--mim-mask-size",
         type=int,
         default=16,
@@ -232,6 +244,18 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=0.0,
         help="Weight for MIM distillation loss (default: 0.0).",
+    )
+    parser.add_argument(
+        "--mim-loss-weight-start",
+        type=float,
+        default=None,
+        help="Optional start value for MIM loss weight schedule.",
+    )
+    parser.add_argument(
+        "--mim-loss-weight-end",
+        type=float,
+        default=None,
+        help="Optional end value for MIM loss weight schedule.",
     )
     parser.add_argument("--num-queries", type=int, default=10)
     parser.add_argument("--hidden-dim", type=int, default=64)
@@ -347,6 +371,28 @@ def compute_linear_schedule(start: float, end: float, step: int, total_steps: in
         return float(end)
     alpha = min(max(float(step) / float(total_steps - 1), 0.0), 1.0)
     return float(start + (end - start) * alpha)
+
+
+def compute_mim_schedule(
+    *,
+    step: int,
+    total_steps: int,
+    mask_start: float | None,
+    mask_end: float | None,
+    weight_start: float | None,
+    weight_end: float | None,
+    default_mask: float,
+    default_weight: float,
+) -> tuple[float, float]:
+    if total_steps <= 0:
+        return float(default_mask), float(default_weight)
+    mask_val = float(default_mask)
+    if mask_start is not None and mask_end is not None:
+        mask_val = compute_linear_schedule(float(mask_start), float(mask_end), int(step), int(total_steps))
+    weight_val = float(default_weight)
+    if weight_start is not None and weight_end is not None:
+        weight_val = compute_linear_schedule(float(weight_start), float(weight_end), int(step), int(total_steps))
+    return mask_val, weight_val
 
 
 def compute_stage_weights(
@@ -1262,6 +1308,11 @@ def main(argv: list[str] | None = None) -> int:
     last_loss_dict = None
     last_epoch_avg = None
     last_stage = None
+    total_steps_est = 0
+    if args.max_steps and int(args.max_steps) > 0:
+        total_steps_est = int(args.max_steps) * int(args.epochs)
+    else:
+        total_steps_est = len(loader) * int(args.epochs)
     for epoch in range(int(start_epoch), int(args.epochs)):
         if args.hflip_prob_start is not None and args.hflip_prob_end is not None:
             ds.hflip_prob = compute_linear_schedule(
@@ -1273,6 +1324,17 @@ def main(argv: list[str] | None = None) -> int:
         running = 0.0
         steps = 0
         for images, targets in loader:
+            mim_mask_prob, mim_weight = compute_mim_schedule(
+                step=int(global_step),
+                total_steps=int(total_steps_est),
+                mask_start=args.mim_mask_prob_start,
+                mask_end=args.mim_mask_prob_end,
+                weight_start=args.mim_loss_weight_start,
+                weight_end=args.mim_loss_weight_end,
+                default_mask=args.mim_mask_prob,
+                default_weight=args.mim_loss_weight,
+            )
+            ds.mim_mask_prob = float(mim_mask_prob)
             images = images.to(device)
             mim_ratio = None
             if isinstance(targets, dict) and "mim_mask_ratio" in targets:
@@ -1282,7 +1344,7 @@ def main(argv: list[str] | None = None) -> int:
                     mim_ratio = None
             out = model(images)
             mim_loss = None
-            if args.mim_teacher and float(args.mim_loss_weight) > 0 and isinstance(targets, dict):
+            if args.mim_teacher and float(mim_weight) > 0 and isinstance(targets, dict):
                 image_raw = targets.get("image_raw")
                 if isinstance(image_raw, torch.Tensor):
                     ratio = targets.get("mim_mask_ratio")
@@ -1361,7 +1423,7 @@ def main(argv: list[str] | None = None) -> int:
             loss_dict = losses_fn(out, targets)
             loss = loss_dict["loss"]
             if mim_loss is not None:
-                loss = loss + float(args.mim_loss_weight) * mim_loss
+                loss = loss + float(mim_weight) * mim_loss
                 loss_dict = dict(loss_dict)
                 loss_dict["loss_mim"] = mim_loss
                 loss_dict["loss"] = loss
@@ -1400,12 +1462,15 @@ def main(argv: list[str] | None = None) -> int:
                 suffix = ""
                 if mim_ratio is not None:
                     suffix = f" mim_mask_ratio={mim_ratio:.3f}"
+                suffix += f" mim_mask_prob={mim_mask_prob:.3f} mim_weight={mim_weight:.3f}"
                 print(f"epoch={epoch} step={steps} global_step={global_step} loss={avg:.4f}{suffix}")
                 if args.metrics_jsonl:
                     losses_out = {k: float(v.detach().cpu()) for k, v in loss_dict.items() if hasattr(v, "detach")}
                     metrics_out = {"loss_avg": float(avg)}
                     if mim_ratio is not None:
                         metrics_out["mim_mask_ratio"] = float(mim_ratio)
+                    metrics_out["mim_mask_prob"] = float(mim_mask_prob)
+                    metrics_out["mim_weight"] = float(mim_weight)
                     report = build_report(
                         losses=losses_out,
                         metrics=metrics_out,
@@ -1448,6 +1513,8 @@ def main(argv: list[str] | None = None) -> int:
             metrics_out = {"loss_avg": float(avg), "steps": int(steps)}
             if mim_ratio is not None:
                 metrics_out["mim_mask_ratio"] = float(mim_ratio)
+            metrics_out["mim_mask_prob"] = float(mim_mask_prob)
+            metrics_out["mim_weight"] = float(mim_weight)
             report = build_report(
                 losses=losses_out,
                 metrics=metrics_out,
@@ -1464,6 +1531,10 @@ def main(argv: list[str] | None = None) -> int:
             "max_steps": int(args.max_steps),
             "stage_off_steps": int(args.stage_off_steps),
             "stage_k_steps": int(args.stage_k_steps),
+            "mim_mask_prob_start": args.mim_mask_prob_start,
+            "mim_mask_prob_end": args.mim_mask_prob_end,
+            "mim_loss_weight_start": args.mim_loss_weight_start,
+            "mim_loss_weight_end": args.mim_loss_weight_end,
         }
         if last_epoch_avg is not None:
             metrics_out["loss_avg_last_epoch"] = float(last_epoch_avg)
