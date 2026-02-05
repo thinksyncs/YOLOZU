@@ -142,7 +142,7 @@ Start next (着手)
 - [ ] Data augmentation + SIM jitter integration.
 - [ ] Hungarian matching with staged cost terms.
 - [ ] MIM teacher + masking + loss schedule.
-- [ ] Staged training: offsets first, then GlobalKHead.
+- [x] Staged training: offsets first, then GlobalKHead.
 
 ## Stage 5) Inference + constraints (per spec §2, §8, §9)
 - [x] Translation recovery using corrected `K'` + offsets (utility-level).
