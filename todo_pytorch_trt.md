@@ -148,7 +148,7 @@ Start next (着手)
 - [x] Translation recovery using corrected `K'` + offsets (utility-level).
 - [ ] Symmetry-aware template verification (Top-K only).
 - [ ] Constraints gating (depth prior, plane, upright) using `constraints.yaml`.
-- [ ] Low-FP gate via `score_tmp_sym < τ`.
+- [x] Low-FP gate via `score_tmp_sym < τ`.
 
 ## Stage 6) TensorRT export + parity
 - [ ] Export to ONNX and build TensorRT engine.

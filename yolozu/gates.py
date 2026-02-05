@@ -9,3 +9,9 @@ def passes_template_gate(score_tmp_sym, enabled, tau):
     if not enabled:
         return True
     return score_tmp_sym >= tau
+
+
+def passes_low_fp_gate(score_tmp_sym, enabled, tau):
+    if not enabled:
+        return True
+    return score_tmp_sym >= tau

@@ -11,7 +11,7 @@ from yolozu.constraints import (
     is_above_plane,
     upright_violation_deg,
 )
-from yolozu.gates import final_score, passes_template_gate
+from yolozu.gates import final_score, passes_low_fp_gate, passes_template_gate
 from yolozu.math3d import rotation_matrix_axis_angle
 
 
@@ -23,6 +23,10 @@ class TestGatesConstraints(unittest.TestCase):
     def test_template_gate(self):
         self.assertTrue(passes_template_gate(0.4, enabled=False, tau=0.5))
         self.assertFalse(passes_template_gate(0.4, enabled=True, tau=0.5))
+
+    def test_low_fp_gate(self):
+        self.assertTrue(passes_low_fp_gate(0.4, enabled=False, tau=0.5))
+        self.assertFalse(passes_low_fp_gate(0.4, enabled=True, tau=0.5))
 
     def test_depth_prior_monotonic(self):
         z_small = depth_prior((20.0, 20.0), (0.2, 0.2), (500.0, 500.0))
