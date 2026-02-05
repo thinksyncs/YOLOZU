@@ -1,0 +1,16 @@
+# Default training settings for yolozu train
+# Keys map to rtdetr_pose/tools/train_minimal.py arguments
+config: rtdetr_pose/configs/base.json
+dataset_root: data/coco128
+split: train2017
+device: cpu
+epochs: 1
+batch_size: 2
+max_steps: 30
+use_matcher: true
+image_size: 64
+metrics_jsonl: reports/train_metrics.jsonl
+metrics_csv: reports/train_metrics.csv
+tensorboard_logdir: reports/tb
+export_onnx: true
+onnx_out: reports/rtdetr_pose.onnx
