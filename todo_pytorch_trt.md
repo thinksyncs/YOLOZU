@@ -78,7 +78,7 @@ Current priorities (auto)
 Notes (2026-01-21)
 - Training scaffold can now consume full GT availability for mask/depth via `gt_M_mask`/`gt_D_obj_mask` (propagated through Hungarian alignment as `M_mask`/`D_obj_mask`).
 - Optional: when `t_gt` is missing, `tools/train_minimal.py` can derive `z` (and `t` if `K_gt` exists) from `D_obj` at bbox center via `--z-from-dobj` (arrays inline by default; paths require `--load-aux`).
-- [ ] Inference-only utilities (later): decoding + constraints gate + template verify
+- [x] Inference-only utilities (later): decoding + constraints gate + template verify
 
 ## Stage 0) Repo + environment alignment
 - [x] Decide codebase location (new repo under `/Users/akira/YOLOZU` or existing).
