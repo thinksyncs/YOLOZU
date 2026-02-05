@@ -21,7 +21,7 @@ def _load_train_minimal_module():
 @unittest.skipIf(torch is None, "torch not installed")
 class TestTrainMinimalGradClip(unittest.TestCase):
     def test_clip_grad_norm_applied(self):
-        mod = _load_train_minimal_module()
+        _load_train_minimal_module()
 
         model = torch.nn.Linear(2, 2)
         x = torch.tensor([[10.0, -10.0]])
