@@ -13,7 +13,7 @@ if [[ -d "$OUT_DIR/images/train2017" && -d "$OUT_DIR/labels/train2017" ]]; then
 fi
 
 INSECURE_FLAG=""
-if [[ "${YOLOZU_INSECURE_SSL:-}" == "1" ]]; then
+if [[ "${YOLOZU_INSECURE_SSL:-}" == "1" || "${CI:-}" == "true" ]]; then
   INSECURE_FLAG="--insecure"
 fi
 
