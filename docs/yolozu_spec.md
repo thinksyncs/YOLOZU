@@ -49,7 +49,7 @@ YOLOZU is a lightweight evaluation and scaffolding repo for real‑time monocula
 - Scenario suite report (fps/recall/depth/pose/rejection).
 
 ### 8) Test‑time adaptation (TTA/TTT)
-- TTA transforms (flip‑based) with logging.
+- TTA transforms (flip‑based) with logging (prediction-space post-transform).
 - TTT utilities (MIM + Tent runners) are available as library code; integration into `tools/export_predictions.py` is planned (see `docs/ttt_integration_plan.md`).
 
 ### 9) CLI convenience

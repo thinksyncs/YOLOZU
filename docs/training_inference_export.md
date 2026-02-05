@@ -37,7 +37,7 @@ Use the adapter tools to run inference and produce predictions JSON.
 Optional TTA:
 - python3 tools/export_predictions.py --adapter rtdetr_pose --tta --tta-seed 0 --tta-flip-prob 0.5 --wrap --output reports/predictions_tta.json
 
-Note: TTA here refers to simple **input transforms** (e.g. flips), not postprocess transforms.
+Note: TTA here is a lightweight **prediction-space transform** (a post-transform on the exported bboxes). It does not rerun the model on augmented inputs.
 
 ## Export predictions for evaluation
 
