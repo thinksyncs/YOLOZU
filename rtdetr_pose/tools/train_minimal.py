@@ -378,23 +378,23 @@ def build_parser() -> argparse.ArgumentParser:
 
     # Back-compat: weights-only checkpoint
     parser.add_argument("--checkpoint-out", default=None, help="Write model state_dict to this path at end.")
-        parser.add_argument(
-            "--export-onnx",
-            default=True,
-            action=argparse.BooleanOptionalAction,
-            help="Export ONNX after training (default: true).",
-        )
-        parser.add_argument(
-            "--onnx-out",
-            default="reports/rtdetr_pose.onnx",
-            help="Output path for ONNX export (default: reports/rtdetr_pose.onnx).",
-        )
-        parser.add_argument(
-            "--onnx-opset",
-            type=int,
-            default=17,
-            help="ONNX opset version (default: 17).",
-        )
+    parser.add_argument(
+        "--export-onnx",
+        default=True,
+        action=argparse.BooleanOptionalAction,
+        help="Export ONNX after training (default: true).",
+    )
+    parser.add_argument(
+        "--onnx-out",
+        default="reports/rtdetr_pose.onnx",
+        help="Output path for ONNX export (default: reports/rtdetr_pose.onnx).",
+    )
+    parser.add_argument(
+        "--onnx-opset",
+        type=int,
+        default=17,
+        help="ONNX opset version (default: 17).",
+    )
     return parser
 
 
