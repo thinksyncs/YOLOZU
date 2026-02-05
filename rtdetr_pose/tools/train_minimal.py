@@ -33,6 +33,7 @@ from rtdetr_pose.losses import Losses
 from rtdetr_pose.export import export_onnx
 from rtdetr_pose.training import build_query_aligned_targets
 from rtdetr_pose.model import RTDETRPose
+from rtdetr_pose.lora import apply_lora, count_trainable_params, mark_only_lora_as_trainable
 
 from yolozu.metrics_report import append_jsonl, build_report, write_csv_row, write_json
 from yolozu.jitter import default_jitter_profile, sample_intrinsics_jitter, sample_extrinsics_jitter
@@ -302,6 +303,44 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--num-queries", type=int, default=10)
     parser.add_argument("--hidden-dim", type=int, default=64)
     parser.add_argument("--num-classes", type=int, default=80)
+
+    # LoRA (optional)
+    parser.add_argument(
+        "--lora-r",
+        type=int,
+        default=0,
+        help="Enable LoRA by setting rank r>0 (default: 0 disables).",
+    )
+    parser.add_argument(
+        "--lora-alpha",
+        type=float,
+        default=None,
+        help="LoRA alpha scaling (default: r).",
+    )
+    parser.add_argument(
+        "--lora-dropout",
+        type=float,
+        default=0.0,
+        help="LoRA dropout on inputs (default: 0.0).",
+    )
+    parser.add_argument(
+        "--lora-target",
+        choices=("head", "all_linear"),
+        default="head",
+        help="Where to apply LoRA (default: head).",
+    )
+    parser.add_argument(
+        "--lora-freeze-base",
+        default=True,
+        action=argparse.BooleanOptionalAction,
+        help="Freeze base weights and train LoRA params only (default: true).",
+    )
+    parser.add_argument(
+        "--lora-train-bias",
+        choices=("none", "all"),
+        default="none",
+        help="If LoRA is enabled, optionally train biases too (default: none).",
+    )
     parser.add_argument(
         "--use-uncertainty",
         action="store_true",
@@ -1607,6 +1646,20 @@ def main(argv: list[str] | None = None) -> int:
         ),
         use_level_embed=(getattr(model_cfg, "use_level_embed", True) if model_cfg is not None else True),
     )
+
+    lora_replaced = 0
+    lora_trainable_info: dict[str, int] | None = None
+    if int(getattr(args, "lora_r", 0)) > 0:
+        lora_replaced = apply_lora(
+            model,
+            r=int(args.lora_r),
+            alpha=(float(args.lora_alpha) if args.lora_alpha is not None else None),
+            dropout=float(args.lora_dropout),
+            target=str(args.lora_target),
+        )
+        if bool(args.lora_freeze_base):
+            lora_trainable_info = mark_only_lora_as_trainable(model, train_bias=str(args.lora_train_bias))
+
     losses_fn = Losses(task_aligner=args.task_aligner)
     base_weights = dict(losses_fn.weights)
 
@@ -1616,6 +1669,19 @@ def main(argv: list[str] | None = None) -> int:
         device_str = "cpu"
     device = torch.device(device_str)
     model.to(device)
+
+    if lora_replaced > 0:
+        trainable = count_trainable_params(model)
+        msg = (
+            f"lora enabled replaced={lora_replaced} r={int(args.lora_r)} target={args.lora_target} "
+            f"freeze_base={bool(args.lora_freeze_base)} trainable_params={trainable}"
+        )
+        if lora_trainable_info is not None:
+            msg += (
+                f" lora_params={lora_trainable_info.get('lora_params', 0)}"
+                f" bias_params={lora_trainable_info.get('bias_params', 0)}"
+            )
+        print(msg)
 
     if args.optimizer == "sgd":
         optim = torch.optim.SGD(

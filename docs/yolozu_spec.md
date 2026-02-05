@@ -23,6 +23,7 @@ YOLOZU is a lightweight evaluation and scaffolding repo for real‑time monocula
 - Optional matcher (Hungarian) with staged cost terms.
 - MIM masking + teacher distillation schedules.
 - Denoising target augmentation.
+- Optional LoRA (Linear) for parameter-efficient finetuning (head-only by default).
 - Optimizers: AdamW or SGD.
 - LR warmup + schedule (`none`, `linear`, `cos`).
 - Progress bar + per‑step loss logging.
