@@ -90,6 +90,12 @@ def _parse_args(argv):
 
     parser.add_argument("--ttt", action="store_true", help="Enable test-time training (TTT) before inference.")
     parser.add_argument(
+        "--ttt-preset",
+        choices=("safe", "adapter_only", "mim_safe"),
+        default=None,
+        help="Recommended TTT presets that override method/steps/lr/filter. Choices: safe, adapter_only, mim_safe.",
+    )
+    parser.add_argument(
         "--ttt-method",
         choices=("tent", "mim"),
         default="tent",
@@ -130,6 +136,35 @@ def _parse_args(argv):
     return parser.parse_args(argv)
 
 
+def _apply_ttt_preset(args):
+    preset = getattr(args, "ttt_preset", None)
+    if not preset:
+        return
+    if preset == "safe":
+        args.ttt_method = "tent"
+        args.ttt_steps = 1
+        args.ttt_batch_size = 1
+        args.ttt_lr = 1e-4
+        args.ttt_update_filter = "norm_only"
+        args.ttt_max_batches = 1
+    elif preset == "adapter_only":
+        args.ttt_method = "tent"
+        args.ttt_steps = 1
+        args.ttt_batch_size = 1
+        args.ttt_lr = 1e-4
+        args.ttt_update_filter = "adapter_only"
+        args.ttt_max_batches = 1
+    elif preset == "mim_safe":
+        args.ttt_method = "mim"
+        args.ttt_steps = 1
+        args.ttt_batch_size = 1
+        args.ttt_lr = 1e-4
+        args.ttt_update_filter = "adapter_only"
+        args.ttt_max_batches = 1
+    else:
+        raise SystemExit(f"unknown preset: {preset}")
+
+
 def _summarize_tta(predictions, *, warnings):
     total = 0
     applied = 0
@@ -149,6 +184,8 @@ def _summarize_tta(predictions, *, warnings):
 
 def main(argv=None):
     args = _parse_args(sys.argv[1:] if argv is None else argv)
+
+    _apply_ttt_preset(args)
 
     dataset_root = Path(args.dataset) if args.dataset else (repo_root / "data" / "coco128")
     manifest = build_manifest(dataset_root, split=args.split)
@@ -197,7 +234,36 @@ def main(argv=None):
         try:
             ttt_report = run_ttt(adapter, records, config=ttt_config).to_dict()
         except Exception as exc:
-            raise SystemExit(f"TTT failed: {exc}")
+            extra = ""
+            try:
+                from yolozu.tta.ttt_mim import select_parameters
+
+                if hasattr(adapter, "get_model"):
+                    model = adapter.get_model()
+                else:
+                    model = None
+                if model is not None:
+                    params = select_parameters(
+                        model,
+                        update_filter=str(ttt_config.update_filter),
+                        include=ttt_config.include,
+                        exclude=ttt_config.exclude,
+                    )
+                    count = 0
+                    seen = set()
+                    for p in params:
+                        pid = id(p)
+                        if pid in seen:
+                            continue
+                        seen.add(pid)
+                        count += int(p.numel())
+                    extra = (
+                        f" (method={ttt_config.method} update_filter={ttt_config.update_filter} "
+                        f"selected_param_count={count} steps={ttt_config.steps} lr={ttt_config.lr})"
+                    )
+            except Exception:
+                extra = ""
+            raise SystemExit(f"TTT failed: {exc}{extra}")
 
     predictions = adapter.predict(records)
 
@@ -237,6 +303,7 @@ def main(argv=None):
                 },
                 "ttt": {
                     "enabled": bool(args.ttt),
+                    "preset": args.ttt_preset,
                     "method": str(args.ttt_method),
                     "steps": int(args.ttt_steps),
                     "batch_size": int(args.ttt_batch_size),

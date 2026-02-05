@@ -27,7 +27,28 @@ class TTTReport:
     warnings: list[str]
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        data = asdict(self)
+        losses = list(self.losses or [])
+        if losses:
+            data["loss_summary"] = {
+                "count": int(len(losses)),
+                "min": float(min(losses)),
+                "mean": float(sum(losses) / float(len(losses))),
+                "max": float(max(losses)),
+                "last": float(losses[-1]),
+            }
+        else:
+            data["loss_summary"] = {"count": 0, "min": None, "mean": None, "max": None, "last": None}
+
+        max_keep = 50
+        if len(losses) > max_keep:
+            data["losses_total"] = int(len(losses))
+            data["losses_truncated"] = True
+            data["losses"] = losses[:max_keep]
+        else:
+            data["losses_total"] = int(len(losses))
+            data["losses_truncated"] = False
+        return data
 
 
 def _ensure_torch():

@@ -22,6 +22,7 @@ class TestExportPredictionsTTTCLI(unittest.TestCase):
         self.assertEqual(proc.returncode, 0)
         out = proc.stdout + proc.stderr
         self.assertIn("--ttt", out)
+        self.assertIn("--ttt-preset", out)
         self.assertIn("--ttt-method", out)
         self.assertIn("--ttt-steps", out)
 
