@@ -119,6 +119,8 @@ class Losses(nn.Module):
 
         valid = _valid_mask_from_targets(targets)
         z_mask = targets.get("z_mask")
+        d_obj_mask = targets.get("D_obj_mask")
+        m_mask = targets.get("M_mask")
         rot_mask = targets.get("rot_mask")
         off_mask = targets.get("off_mask")
 
@@ -161,6 +163,12 @@ class Losses(nn.Module):
             if z_mask is not None:
                 z_mask = z_mask.to(device=log_z_pred.device, dtype=torch.bool)
                 mask_for_z = z_mask if mask_for_z is None else (mask_for_z & z_mask)
+            if d_obj_mask is not None:
+                d_obj_mask = d_obj_mask.to(device=log_z_pred.device, dtype=torch.bool)
+                mask_for_z = d_obj_mask if mask_for_z is None else (mask_for_z & d_obj_mask)
+            if m_mask is not None:
+                m_mask = m_mask.to(device=log_z_pred.device, dtype=torch.bool)
+                mask_for_z = m_mask if mask_for_z is None else (mask_for_z & m_mask)
 
             if valid is None:
                 if mask_for_z is None:
