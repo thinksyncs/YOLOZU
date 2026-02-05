@@ -53,3 +53,16 @@ class TestLoRA(unittest.TestCase):
         self.assertIsInstance(model.head.cls, LoRALinear)
         self.assertTrue(bool(model.head.cls.lora_A.requires_grad))
         self.assertTrue(bool(model.head.cls.lora_B.requires_grad))
+
+    def test_apply_lora_all_conv1x1_replaces_some_convs(self):
+        from rtdetr_pose.model import RTDETRPose
+        from rtdetr_pose.lora import LoRAConv2d, apply_lora
+
+        model = RTDETRPose(num_classes=3, hidden_dim=16, num_queries=2, num_decoder_layers=1, nhead=2)
+        replaced = apply_lora(model, r=2, target="all_conv1x1")
+        self.assertGreaterEqual(replaced, 1)
+        self.assertTrue(any(isinstance(m, LoRAConv2d) for m in model.modules()))
+
+        x = torch.randn(1, 3, 64, 64)
+        out = model(x)
+        self.assertIn("logits", out)
