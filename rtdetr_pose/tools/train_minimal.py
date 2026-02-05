@@ -341,6 +341,26 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--metrics-json", default=None, help="Write final run summary JSON here.")
     parser.add_argument("--metrics-csv", default=None, help="Write final run summary CSV (single row) here.")
 
+    # Training-time tricks (optional)
+    parser.add_argument(
+        "--denoise-queries",
+        type=int,
+        default=0,
+        help="If >0, append denoised copies of GT targets for matching.",
+    )
+    parser.add_argument(
+        "--denoise-bbox-noise",
+        type=float,
+        default=0.01,
+        help="Stddev for bbox noise applied to denoised targets (default: 0.01).",
+    )
+    parser.add_argument(
+        "--denoise-label-noise",
+        type=float,
+        default=0.0,
+        help="Probability to randomize class labels for denoised targets (default: 0.0).",
+    )
+
     # Checkpointing / resume
     parser.add_argument("--resume-from", default=None, help="Resume weights or full checkpoint bundle from this path.")
     parser.add_argument(
@@ -446,6 +466,75 @@ def compute_stage_costs(
     if global_step < int(cost_t_start_step):
         costs["cost_t"] = 0.0
     return costs
+
+
+def apply_denoise_targets(
+    targets: list[dict[str, Any]],
+    *,
+    num_classes: int,
+    denoise_count: int,
+    bbox_noise: float,
+    label_noise: float,
+    generator: "torch.Generator | None" = None,
+) -> list[dict[str, Any]]:
+    if torch is None or not targets or denoise_count <= 0:
+        return targets
+
+    out: list[dict[str, Any]] = []
+    for tgt in targets:
+        if not isinstance(tgt, dict):
+            out.append(tgt)
+            continue
+        gt_labels = tgt.get("gt_labels")
+        gt_bbox = tgt.get("gt_bbox")
+        if not isinstance(gt_labels, torch.Tensor) or not isinstance(gt_bbox, torch.Tensor):
+            out.append(tgt)
+            continue
+        if gt_labels.numel() == 0 or gt_bbox.numel() == 0:
+            out.append(tgt)
+            continue
+
+        repeats = int(denoise_count)
+        noise = torch.randn(gt_bbox.shape, device=gt_bbox.device, dtype=gt_bbox.dtype) * float(bbox_noise)
+        noisy_bbox = torch.clamp(gt_bbox + noise, 0.0, 1.0)
+        noisy_bbox = noisy_bbox.repeat((repeats, 1))
+
+        noisy_labels = gt_labels.repeat(repeats)
+        if label_noise and float(label_noise) > 0:
+            rand_mask = torch.rand(noisy_labels.shape, device=noisy_labels.device, dtype=torch.float32) < float(label_noise)
+            if bool(rand_mask.any()):
+                noisy_labels[rand_mask] = torch.randint(
+                    low=0,
+                    high=int(num_classes),
+                    size=(int(rand_mask.sum().item()),),
+                    device=noisy_labels.device,
+                    dtype=noisy_labels.dtype,
+                )
+
+        new_tgt = dict(tgt)
+        new_tgt["gt_labels"] = torch.cat([gt_labels, noisy_labels], dim=0)
+        new_tgt["gt_bbox"] = torch.cat([gt_bbox, noisy_bbox], dim=0)
+
+        for key in (
+            "gt_z",
+            "gt_z_mask",
+            "gt_R",
+            "gt_R_mask",
+            "gt_t",
+            "gt_t_mask",
+            "gt_offsets",
+            "gt_offsets_mask",
+            "gt_M_mask",
+            "gt_D_obj_mask",
+        ):
+            value = tgt.get(key)
+            if isinstance(value, torch.Tensor) and value.shape[0] == gt_labels.shape[0]:
+                rep_shape = (repeats,) + (1,) * (value.ndim - 1)
+                value_rep = value.repeat(rep_shape)
+                new_tgt[key] = torch.cat([value, value_rep], dim=0)
+
+        out.append(new_tgt)
+    return out
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -1413,6 +1502,18 @@ def main(argv: list[str] | None = None) -> int:
                     cost_t_start_step=int(args.cost_t_start_step),
                 )
                 per_sample = targets.get("per_sample") if isinstance(targets, dict) else targets
+                if (
+                    args.denoise_queries
+                    and isinstance(per_sample, list)
+                    and int(args.denoise_queries) > 0
+                ):
+                    per_sample = apply_denoise_targets(
+                        per_sample,
+                        num_classes=int(args.num_classes),
+                        denoise_count=int(args.denoise_queries),
+                        bbox_noise=float(args.denoise_bbox_noise),
+                        label_noise=float(args.denoise_label_noise),
+                    )
                 aligned = build_query_aligned_targets(
                     out["logits"],
                     out["bbox"],

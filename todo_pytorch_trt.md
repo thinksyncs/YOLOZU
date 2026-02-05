@@ -26,7 +26,7 @@ track tasks in `todo_yolo26_competition.md`.
 - [x] Positional embedding: 2D sin/cos
 - [ ] Full RT-DETR backbone + neck (parity with spec / real RT-DETR)
 - [ ] RT-DETR hybrid encoder / multi-scale fusion (if required for parity)
-- [ ] RT-DETR training-time tricks (e.g., denoising queries) if targeting published behavior
+- [x] RT-DETR training-time tricks (e.g., denoising queries) if targeting published behavior
 
 ### Heads / geometry
 - [x] HeadFast outputs (cls/bbox/log_z/rot6D + optional uncertainty)
