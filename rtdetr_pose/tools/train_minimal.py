@@ -850,6 +850,98 @@ class ManifestDataset(Dataset):
                 return loaded
         return None
 
+    def _normalize_color_map(self, value):
+        if not isinstance(value, dict):
+            return None
+        out = {}
+        for key, class_id in value.items():
+            if isinstance(key, str):
+                parts = [p.strip() for p in key.replace("(", "").replace(")", "").split(",") if p.strip()]
+                if len(parts) == 3:
+                    try:
+                        rgb = tuple(int(float(p)) for p in parts)
+                        out[rgb] = int(class_id)
+                        continue
+                    except Exception:
+                        pass
+            if isinstance(key, (list, tuple)) and len(key) == 3:
+                try:
+                    rgb = tuple(int(float(p)) for p in key)
+                    out[rgb] = int(class_id)
+                except Exception:
+                    continue
+        return out or None
+
+    def _labels_from_mask(self, mask_value, *, target_size: int, record: dict) -> list[dict]:
+        if mask_value is None:
+            return []
+        mask = self._load_2d(mask_value)
+        if mask is None:
+            return []
+        try:
+            import numpy as np
+        except Exception:
+            return []
+        arr = np.asarray(mask)
+        if arr.ndim not in (2, 3):
+            return []
+        h, w = arr.shape[0], arr.shape[1]
+        if h <= 0 or w <= 0:
+            return []
+        scale_x = float(target_size) / float(w)
+        scale_y = float(target_size) / float(h)
+
+        mask_format = record.get("mask_format")
+        if mask_format is None:
+            mask_format = "color" if arr.ndim == 3 else "instance"
+        mask_format = str(mask_format)
+
+        labels = []
+        if mask_format == "color" and arr.ndim == 3:
+            color_map = self._normalize_color_map(record.get("mask_class_map"))
+            flat = arr.reshape(-1, 3)
+            unique_colors = np.unique(flat, axis=0)
+            unique_colors = [tuple(int(c) for c in color) for color in unique_colors]
+            unique_colors = [c for c in unique_colors if c != (0, 0, 0)]
+            for idx, color in enumerate(unique_colors):
+                mask_sel = (arr[:, :, 0] == color[0]) & (arr[:, :, 1] == color[1]) & (arr[:, :, 2] == color[2])
+                if not bool(mask_sel.any()):
+                    continue
+                ys, xs = np.where(mask_sel)
+                x1 = float(xs.min()) * scale_x
+                x2 = float(xs.max() + 1) * scale_x
+                y1 = float(ys.min()) * scale_y
+                y2 = float(ys.max() + 1) * scale_y
+                cx = (x1 + x2) / 2.0 / float(target_size)
+                cy = (y1 + y2) / 2.0 / float(target_size)
+                bw = (x2 - x1) / float(target_size)
+                bh = (y2 - y1) / float(target_size)
+                class_id = int(color_map.get(color, idx) if color_map else idx)
+                labels.append({"class_id": class_id, "bbox": {"cx": cx, "cy": cy, "w": bw, "h": bh}})
+            return labels
+
+        if mask_format == "instance" and arr.ndim == 2:
+            class_id = int(record.get("mask_class_id", 0))
+            unique_ids = np.unique(arr)
+            unique_ids = [int(v) for v in unique_ids if int(v) != 0]
+            for inst_id in unique_ids:
+                mask_sel = arr == inst_id
+                if not bool(mask_sel.any()):
+                    continue
+                ys, xs = np.where(mask_sel)
+                x1 = float(xs.min()) * scale_x
+                x2 = float(xs.max() + 1) * scale_x
+                y1 = float(ys.min()) * scale_y
+                y2 = float(ys.max() + 1) * scale_y
+                cx = (x1 + x2) / 2.0 / float(target_size)
+                cy = (y1 + y2) / 2.0 / float(target_size)
+                bw = (x2 - x1) / float(target_size)
+                bh = (y2 - y1) / float(target_size)
+                labels.append({"class_id": class_id, "bbox": {"cx": cx, "cy": cy, "w": bw, "h": bh}})
+            return labels
+
+        return []
+
     def __len__(self):
         return len(self.records)
 
@@ -899,6 +991,10 @@ class ManifestDataset(Dataset):
         image, mim_mask_ratio = self._apply_mim_mask(image, generator=gen)
 
         instances = record.get("labels") or []
+        if not instances:
+            mask_value = record.get("mask") or record.get("mask_path") or record.get("M")
+            if self.load_aux and mask_value is not None:
+                instances = self._labels_from_mask(mask_value, target_size=target_size, record=record)
         if self.use_matcher:
             full = extract_full_gt_targets(record, num_instances=len(instances))
             gt_labels = []
