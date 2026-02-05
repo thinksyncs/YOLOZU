@@ -6,6 +6,7 @@ import json
 import shutil
 import sys
 import tempfile
+import ssl
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -42,13 +43,19 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     )
     p.add_argument("--annotations-zip-url", default=DEFAULT_ANN_ZIP_URL, help="URL to annotations_trainval2017.zip")
     p.add_argument("--image-base-url", default=DEFAULT_IMG_BASE, help="Base URL for images.cocodataset.org")
+    p.add_argument(
+        "--insecure",
+        action="store_true",
+        help="Disable SSL verification (for CI proxies with MITM certs).",
+    )
     p.add_argument("--keep-tmp", action="store_true", help="Keep temporary files (debug).")
     return p.parse_args(argv)
 
 
-def _download(url: str, dst: Path) -> None:
+def _download(url: str, dst: Path, *, insecure: bool = False) -> None:
     dst.parent.mkdir(parents=True, exist_ok=True)
-    with urllib.request.urlopen(url) as r, dst.open("wb") as f:
+    context = ssl._create_unverified_context() if insecure else None
+    with urllib.request.urlopen(url, context=context) as r, dst.open("wb") as f:
         shutil.copyfileobj(r, f)
 
 
@@ -59,10 +66,10 @@ def _load_instances_from_local(coco_root: Path, split: str) -> dict:
     return json.loads(instances_path.read_text(encoding="utf-8"))
 
 
-def _ensure_instances_json(tmp_dir: Path, *, split: str, ann_zip_url: str) -> dict:
+def _ensure_instances_json(tmp_dir: Path, *, split: str, ann_zip_url: str, insecure: bool) -> dict:
     ann_zip_path = tmp_dir / "annotations_trainval2017.zip"
     if not ann_zip_path.exists():
-        _download(ann_zip_url, ann_zip_path)
+        _download(ann_zip_url, ann_zip_path, insecure=insecure)
 
     with zipfile.ZipFile(ann_zip_path) as zf:
         member = f"annotations/instances_{split}.json"
@@ -90,7 +97,7 @@ def _filter_annotations(instances: dict, image_ids: set[int]) -> list[dict]:
     return [ann for ann in annotations if int(ann.get("image_id", -1)) in image_ids]
 
 
-def _download_images(*, images: list[dict], split: str, img_base_url: str, dst_dir: Path) -> None:
+def _download_images(*, images: list[dict], split: str, img_base_url: str, dst_dir: Path, insecure: bool) -> None:
     dst_dir.mkdir(parents=True, exist_ok=True)
     for img in images:
         file_name = str(img.get("file_name") or "")
@@ -100,7 +107,7 @@ def _download_images(*, images: list[dict], split: str, img_base_url: str, dst_d
         if dst.exists():
             continue
         url = f"{img_base_url}/{split}/{file_name}"
-        _download(url, dst)
+        _download(url, dst, insecure=insecure)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -155,7 +162,12 @@ def main(argv: list[str] | None = None) -> int:
             tmp_dir_obj = tempfile.TemporaryDirectory(prefix="yolozu_coco128_")
             tmp_dir = Path(tmp_dir_obj.name)
 
-            instances = _ensure_instances_json(tmp_dir, split=args.split, ann_zip_url=str(args.annotations_zip_url))
+            instances = _ensure_instances_json(
+                tmp_dir,
+                split=args.split,
+                ann_zip_url=str(args.annotations_zip_url),
+                insecure=bool(args.insecure),
+            )
             images_subset, image_ids = _select_subset(instances, n=args.n)
 
             subset_instances = {
@@ -170,6 +182,7 @@ def main(argv: list[str] | None = None) -> int:
                 split=args.split,
                 img_base_url=str(args.image_base_url).rstrip("/"),
                 dst_dir=images_out,
+                insecure=bool(args.insecure),
             )
             convert_coco_instances_to_yolo_labels(
                 instances_json=subset_instances,
