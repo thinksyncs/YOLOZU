@@ -17,6 +17,7 @@ except ImportError:  # pragma: no cover
 class TTTMIMResult:
     losses: list[float]
     mask_ratio: float
+    updated_param_count: int
 
 
 def _ensure_torch():
@@ -109,6 +110,7 @@ def filter_parameters(
     *,
     include: Iterable[str] | None = None,
     exclude: Iterable[str] | None = None,
+    allowed: set[str] | None = None,
 ) -> list["torch.Tensor"]:
     _ensure_torch()
     include = [s for s in (include or []) if s]
@@ -117,12 +119,89 @@ def filter_parameters(
     for name, param in named_params:
         if not hasattr(param, "requires_grad") or not param.requires_grad:
             continue
+        if allowed is not None and name not in allowed:
+            continue
         if include and not any(s in name for s in include):
             continue
         if exclude and any(s in name for s in exclude):
             continue
         out.append(param)
     return out
+
+
+def _is_norm_module(module: "nn.Module") -> bool:
+    if nn is None:
+        return False
+    return isinstance(
+        module,
+        (
+            nn.BatchNorm1d,
+            nn.BatchNorm2d,
+            nn.BatchNorm3d,
+            nn.LayerNorm,
+            nn.GroupNorm,
+            nn.InstanceNorm1d,
+            nn.InstanceNorm2d,
+            nn.InstanceNorm3d,
+        ),
+    )
+
+
+def _is_adapter_module(name: str, module: "nn.Module") -> bool:
+    name_lower = name.lower()
+    class_lower = module.__class__.__name__.lower()
+    return any(token in name_lower for token in ("adapter", "lora")) or any(
+        token in class_lower for token in ("adapter", "lora")
+    )
+
+
+def _collect_param_names(
+    model: "nn.Module", predicate: Callable[[str, "nn.Module"], bool]
+) -> set[str]:
+    names: set[str] = set()
+    for module_name, module in model.named_modules():
+        if not predicate(module_name, module):
+            continue
+        for param_name, _ in module.named_parameters(recurse=False):
+            full_name = f"{module_name}.{param_name}" if module_name else param_name
+            names.add(full_name)
+    return names
+
+
+def select_parameters(
+    model: "nn.Module",
+    *,
+    update_filter: str = "all",
+    include: Iterable[str] | None = None,
+    exclude: Iterable[str] | None = None,
+) -> list["torch.Tensor"]:
+    _ensure_torch()
+    update_filter = (update_filter or "all").lower()
+    allowed: set[str] | None = None
+    if update_filter == "norm_only":
+        allowed = _collect_param_names(model, lambda name, module: _is_norm_module(module))
+    elif update_filter == "adapter_only":
+        allowed = _collect_param_names(model, _is_adapter_module)
+    elif update_filter != "all":
+        raise ValueError("update_filter must be one of: all, norm_only, adapter_only")
+    return filter_parameters(
+        model.named_parameters(),
+        include=include,
+        exclude=exclude,
+        allowed=allowed,
+    )
+
+
+def _count_params(params: Iterable["torch.Tensor"]) -> int:
+    seen: set[int] = set()
+    total = 0
+    for param in params:
+        pid = id(param)
+        if pid in seen:
+            continue
+        seen.add(pid)
+        total += int(param.numel())
+    return total
 
 
 def _default_recon_fn(output):
@@ -177,6 +256,7 @@ def run_ttt_mim(
     mask_prob: float = 0.6,
     patch_size: int = 16,
     mask_value: float = 0.0,
+    update_filter: str = "all",
     include: Iterable[str] | None = None,
     exclude: Iterable[str] | None = None,
     optimizer: "torch.optim.Optimizer | None" = None,
@@ -192,10 +272,17 @@ def run_ttt_mim(
     model.train()
 
     if optimizer is None:
-        params = filter_parameters(model.named_parameters(), include=include, exclude=exclude)
+        params = select_parameters(
+            model,
+            update_filter=update_filter,
+            include=include,
+            exclude=exclude,
+        )
         if not params:
             raise ValueError("no parameters selected for TTT")
         optimizer = torch.optim.Adam(params, lr=float(lr))
+    params = [p for group in optimizer.param_groups for p in group.get("params", [])]
+    updated_param_count = _count_params(params)
 
     losses: list[float] = []
     mask_ratio = 0.0
@@ -216,4 +303,8 @@ def run_ttt_mim(
     if not was_training:
         model.eval()
 
-    return TTTMIMResult(losses=losses, mask_ratio=mask_ratio)
+    return TTTMIMResult(
+        losses=losses,
+        mask_ratio=mask_ratio,
+        updated_param_count=updated_param_count,
+    )

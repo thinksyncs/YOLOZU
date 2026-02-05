@@ -22,6 +22,9 @@ class TestTentRunner(unittest.TestCase):
         batch = torch.randn(2, 4)
         out = runner.adapt_step(batch)
         self.assertIn("loss_entropy", out)
+        log = runner.maybe_log()
+        self.assertIsInstance(log, dict)
+        self.assertGreater(log.get("updated_param_count", 0), 0)
 
 
 if __name__ == "__main__":
