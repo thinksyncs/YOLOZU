@@ -40,7 +40,8 @@ class SinePositionEmbedding(nn.Module):
         xs = torch.arange(width, device=device, dtype=dtype)
         ys = torch.arange(height, device=device, dtype=dtype)
         grid_x = xs.repeat(height)
-        grid_y = ys.repeat_interleave(width)
+        # ONNX-compatible alternative to repeat_interleave for PyTorch 2.10+
+        grid_y = ys.unsqueeze(-1).repeat(1, width).flatten()
         dim_half = self.hidden_dim // 2
         pos_y = _sincos_1d(grid_y, dim_half, device, dtype)
         pos_x = _sincos_1d(grid_x, dim_half, device, dtype)

@@ -14,6 +14,8 @@ class TestDataset(unittest.TestCase):
         dataset_root = repo_root / "data" / "coco128"
         if not dataset_root.exists():
             dataset_root = repo_root.parent / "data" / "coco128"
+        if not dataset_root.exists():
+            self.skipTest("coco128 missing; run: bash tools/fetch_coco128.sh")
         manifest = build_manifest(dataset_root)
         self.assertIn("images", manifest)
         self.assertGreater(len(manifest["images"]), 10)

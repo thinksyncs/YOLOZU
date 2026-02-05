@@ -15,3 +15,6 @@ pytest>=7.0
 
 # ONNXRuntime is used for CPU-friendly PyTorch ↔ ONNX parity tests.
 onnxruntime>=1.16
+
+# Required by PyTorch 2.10+ for ONNX export
+onnxscript>=0.1
