@@ -5,6 +5,8 @@ Real-time monocular RGB pipeline for object detection, depth, and 6DoF pose esti
 - Spec: [rt_detr_6dof_geom_mim_spec_en_v0_4.md](rt_detr_6dof_geom_mim_spec_en_v0_4.md)
 - Notes/TODOs: [todo_symmetry_commonsense_realtime.md](todo_symmetry_commonsense_realtime.md)
 - License policy: [docs/license_policy.md](docs/license_policy.md)
+- Predictions schema: [docs/predictions_schema.md](docs/predictions_schema.md)
+- Adapter contract: [docs/adapter_contract.md](docs/adapter_contract.md)
 
 ---
 
@@ -48,6 +50,9 @@ Supported predictions JSON shapes:
 - `[{"image": "...", "detections": [...]}, ...]`
 - `{ "predictions": [ ... ] }`
 - `{ "000000000009.jpg": [...], "/abs/path.jpg": [...] }` (image -> detections)
+
+Schema details:
+- [docs/predictions_schema.md](docs/predictions_schema.md)
 
 ## COCO mAP (end-to-end, no NMS)
 
