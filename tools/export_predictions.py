@@ -9,6 +9,7 @@ sys.path.insert(0, str(repo_root))
 
 from yolozu.adapter import DummyAdapter, RTDETRPoseAdapter
 from yolozu.dataset import build_manifest
+from yolozu.predictions_transform import apply_tta
 
 
 def _parse_args(argv):
@@ -79,6 +80,10 @@ def _parse_args(argv):
         action="store_true",
         help="Wrap output as {predictions: [...], meta: {...}} (recommended).",
     )
+    parser.add_argument("--tta", action="store_true", help="Enable TTA post-transform on predictions.")
+    parser.add_argument("--tta-seed", type=int, default=None, help="Seed for TTA randomness.")
+    parser.add_argument("--tta-flip-prob", type=float, default=0.5, help="Flip probability for TTA.")
+    parser.add_argument("--tta-norm-only", action="store_true", help="Update only normalized bbox values for TTA.")
     return parser.parse_args(argv)
 
 
@@ -113,6 +118,18 @@ def main(argv=None):
 
     predictions = adapter.predict(records)
 
+    tta_warnings = []
+    if args.tta:
+        tta = apply_tta(
+            predictions,
+            enabled=True,
+            seed=args.tta_seed,
+            flip_prob=args.tta_flip_prob,
+            norm_only=bool(args.tta_norm_only),
+        )
+        predictions = tta.entries
+        tta_warnings = tta.warnings
+
     output_path = repo_root / args.output
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -125,6 +142,13 @@ def main(argv=None):
                 "config": args.config,
                 "checkpoint": args.checkpoint,
                 "images": len(records),
+                "tta": {
+                    "enabled": bool(args.tta),
+                    "seed": args.tta_seed,
+                    "flip_prob": float(args.tta_flip_prob),
+                    "norm_only": bool(args.tta_norm_only),
+                    "warnings": tta_warnings,
+                },
             },
         }
         output_path.write_text(json.dumps(payload, indent=2, sort_keys=True))
