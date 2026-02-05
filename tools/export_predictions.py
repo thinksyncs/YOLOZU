@@ -10,6 +10,8 @@ sys.path.insert(0, str(repo_root))
 from yolozu.adapter import DummyAdapter, RTDETRPoseAdapter
 from yolozu.dataset import build_manifest
 from yolozu.predictions_transform import apply_tta
+from yolozu.tta.config import TTTConfig
+from yolozu.tta.integration import run_ttt
 
 
 def _parse_args(argv):
@@ -85,6 +87,46 @@ def _parse_args(argv):
     parser.add_argument("--tta-flip-prob", type=float, default=0.5, help="Flip probability for TTA.")
     parser.add_argument("--tta-norm-only", action="store_true", help="Update only normalized bbox values for TTA.")
     parser.add_argument("--tta-log-out", default=None, help="Optional path to write TTA log JSON.")
+
+    parser.add_argument("--ttt", action="store_true", help="Enable test-time training (TTT) before inference.")
+    parser.add_argument(
+        "--ttt-method",
+        choices=("tent", "mim"),
+        default="tent",
+        help="TTT method (default: tent).",
+    )
+    parser.add_argument("--ttt-steps", type=int, default=1, help="Total TTT steps to run (default: 1).")
+    parser.add_argument("--ttt-batch-size", type=int, default=1, help="TTT batch size (default: 1).")
+    parser.add_argument("--ttt-lr", type=float, default=1e-4, help="TTT learning rate (default: 1e-4).")
+    parser.add_argument(
+        "--ttt-update-filter",
+        choices=("all", "norm_only", "adapter_only"),
+        default="all",
+        help="Which parameters to update during TTT (default: all).",
+    )
+    parser.add_argument(
+        "--ttt-include",
+        action="append",
+        default=None,
+        help="Only update parameters whose name contains this substring (repeatable).",
+    )
+    parser.add_argument(
+        "--ttt-exclude",
+        action="append",
+        default=None,
+        help="Exclude parameters whose name contains this substring (repeatable).",
+    )
+    parser.add_argument(
+        "--ttt-max-batches",
+        type=int,
+        default=1,
+        help="Cap number of distinct batches used for TTT (default: 1).",
+    )
+    parser.add_argument("--ttt-seed", type=int, default=None, help="Optional RNG seed for TTT.")
+    parser.add_argument("--ttt-mask-prob", type=float, default=0.6, help="MIM mask probability (default: 0.6).")
+    parser.add_argument("--ttt-patch-size", type=int, default=16, help="MIM patch size (default: 16).")
+    parser.add_argument("--ttt-mask-value", type=float, default=0.0, help="MIM mask fill value (default: 0.0).")
+    parser.add_argument("--ttt-log-out", default=None, help="Optional path to write TTT log JSON.")
     return parser.parse_args(argv)
 
 
@@ -134,6 +176,29 @@ def main(argv=None):
             max_detections=args.max_detections,
         )
 
+    ttt_report = None
+    if args.ttt:
+        ttt_config = TTTConfig(
+            enabled=True,
+            method=str(args.ttt_method),
+            steps=int(args.ttt_steps),
+            batch_size=int(args.ttt_batch_size),
+            lr=float(args.ttt_lr),
+            update_filter=str(args.ttt_update_filter),
+            include=list(args.ttt_include) if args.ttt_include else None,
+            exclude=list(args.ttt_exclude) if args.ttt_exclude else None,
+            max_batches=int(args.ttt_max_batches),
+            seed=args.ttt_seed,
+            log_out=args.ttt_log_out,
+            mim_mask_prob=float(args.ttt_mask_prob),
+            mim_patch_size=int(args.ttt_patch_size),
+            mim_mask_value=float(args.ttt_mask_value),
+        )
+        try:
+            ttt_report = run_ttt(adapter, records, config=ttt_config).to_dict()
+        except Exception as exc:
+            raise SystemExit(f"TTT failed: {exc}")
+
     predictions = adapter.predict(records)
 
     tta_warnings = []
@@ -170,6 +235,24 @@ def main(argv=None):
                     "warnings": tta_warnings,
                     "summary": tta_summary,
                 },
+                "ttt": {
+                    "enabled": bool(args.ttt),
+                    "method": str(args.ttt_method),
+                    "steps": int(args.ttt_steps),
+                    "batch_size": int(args.ttt_batch_size),
+                    "lr": float(args.ttt_lr),
+                    "update_filter": str(args.ttt_update_filter),
+                    "include": list(args.ttt_include) if args.ttt_include else None,
+                    "exclude": list(args.ttt_exclude) if args.ttt_exclude else None,
+                    "max_batches": int(args.ttt_max_batches),
+                    "seed": args.ttt_seed,
+                    "mim": {
+                        "mask_prob": float(args.ttt_mask_prob),
+                        "patch_size": int(args.ttt_patch_size),
+                        "mask_value": float(args.ttt_mask_value),
+                    },
+                    "report": ttt_report,
+                },
             },
         }
         output_path.write_text(json.dumps(payload, indent=2, sort_keys=True))
@@ -192,6 +275,36 @@ def main(argv=None):
                 "flip_prob": float(args.tta_flip_prob),
                 "norm_only": bool(args.tta_norm_only),
                 "summary": tta_summary,
+            },
+        }
+        log_path.write_text(json.dumps(log_payload, indent=2, sort_keys=True))
+        print(log_path)
+
+    if args.ttt_log_out and args.ttt:
+        log_path = Path(args.ttt_log_out)
+        if not log_path.is_absolute():
+            log_path = repo_root / log_path
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_payload = {
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "output": str(output_path),
+            "ttt": {
+                "enabled": bool(args.ttt),
+                "method": str(args.ttt_method),
+                "steps": int(args.ttt_steps),
+                "batch_size": int(args.ttt_batch_size),
+                "lr": float(args.ttt_lr),
+                "update_filter": str(args.ttt_update_filter),
+                "include": list(args.ttt_include) if args.ttt_include else None,
+                "exclude": list(args.ttt_exclude) if args.ttt_exclude else None,
+                "max_batches": int(args.ttt_max_batches),
+                "seed": args.ttt_seed,
+                "mim": {
+                    "mask_prob": float(args.ttt_mask_prob),
+                    "patch_size": int(args.ttt_patch_size),
+                    "mask_value": float(args.ttt_mask_value),
+                },
+                "report": ttt_report,
             },
         }
         log_path.write_text(json.dumps(log_payload, indent=2, sort_keys=True))
