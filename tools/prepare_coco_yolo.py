@@ -7,7 +7,7 @@ from pathlib import Path
 repo_root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(repo_root))
 
-from yolozu.coco_convert import convert_coco_instances_to_yolo_labels
+from yolozu.coco_convert import convert_coco_instances_to_yolo_labels  # noqa: E402
 
 
 def _parse_args(argv):

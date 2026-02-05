@@ -7,10 +7,10 @@ from pathlib import Path
 repo_root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(repo_root))
 
-from yolozu.adapter import DummyAdapter, PrecomputedAdapter, RTDETRPoseAdapter
-from yolozu.boxes import iou_xyxy_abs
-from yolozu.dataset import build_manifest
-from yolozu.scenario_suite import build_report
+from yolozu.adapter import DummyAdapter, PrecomputedAdapter, RTDETRPoseAdapter  # noqa: E402
+from yolozu.boxes import iou_xyxy_abs  # noqa: E402
+from yolozu.dataset import build_manifest  # noqa: E402
+from yolozu.scenario_suite import build_report  # noqa: E402
 
 
 def _parse_args(argv):

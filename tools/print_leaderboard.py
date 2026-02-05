@@ -6,7 +6,7 @@ from pathlib import Path
 repo_root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(repo_root))
 
-from yolozu.map_targets import load_targets_map
+from yolozu.map_targets import load_targets_map  # noqa: E402
 
 
 def _parse_args(argv):

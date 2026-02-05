@@ -6,7 +6,7 @@ from pathlib import Path
 repo_root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(repo_root))
 
-from yolozu.splits import deterministic_split_paths
+from yolozu.splits import deterministic_split_paths  # noqa: E402
 
 
 def _parse_args(argv):

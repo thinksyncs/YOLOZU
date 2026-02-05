@@ -5,10 +5,10 @@ from pathlib import Path
 repo_root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(repo_root))
 
-from yolozu.config import load_constraints, load_symmetry_map
-from yolozu.math3d import mat_identity, rotation_z
-from yolozu.pipeline import evaluate_candidate
-from yolozu.symmetry import min_symmetry_geodesic
+from yolozu.config import load_constraints, load_symmetry_map  # noqa: E402
+from yolozu.math3d import mat_identity, rotation_z  # noqa: E402
+from yolozu.pipeline import evaluate_candidate  # noqa: E402
+from yolozu.symmetry import min_symmetry_geodesic  # noqa: E402
 
 
 def main():

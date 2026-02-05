@@ -2,7 +2,6 @@ import argparse
 import subprocess
 import sys
 from pathlib import Path
-from typing import List
 
 repo_root = Path(__file__).resolve().parents[1]
 

@@ -5,7 +5,7 @@ from pathlib import Path
 repo_root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(repo_root))
 
-from yolozu.metrics_report import build_report, write_json
+from yolozu.metrics_report import build_report, write_json  # noqa: E402
 
 
 def _parse_args(argv=None):

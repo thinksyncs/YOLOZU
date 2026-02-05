@@ -7,8 +7,8 @@ from pathlib import Path
 repo_root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(repo_root))
 
-from yolozu.predictions import normalize_predictions_json
-from yolozu.predictions_transform import load_classes_json, normalize_class_ids
+from yolozu.predictions import normalize_predictions_json  # noqa: E402
+from yolozu.predictions_transform import load_classes_json, normalize_class_ids  # noqa: E402
 
 
 def _parse_args(argv):
