@@ -74,6 +74,14 @@ Reference recipe for external training runs (augment, multiscale, schedule, EMA)
 
 - `docs/training_inference_export.md`
 
+## Quick CLI
+
+Run training and test flows with simple commands:
+- `./yolozu train train_setting.yaml`
+- `./yolozu test test_setting.yaml`
+
+If the script isn't executable, use `python yolozu ...` or `chmod +x yolozu`.
+
 ## Hyperparameter sweep harness
 
 Run a configurable sweep and emit CSV/MD tables:
