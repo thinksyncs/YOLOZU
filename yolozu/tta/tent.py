@@ -13,7 +13,7 @@ except ImportError:  # pragma: no cover
     F = None
 
 from .base import TTARunner
-from .ttt_mim import filter_parameters
+from .ttt_mim import _count_params, select_parameters
 
 
 @dataclass
@@ -21,6 +21,7 @@ class TentConfig:
     lr: float = 1e-4
     include: Iterable[str] | None = None
     exclude: Iterable[str] | None = None
+    update_filter: str = "all"
 
 
 def _ensure_torch():
@@ -48,14 +49,16 @@ class TentRunner(TTARunner):
         _ensure_torch()
         self.model = model
         self.config = config or TentConfig()
-        params = filter_parameters(
-            model.named_parameters(),
+        params = select_parameters(
+            model,
+            update_filter=self.config.update_filter,
             include=self.config.include,
             exclude=self.config.exclude,
         )
         if not params:
             raise ValueError("no parameters selected for Tent")
         self.optimizer = torch.optim.Adam(params, lr=float(self.config.lr))
+        self.updated_param_count = _count_params(params)
 
     def reset(self) -> None:
         for group in self.optimizer.param_groups:
@@ -73,4 +76,4 @@ class TentRunner(TTARunner):
         return {"loss_entropy": float(loss.detach().cpu())}
 
     def maybe_log(self) -> dict[str, Any] | None:
-        return None
+        return {"updated_param_count": int(self.updated_param_count)}
