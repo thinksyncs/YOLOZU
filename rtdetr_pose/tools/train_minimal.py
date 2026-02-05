@@ -19,6 +19,7 @@ except ImportError as exc:  # pragma: no cover
 from rtdetr_pose.dataset import build_manifest
 from rtdetr_pose.dataset import extract_full_gt_targets, depth_at_bbox_center
 from rtdetr_pose.losses import Losses
+from rtdetr_pose.export import export_onnx
 from rtdetr_pose.training import build_query_aligned_targets
 from rtdetr_pose.model import RTDETRPose
 
@@ -377,6 +378,23 @@ def build_parser() -> argparse.ArgumentParser:
 
     # Back-compat: weights-only checkpoint
     parser.add_argument("--checkpoint-out", default=None, help="Write model state_dict to this path at end.")
+        parser.add_argument(
+            "--export-onnx",
+            default=True,
+            action=argparse.BooleanOptionalAction,
+            help="Export ONNX after training (default: true).",
+        )
+        parser.add_argument(
+            "--onnx-out",
+            default="reports/rtdetr_pose.onnx",
+            help="Output path for ONNX export (default: reports/rtdetr_pose.onnx).",
+        )
+        parser.add_argument(
+            "--onnx-opset",
+            type=int,
+            default=17,
+            help="ONNX opset version (default: 17).",
+        )
     return parser
 
 
@@ -535,6 +553,15 @@ def apply_denoise_targets(
 
         out.append(new_tgt)
     return out
+
+
+def export_onnx_after_training(model: "torch.nn.Module", *, image_size: int, output_path: str | Path, opset_version: int) -> Path:
+    device = next(model.parameters()).device
+    dummy = torch.zeros((1, 3, int(image_size), int(image_size)), dtype=torch.float32, device=device)
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    export_onnx(model, dummy, output_path, opset_version=int(opset_version))
+    return output_path
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -1714,6 +1741,15 @@ def main(argv: list[str] | None = None) -> int:
             last_loss_dict=last_loss_dict,
             run_record=run_record,
         )
+
+    if args.export_onnx:
+        onnx_path = export_onnx_after_training(
+            model,
+            image_size=int(args.image_size),
+            output_path=args.onnx_out,
+            opset_version=int(args.onnx_opset),
+        )
+        print(onnx_path)
 
     return 0
 

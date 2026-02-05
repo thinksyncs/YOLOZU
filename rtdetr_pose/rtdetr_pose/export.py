@@ -1,4 +1,4 @@
-def export_onnx(model, dummy_input, output_path):
+def export_onnx(model, dummy_input, output_path, *, opset_version: int = 17):
     try:
         import torch
     except ImportError as exc:  # pragma: no cover
@@ -27,7 +27,7 @@ def export_onnx(model, dummy_input, output_path):
         output_path,
         input_names=["input"],
         output_names=["logits", "bbox", "log_z", "rot6d", "offsets", "k_delta"],
-        opset_version=17,
+        opset_version=int(opset_version),
         dynamic_axes={
             "input": {0: "batch"},
             "logits": {0: "batch"},
