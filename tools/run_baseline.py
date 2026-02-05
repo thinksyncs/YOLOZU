@@ -1,5 +1,7 @@
 import argparse
+import hashlib
 import json
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -11,6 +13,7 @@ from yolozu.adapter import DummyAdapter, PrecomputedAdapter, RTDETRPoseAdapter
 from yolozu.boxes import iou_xyxy_abs
 from yolozu.dataset import build_manifest
 from yolozu.scenario_suite import build_report
+from yolozu.coco_eval import build_coco_ground_truth, evaluate_coco_map, predictions_to_coco_detections
 
 
 def _parse_args(argv):
@@ -88,6 +91,16 @@ def _parse_args(argv):
         help="Where to write baseline JSON (default: reports/baseline.json).",
     )
     p.add_argument(
+        "--coco",
+        action="store_true",
+        help="Also run COCO mAP evaluation (requires pycocotools).",
+    )
+    p.add_argument(
+        "--no-scenarios",
+        action="store_true",
+        help="Disable scenario suite section in the report.",
+    )
+    p.add_argument(
         "--predictions-out",
         default=None,
         help="Optional path to write predictions JSON from adapter.",
@@ -98,6 +111,19 @@ def _parse_args(argv):
         help="Wrap predictions output as {predictions: [...], meta: {...}} when --predictions-out is set.",
     )
     return p.parse_args(argv)
+
+
+def _git_sha(repo_root: Path) -> str | None:
+    try:
+        out = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=str(repo_root)).decode("utf-8").strip()
+        return out or None
+    except Exception:
+        return None
+
+
+def _sha256_json(obj) -> str:
+    dumped = json.dumps(obj, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(dumped).hexdigest()
 
 
 def _bbox_xyxy_from_cxcywh_norm(cx, cy, w, h):
@@ -241,27 +267,71 @@ def main(argv=None):
             max_detections=args.max_detections,
         )
 
+    started_utc = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     start = time.perf_counter()
     predictions = adapter.predict(records)
     elapsed = time.perf_counter() - start
     fps = (len(records) / elapsed) if elapsed > 0 else float("inf")
+    finished_utc = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
     summary = _summary_metrics(records, predictions, args.iou_threshold)
-    report = build_report()
-    for entry in report.get("scenarios", []):
-        metrics = entry.get("metrics", {})
-        metrics["fps"] = round(fps, 3)
-        metrics["recall"] = round(summary["recall"], 4)
-        metrics["map"] = round(summary["map"], 4)
-        metrics["rejection_rate"] = round(summary["rejection_rate"], 4)
-        entry["metrics"] = metrics
+    scenario_report = None
+    if not bool(args.no_scenarios):
+        scenario_report = build_report()
+        for entry in scenario_report.get("scenarios", []):
+            metrics = entry.get("metrics", {})
+            metrics["fps"] = round(fps, 3)
+            metrics["recall"] = round(summary["recall"], 4)
+            metrics["map"] = round(summary["map"], 4)
+            metrics["rejection_rate"] = round(summary["rejection_rate"], 4)
+            entry["metrics"] = metrics
+
+    coco_section: dict[str, object] | None = None
+    if bool(args.coco):
+        coco_section = {"enabled": True, "error": None, "metrics": None, "stats": None}
+        try:
+            gt, coco_index = build_coco_ground_truth(records)
+            image_sizes = {img["id"]: (int(img["width"]), int(img["height"])) for img in gt.get("images", [])}
+            dt = predictions_to_coco_detections(predictions, coco_index=coco_index, image_sizes=image_sizes)
+            coco_eval = evaluate_coco_map(gt, dt)
+            coco_section["metrics"] = coco_eval.get("metrics")
+            coco_section["stats"] = coco_eval.get("stats")
+        except Exception as exc:
+            coco_section["error"] = str(exc)
+    else:
+        coco_section = {"enabled": False}
 
     output_path = repo_root / args.output
     output_path.parent.mkdir(parents=True, exist_ok=True)
     baseline = {
-        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "fps": round(fps, 3),
-        "scenario_report": report,
+        "schema_version": 1,
+        "meta": {
+            "started_utc": started_utc,
+            "finished_utc": finished_utc,
+            "argv": list(sys.argv if argv is None else ["run_baseline"] + list(argv)),
+            "git_sha": _git_sha(repo_root),
+            "dataset": str(dataset_root),
+            "split": str(manifest.get("split")),
+            "adapter": str(args.adapter),
+            "predictions_in": str(args.predictions) if args.predictions else None,
+            "config": str(args.config),
+            "checkpoint": args.checkpoint,
+            "device": str(args.device),
+            "image_size": list(image_size or (320, 320)) if args.adapter == "rtdetr_pose" else None,
+            "iou_threshold": float(args.iou_threshold),
+        },
+        "speed": {
+            "images": int(len(records)),
+            "seconds": float(elapsed),
+            "fps": float(round(fps, 3)),
+        },
+        "summary": summary,
+        "scenario_suite": scenario_report,
+        "coco": coco_section,
+        "predictions": {
+            "hash_sha256": _sha256_json(predictions),
+            "images": int(len(predictions)),
+        },
     }
     output_path.write_text(json.dumps(baseline, indent=2, sort_keys=True))
 
