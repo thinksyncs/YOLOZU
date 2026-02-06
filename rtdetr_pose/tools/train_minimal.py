@@ -1816,20 +1816,40 @@ def main(argv: list[str] | None = None) -> int:
         else:
             print("amp_warning: --use-amp requires CUDA device; AMP disabled")
 
-    # Initialize EMA if enabled (before resume so it can be loaded)
+    # Initialize EMA if enabled
     ema = None
     if args.use_ema:
         ema = EMA(model, decay=float(args.ema_decay))
         print(f"ema_enabled=True decay={args.ema_decay} eval_with_ema={args.ema_eval}")
 
-    # Calculate total steps for scheduler (needed before building scheduler)
+    start_epoch = 0
+    global_step = 0
+    if args.resume_from:
+        meta = load_checkpoint_into(model, optim, args.resume_from, scheduler=lr_scheduler, ema=ema)
+        if meta.get("epoch") is not None:
+            try:
+                start_epoch = int(meta["epoch"]) + 1
+            except Exception:
+                start_epoch = 0
+        if meta.get("global_step") is not None:
+            try:
+                global_step = int(meta["global_step"])
+            except Exception:
+                global_step = 0
+        print(f"resumed_from={meta.get('path')} start_epoch={start_epoch} global_step={global_step}")
+        if meta.get("scheduler_loaded"):
+            print("scheduler_state_loaded=True")
+        if meta.get("ema_loaded"):
+            print("ema_state_loaded=True")
+
+    # Calculate total steps for scheduler
     total_steps_est = 0
     if args.max_steps and int(args.max_steps) > 0:
         total_steps_est = int(args.max_steps) * int(args.epochs)
     else:
         total_steps_est = len(loader) * int(args.epochs)
 
-    # Build scheduler using factory (before resume so it can be loaded)
+    # Build scheduler using factory
     scheduler_type = str(args.scheduler)
     # Map old "cos" to "cosine" for compatibility
     if scheduler_type == "cos":
@@ -1860,26 +1880,6 @@ def main(argv: list[str] | None = None) -> int:
         )
         if lr_scheduler is not None:
             print(f"scheduler={scheduler_type} total_steps={total_steps_est} warmup_steps={args.lr_warmup_steps}")
-
-    start_epoch = 0
-    global_step = 0
-    if args.resume_from:
-        meta = load_checkpoint_into(model, optim, args.resume_from, scheduler=lr_scheduler, ema=ema)
-        if meta.get("epoch") is not None:
-            try:
-                start_epoch = int(meta["epoch"]) + 1
-            except Exception:
-                start_epoch = 0
-        if meta.get("global_step") is not None:
-            try:
-                global_step = int(meta["global_step"])
-            except Exception:
-                global_step = 0
-        print(f"resumed_from={meta.get('path')} start_epoch={start_epoch} global_step={global_step}")
-        if meta.get("scheduler_loaded"):
-            print("scheduler_state_loaded=True")
-        if meta.get("ema_loaded"):
-            print("ema_state_loaded=True")
 
     model.train()
     last_loss_dict = None

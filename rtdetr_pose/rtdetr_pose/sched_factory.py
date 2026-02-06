@@ -47,19 +47,16 @@ class LinearWarmupWrapper(_LRScheduler):
         self.warmup_steps = warmup_steps
         self.warmup_init_lr = warmup_init_lr
         self.after_scheduler = after_scheduler
+        self._step_count = 0
         super().__init__(optimizer, last_epoch)
 
     def get_lr(self):
         """Compute learning rate for current step."""
-        # Use last_epoch which is properly maintained by the parent class
-        # last_epoch starts at -1, first step() call makes it 0
-        current_step = self.last_epoch + 1
-        
-        if current_step < self.warmup_steps:
+        if self._step_count < self.warmup_steps:
             # Linear warmup
             if self.warmup_steps <= 0:
                 return [group["lr"] for group in self.optimizer.param_groups]
-            alpha = current_step / self.warmup_steps
+            alpha = self._step_count / self.warmup_steps
             return [self.warmup_init_lr + (base_lr - self.warmup_init_lr) * alpha for base_lr in self.base_lrs]
         else:
             # After warmup, use the wrapped scheduler if available
@@ -70,11 +67,9 @@ class LinearWarmupWrapper(_LRScheduler):
 
     def step(self, epoch=None):
         """Step the scheduler."""
-        # Step the wrapped scheduler first if we're past warmup
-        # Use last_epoch to check since it hasn't been incremented yet
-        if self.last_epoch >= self.warmup_steps and self.after_scheduler is not None:
+        self._step_count += 1
+        if self._step_count > self.warmup_steps and self.after_scheduler is not None:
             self.after_scheduler.step(epoch)
-        # Then step this scheduler, which will call get_lr()
         super().step(epoch)
 
 
