@@ -1775,14 +1775,14 @@ def main(argv: list[str] | None = None) -> int:
                     mim_ratio = float(targets["mim_mask_ratio"].mean().detach().cpu())
                 except Exception:
                     mim_ratio = None
-            
+
             # Forward pass with optional AMP autocast
             if scaler is not None:
                 with torch.cuda.amp.autocast():
                     out = model(images)
             else:
                 out = model(images)
-            
+
             mim_loss = None
             if args.mim_teacher and float(mim_weight) > 0 and isinstance(targets, dict):
                 image_raw = targets.get("image_raw")
@@ -1906,7 +1906,7 @@ def main(argv: list[str] | None = None) -> int:
 
             # Store unscaled loss for logging
             loss_for_logging = loss.detach().cpu()
-            
+
             # Gradient accumulation: scale loss by accumulation steps
             accum_steps = int(args.gradient_accumulation_steps)
             if accum_steps > 1:
