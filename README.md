@@ -10,6 +10,7 @@ It focuses on:
 - CPU-minimum dev/tests (GPU optional)
 - A versioned predictions-JSON contract for evaluation
 - Minimal training scaffold (RT-DETR pose) with useful defaults (metrics, progress, export)
+- Hessian-based refinement for regression head predictions (depth, rotation, offsets)
 
 ## Feature highlights (what you can do)
 
@@ -19,6 +20,7 @@ It focuses on:
 - Test-time adaptation options:
   - TTA: lightweight prediction-space post-transform (`--tta`).
   - TTT: pre-prediction test-time training (Tent or MIM) via `--ttt` (adapter + torch required).
+- Hessian solver: per-detection iterative refinement of regression outputs (depth, rotation, offsets) using Gauss-Newton optimization.
 - Evaluation: COCO mAP conversion/eval and scenario suite reporting.
 - Training scaffold: minimal RT-DETR pose trainer with metrics output, ONNX export, and optional LoRA.
 
@@ -29,6 +31,7 @@ Start here: [docs/training_inference_export.md](docs/training_inference_export.m
 - Repo feature summary: [docs/yolozu_spec.md](docs/yolozu_spec.md)
 - Model/spec note: [rt_detr_6dof_geom_mim_spec_en_v0_4.md](rt_detr_6dof_geom_mim_spec_en_v0_4.md)
 - Training / inference / export quick steps: [docs/training_inference_export.md](docs/training_inference_export.md)
+- Hessian solver for regression refinement: [docs/hessian_solver.md](docs/hessian_solver.md)
 - Predictions schema (stable): [docs/predictions_schema.md](docs/predictions_schema.md)
 - Adapter contract (stable): [docs/adapter_contract.md](docs/adapter_contract.md)
 - License policy: [docs/license_policy.md](docs/license_policy.md)
