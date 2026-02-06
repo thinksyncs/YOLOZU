@@ -359,7 +359,7 @@ def refine_detection_hessian(
         log_z=refined_log_z,
         rot6d=refined_rot6d,
         offsets=refined_offsets,
-        iterations=iteration + 1 if not converged else iteration,
+        iterations=iteration + 1,  # iteration is 0-indexed, so +1 for count
         converged=converged,
         final_residual=final_residual,
     )
@@ -445,19 +445,33 @@ def refine_predictions_hessian(
                 continue
             
             # Extract supervision from record if available.
-            # For simplicity, use first GT instance if available.
-            # A more sophisticated matcher could be used here.
+            # NOTE: This is a simplified matching strategy that uses the first GT instance.
+            # For production use with multi-object scenes, implement proper detection-to-GT
+            # matching (e.g., IoU-based Hungarian matching or class_id + spatial proximity).
             gt_depth = None
             gt_rotation = None
             
             if record is not None:
                 labels = record.get("labels")
                 if isinstance(labels, list) and labels:
-                    # Use first label for simplicity.
-                    first_label = labels[0]
-                    if isinstance(first_label, dict):
+                    # Try to match by class_id first, otherwise use first label.
+                    matched_label = None
+                    det_class = det.get("class_id")
+                    
+                    if det_class is not None:
+                        # Find first label with matching class_id.
+                        for label in labels:
+                            if isinstance(label, dict) and label.get("class_id") == det_class:
+                                matched_label = label
+                                break
+                    
+                    # Fallback to first label if no class match.
+                    if matched_label is None and labels:
+                        matched_label = labels[0]
+                    
+                    if matched_label is not None and isinstance(matched_label, dict):
                         # Try to extract depth from t_gt.
-                        t_gt = first_label.get("t_gt")
+                        t_gt = matched_label.get("t_gt")
                         if isinstance(t_gt, (list, tuple)) and len(t_gt) >= 3:
                             try:
                                 gt_depth = float(t_gt[2])  # Z component.
@@ -465,7 +479,7 @@ def refine_predictions_hessian(
                                 pass
                         
                         # Extract rotation.
-                        r_gt = first_label.get("R_gt")
+                        r_gt = matched_label.get("R_gt")
                         if isinstance(r_gt, (list, tuple)) and len(r_gt) == 3:
                             try:
                                 gt_rotation = [[float(x) for x in row] for row in r_gt]
