@@ -219,8 +219,8 @@ class EMA:
         """
         if self.backup:
             raise RuntimeError(
-                "apply_shadow() called while shadow weights are already applied. "
-                "Call restore() first to restore training weights."
+                "Cannot apply shadow weights: shadow weights are already active. "
+                "Call restore() to revert to training weights before calling apply_shadow() again."
             )
         for name, param in self.model.named_parameters():
             if param.requires_grad and name in self.shadow:
