@@ -14,3 +14,10 @@ metrics_csv: reports/train_metrics.csv
 tensorboard_logdir: reports/tb
 export_onnx: true
 onnx_out: reports/rtdetr_pose.onnx
+# Gradient clipping (already implemented)
+# clip_grad_norm: 1.0
+# Gradient accumulation (new feature)
+# gradient_accumulation_steps: 1
+# AMP (Automatic Mixed Precision) - requires CUDA device (new feature)
+# use_amp: false
+
