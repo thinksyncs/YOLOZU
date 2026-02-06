@@ -5,6 +5,7 @@ Real-time monocular RGB pipeline for object detection, depth, and 6DoF pose esti
 - Spec: [rt_detr_6dof_geom_mim_spec_en_v0_4.md](rt_detr_6dof_geom_mim_spec_en_v0_4.md)
 - Notes/TODOs: [todo_symmetry_commonsense_realtime.md](todo_symmetry_commonsense_realtime.md)
 - License policy: [docs/license_policy.md](docs/license_policy.md)
+- Tools index (AI-friendly): [docs/tools_index.md](docs/tools_index.md) / [tools/manifest.json](tools/manifest.json)
 
 ---
 

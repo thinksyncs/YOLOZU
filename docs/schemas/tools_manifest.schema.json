@@ -1,0 +1,150 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "YOLOZU Tools Manifest",
+  "type": "object",
+  "required": ["manifest_version", "tools"],
+  "properties": {
+    "manifest_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "generated_at_utc": {
+      "type": "string",
+      "description": "Optional UTC timestamp for when this manifest was last updated."
+    },
+    "repo": {
+      "type": "object",
+      "description": "Optional repo metadata.",
+      "properties": {
+        "name": { "type": "string" },
+        "description": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "contracts": {
+      "type": "object",
+      "description": "Optional contract registry used by tools (e.g., predictions_json).",
+      "additionalProperties": true
+    },
+    "tools": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/tool" }
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "tool": {
+      "type": "object",
+      "required": ["id", "entrypoint", "runner", "summary"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_\\-]*$",
+          "description": "Stable tool identifier."
+        },
+        "entrypoint": {
+          "type": "string",
+          "description": "Path to the runnable script relative to repo root."
+        },
+        "runner": {
+          "type": "string",
+          "enum": ["python3", "bash"],
+          "description": "How to run entrypoint."
+        },
+        "summary": { "type": "string" },
+        "description": { "type": "string" },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "docs": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "platform": { "$ref": "#/$defs/platform" },
+        "requires": { "$ref": "#/$defs/requires" },
+        "contracts": { "$ref": "#/$defs/contracts_ref" },
+        "inputs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/io_item" }
+        },
+        "outputs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/io_item" }
+        },
+        "examples": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/example" }
+        }
+      },
+      "additionalProperties": true
+    },
+    "platform": {
+      "type": "object",
+      "properties": {
+        "cpu_ok": { "type": "boolean" },
+        "gpu_required": { "type": "boolean" },
+        "macos_ok": { "type": "boolean" },
+        "linux_ok": { "type": "boolean" },
+        "notes": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "requires": {
+      "type": "object",
+      "properties": {
+        "python_packages": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "system": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "network": { "type": "boolean" }
+      },
+      "additionalProperties": true
+    },
+    "contracts_ref": {
+      "type": "object",
+      "properties": {
+        "consumes": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "produces": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": true
+    },
+    "io_item": {
+      "type": "object",
+      "required": ["name", "kind"],
+      "properties": {
+        "name": { "type": "string" },
+        "kind": {
+          "type": "string",
+          "enum": ["file", "dir", "string", "number", "json", "stdout"]
+        },
+        "required": { "type": "boolean" },
+        "flag": { "type": "string" },
+        "description": { "type": "string" },
+        "default": {}
+      },
+      "additionalProperties": true
+    },
+    "example": {
+      "type": "object",
+      "required": ["command"],
+      "properties": {
+        "description": { "type": "string" },
+        "command": { "type": "string" }
+      },
+      "additionalProperties": true
+    }
+  }
+}
+
