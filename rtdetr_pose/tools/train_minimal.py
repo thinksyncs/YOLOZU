@@ -34,6 +34,8 @@ from rtdetr_pose.export import export_onnx
 from rtdetr_pose.training import build_query_aligned_targets
 from rtdetr_pose.model import RTDETRPose
 from rtdetr_pose.lora import apply_lora, count_trainable_params, mark_only_lora_as_trainable
+from rtdetr_pose.optim_factory import build_optimizer
+from rtdetr_pose.sched_factory import build_scheduler, EMA
 
 from yolozu.metrics_report import append_jsonl, build_report, write_csv_row, write_json
 from yolozu.jitter import default_jitter_profile, sample_intrinsics_jitter, sample_extrinsics_jitter
@@ -101,16 +103,78 @@ def build_parser() -> argparse.ArgumentParser:
         help="Weight decay for optimizer (default: 0.01).",
     )
     parser.add_argument(
+        "--nesterov",
+        action="store_true",
+        help="Use Nesterov momentum for SGD (default: False).",
+    )
+    parser.add_argument(
+        "--use-param-groups",
+        action="store_true",
+        help="Use separate param groups for backbone/head with different lr/wd (default: False).",
+    )
+    parser.add_argument(
+        "--backbone-lr-mult",
+        type=float,
+        default=1.0,
+        help="LR multiplier for backbone parameters (default: 1.0).",
+    )
+    parser.add_argument(
+        "--head-lr-mult",
+        type=float,
+        default=1.0,
+        help="LR multiplier for head parameters (default: 1.0).",
+    )
+    parser.add_argument(
+        "--backbone-wd-mult",
+        type=float,
+        default=1.0,
+        help="Weight decay multiplier for backbone parameters (default: 1.0).",
+    )
+    parser.add_argument(
+        "--head-wd-mult",
+        type=float,
+        default=1.0,
+        help="Weight decay multiplier for head parameters (default: 1.0).",
+    )
+    parser.add_argument(
         "--scheduler",
-        choices=("none", "cos", "linear"),
+        choices=("none", "cos", "linear", "cosine", "onecycle", "multistep"),
         default="none",
-        help="LR schedule after warmup (default: none).",
+        help="LR schedule after warmup (default: none). cos/cosine are equivalent.",
+    )
+    parser.add_argument(
+        "--scheduler-milestones",
+        type=str,
+        default="",
+        help="Comma-separated step indices for MultiStepLR (e.g., '1000,2000,3000').",
+    )
+    parser.add_argument(
+        "--scheduler-gamma",
+        type=float,
+        default=0.1,
+        help="Multiplicative factor for MultiStepLR (default: 0.1).",
     )
     parser.add_argument(
         "--min-lr",
         type=float,
         default=0.0,
         help="Minimum LR for linear/cos schedules (default: 0.0).",
+    )
+    parser.add_argument(
+        "--use-ema",
+        action="store_true",
+        help="Enable Exponential Moving Average of model weights (default: False).",
+    )
+    parser.add_argument(
+        "--ema-decay",
+        type=float,
+        default=0.999,
+        help="EMA decay factor (default: 0.999).",
+    )
+    parser.add_argument(
+        "--ema-eval",
+        action="store_true",
+        help="Use EMA weights for evaluation/export (default: False, use training weights).",
     )
     parser.add_argument(
         "--device",
@@ -1694,28 +1758,45 @@ def main(argv: list[str] | None = None) -> int:
             )
         print(msg)
 
-    if args.optimizer == "sgd":
-        optim = torch.optim.SGD(
-            model.parameters(),
-            lr=float(args.lr),
-            momentum=float(args.momentum),
-            weight_decay=float(args.weight_decay),
-        )
-    else:
-        optim = torch.optim.AdamW(
-            model.parameters(),
-            lr=float(args.lr),
-            weight_decay=float(args.weight_decay),
-        )
+    # Build optimizer using factory
+    optim = build_optimizer(
+        model,
+        optimizer=str(args.optimizer),
+        lr=float(args.lr),
+        weight_decay=float(args.weight_decay),
+        momentum=float(args.momentum),
+        nesterov=bool(args.nesterov),
+        use_param_groups=bool(args.use_param_groups),
+        backbone_lr_mult=float(args.backbone_lr_mult),
+        head_lr_mult=float(args.head_lr_mult),
+        backbone_wd_mult=float(args.backbone_wd_mult),
+        head_wd_mult=float(args.head_wd_mult),
+    )
+
+    # Log optimizer param groups
+    num_groups = len(optim.param_groups)
+    print(f"optimizer={args.optimizer} num_param_groups={num_groups}")
+    for i, group in enumerate(optim.param_groups):
+        group_name = group.get("name", f"group_{i}")
+        group_lr = group.get("lr", 0.0)
+        group_wd = group.get("weight_decay", 0.0)
+        num_params = sum(p.numel() for p in group["params"])
+        print(f"  {group_name}: lr={group_lr:.6f} wd={group_wd:.6f} params={num_params}")
 
     # Initialize GradScaler for AMP if enabled
     scaler = None
     if args.use_amp:
-        if device.startswith("cuda"):
+        if device_str.startswith("cuda"):
             scaler = torch.cuda.amp.GradScaler()
             print("amp_enabled=True device=cuda")
         else:
             print("amp_warning: --use-amp requires CUDA device; AMP disabled")
+
+    # Initialize EMA if enabled
+    ema = None
+    if args.use_ema:
+        ema = EMA(model, decay=float(args.ema_decay))
+        print(f"ema_enabled=True decay={args.ema_decay} eval_with_ema={args.ema_eval}")
 
     start_epoch = 0
     global_step = 0
@@ -1733,15 +1814,49 @@ def main(argv: list[str] | None = None) -> int:
                 global_step = 0
         print(f"resumed_from={meta.get('path')} start_epoch={start_epoch} global_step={global_step}")
 
-    model.train()
-    last_loss_dict = None
-    last_epoch_avg = None
-    last_stage = None
+    # Calculate total steps for scheduler
     total_steps_est = 0
     if args.max_steps and int(args.max_steps) > 0:
         total_steps_est = int(args.max_steps) * int(args.epochs)
     else:
         total_steps_est = len(loader) * int(args.epochs)
+
+    # Build scheduler using factory
+    scheduler_type = str(args.scheduler)
+    # Map old "cos" to "cosine" for compatibility
+    if scheduler_type == "cos":
+        scheduler_type = "cosine"
+    # Handle "linear" scheduler (not directly supported by factory, use old logic)
+    use_factory_scheduler = scheduler_type not in ("linear",)
+    
+    lr_scheduler = None
+    if use_factory_scheduler:
+        # Parse milestones for MultiStepLR
+        milestones = []
+        if args.scheduler_milestones:
+            try:
+                milestones = [int(x.strip()) for x in args.scheduler_milestones.split(",") if x.strip()]
+            except Exception:
+                print(f"warning: failed to parse --scheduler-milestones '{args.scheduler_milestones}'")
+                milestones = []
+        
+        lr_scheduler = build_scheduler(
+            optim,
+            scheduler=scheduler_type,
+            total_steps=total_steps_est,
+            warmup_steps=int(args.lr_warmup_steps),
+            warmup_init_lr=float(args.lr_warmup_init),
+            min_lr=float(args.min_lr),
+            milestones=milestones,
+            gamma=float(args.scheduler_gamma),
+        )
+        if lr_scheduler is not None:
+            print(f"scheduler={scheduler_type} total_steps={total_steps_est} warmup_steps={args.lr_warmup_steps}")
+
+    model.train()
+    last_loss_dict = None
+    last_epoch_avg = None
+    last_stage = None
     for epoch in range(int(start_epoch), int(args.epochs)):
         if args.hflip_prob_start is not None and args.hflip_prob_end is not None:
             ds.hflip_prob = compute_linear_schedule(
@@ -1920,29 +2035,46 @@ def main(argv: list[str] | None = None) -> int:
 
             # Perform optimizer step only at accumulation boundaries
             # steps is 0-indexed within each epoch, so we use (steps + 1) for the check
+            grad_norm = None
             if (steps + 1) % accum_steps == 0:
                 if scaler is not None:
                     # Unscale gradients before clipping
                     if args.clip_grad_norm and float(args.clip_grad_norm) > 0:
                         scaler.unscale_(optim)
-                        torch.nn.utils.clip_grad_norm_(model.parameters(), float(args.clip_grad_norm))
+                        grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), float(args.clip_grad_norm))
                     scaler.step(optim)
                     scaler.update()
                     optim.zero_grad(set_to_none=True)
                 else:
                     if args.clip_grad_norm and float(args.clip_grad_norm) > 0:
-                        torch.nn.utils.clip_grad_norm_(model.parameters(), float(args.clip_grad_norm))
+                        grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), float(args.clip_grad_norm))
                     optim.step()
                     optim.zero_grad(set_to_none=True)
 
-            if args.lr_warmup_steps and int(args.lr_warmup_steps) > 0:
+                # Update EMA after optimizer step
+                if ema is not None:
+                    ema.update()
+
+                # Step LR scheduler if using factory scheduler
+                if lr_scheduler is not None:
+                    lr_scheduler.step()
+
+            # Compute current LR (for logging)
+            if lr_scheduler is not None:
+                # Get LR from scheduler
+                lr_now = lr_scheduler.get_last_lr()[0] if hasattr(lr_scheduler, "get_last_lr") else optim.param_groups[0]["lr"]
+            elif args.lr_warmup_steps and int(args.lr_warmup_steps) > 0:
+                # Legacy warmup logic
                 lr_now = compute_warmup_lr(
                     float(args.lr),
                     int(global_step),
                     int(args.lr_warmup_steps),
                     float(args.lr_warmup_init),
                 )
+                for group in optim.param_groups:
+                    group["lr"] = lr_now
             else:
+                # Legacy schedule logic (linear)
                 lr_now = compute_schedule_lr(
                     base_lr=float(args.lr),
                     min_lr=float(args.min_lr),
@@ -1950,8 +2082,8 @@ def main(argv: list[str] | None = None) -> int:
                     total_steps=int(total_steps_est),
                     schedule=str(args.scheduler),
                 )
-            for group in optim.param_groups:
-                group["lr"] = lr_now
+                for group in optim.param_groups:
+                    group["lr"] = lr_now
 
             running += float(loss_for_logging)
             steps += 1
@@ -1963,6 +2095,15 @@ def main(argv: list[str] | None = None) -> int:
                 if mim_ratio is not None:
                     suffix = f" mim_mask_ratio={mim_ratio:.3f}"
                 suffix += f" mim_mask_prob={mim_mask_prob:.3f} mim_weight={mim_weight:.3f}"
+                if grad_norm is not None:
+                    suffix += f" grad_norm={float(grad_norm):.4f}"
+                # Log lr/wd per param group
+                if len(optim.param_groups) > 1:
+                    for i, group in enumerate(optim.param_groups):
+                        group_name = group.get("name", f"g{i}")
+                        group_lr = group.get("lr", 0.0)
+                        group_wd = group.get("weight_decay", 0.0)
+                        suffix += f" {group_name}_lr={group_lr:.6f} {group_name}_wd={group_wd:.6f}"
                 print(f"epoch={epoch} step={steps} global_step={global_step} loss={avg:.4f}{suffix}")
                 if args.progress and tqdm is not None:
                     postfix = {"loss": f"{avg:.4f}", "stage": stage}
@@ -1972,6 +2113,15 @@ def main(argv: list[str] | None = None) -> int:
                 if writer is not None:
                     writer.add_scalar("train/loss_avg", float(avg), int(global_step))
                     writer.add_scalar("train/lr", float(lr_now), int(global_step))
+                    if grad_norm is not None:
+                        writer.add_scalar("train/grad_norm", float(grad_norm), int(global_step))
+                    # Log per-group lr/wd
+                    for i, group in enumerate(optim.param_groups):
+                        group_name = group.get("name", f"group_{i}")
+                        writer.add_scalar(f"train/lr_{group_name}", float(group.get("lr", 0.0)), int(global_step))
+                        writer.add_scalar(f"train/wd_{group_name}", float(group.get("weight_decay", 0.0)), int(global_step))
+                    if ema is not None:
+                        writer.add_scalar("train/ema_decay", float(ema.decay), int(global_step))
                     if mim_ratio is not None:
                         writer.add_scalar("train/mim_mask_ratio", float(mim_ratio), int(global_step))
                     writer.add_scalar("train/mim_mask_prob", float(mim_mask_prob), int(global_step))
@@ -1983,10 +2133,14 @@ def main(argv: list[str] | None = None) -> int:
                 if args.metrics_jsonl:
                     losses_out = {k: float(v.detach().cpu()) for k, v in loss_dict.items() if hasattr(v, "detach")}
                     metrics_out = {"loss_avg": float(avg)}
+                    if grad_norm is not None:
+                        metrics_out["grad_norm"] = float(grad_norm)
                     if mim_ratio is not None:
                         metrics_out["mim_mask_ratio"] = float(mim_ratio)
                     metrics_out["mim_mask_prob"] = float(mim_mask_prob)
                     metrics_out["mim_weight"] = float(mim_weight)
+                    if ema is not None:
+                        metrics_out["ema_decay"] = float(ema.decay)
                     report = build_report(
                         losses=losses_out,
                         metrics=metrics_out,
@@ -2087,6 +2241,11 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     if args.export_onnx:
+        # Apply EMA weights if enabled and requested
+        if ema is not None and args.ema_eval:
+            print("Applying EMA weights for export...")
+            ema.apply_shadow()
+        
         onnx_path = export_onnx_after_training(
             model,
             image_size=int(args.image_size),
@@ -2094,6 +2253,11 @@ def main(argv: list[str] | None = None) -> int:
             opset_version=int(args.onnx_opset),
         )
         print(onnx_path)
+        
+        # Restore original weights if EMA was applied
+        if ema is not None and args.ema_eval:
+            ema.restore()
+            print("Restored training weights")
 
     if writer is not None:
         writer.flush()
