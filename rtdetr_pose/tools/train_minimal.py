@@ -777,7 +777,13 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def load_checkpoint_into(model: "torch.nn.Module", optim: "torch.optim.Optimizer | None", path: str | Path) -> dict[str, Any]:
+def load_checkpoint_into(
+    model: "torch.nn.Module",
+    optim: "torch.optim.Optimizer | None",
+    path: str | Path,
+    scheduler: Any = None,
+    ema: Any = None,
+) -> dict[str, Any]:
     path = Path(path)
     if not path.exists():
         raise SystemExit(f"checkpoint not found: {path}")
@@ -792,6 +798,18 @@ def load_checkpoint_into(model: "torch.nn.Module", optim: "torch.optim.Optimizer
                 meta["optim_loaded"] = True
             except Exception:
                 meta["optim_loaded"] = False
+        if scheduler is not None and hasattr(scheduler, "load_state_dict") and "scheduler_state_dict" in obj:
+            try:
+                scheduler.load_state_dict(obj["scheduler_state_dict"])
+                meta["scheduler_loaded"] = True
+            except Exception:
+                meta["scheduler_loaded"] = False
+        if ema is not None and hasattr(ema, "load_state_dict") and "ema_state_dict" in obj:
+            try:
+                ema.load_state_dict(obj["ema_state_dict"])
+                meta["ema_loaded"] = True
+            except Exception:
+                meta["ema_loaded"] = False
         meta.update({k: obj.get(k) for k in ("epoch", "global_step") if k in obj})
         return meta
 
@@ -816,6 +834,8 @@ def save_checkpoint_bundle(
     last_epoch_avg: float | None,
     last_loss_dict: dict[str, Any] | None,
     run_record: dict[str, Any] | None = None,
+    scheduler: Any = None,
+    ema: Any = None,
 ) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -837,6 +857,10 @@ def save_checkpoint_bundle(
     }
     if optim is not None:
         payload["optim_state_dict"] = optim.state_dict()
+    if scheduler is not None and hasattr(scheduler, "state_dict"):
+        payload["scheduler_state_dict"] = scheduler.state_dict()
+    if ema is not None and hasattr(ema, "state_dict"):
+        payload["ema_state_dict"] = ema.state_dict()
     if last_loss_dict is not None:
         payload["last_loss"] = {
             k: float(v.detach().cpu()) for k, v in last_loss_dict.items() if hasattr(v, "detach")
@@ -1801,7 +1825,7 @@ def main(argv: list[str] | None = None) -> int:
     start_epoch = 0
     global_step = 0
     if args.resume_from:
-        meta = load_checkpoint_into(model, optim, args.resume_from)
+        meta = load_checkpoint_into(model, optim, args.resume_from, scheduler=lr_scheduler, ema=ema)
         if meta.get("epoch") is not None:
             try:
                 start_epoch = int(meta["epoch"]) + 1
@@ -1813,6 +1837,10 @@ def main(argv: list[str] | None = None) -> int:
             except Exception:
                 global_step = 0
         print(f"resumed_from={meta.get('path')} start_epoch={start_epoch} global_step={global_step}")
+        if meta.get("scheduler_loaded"):
+            print("scheduler_state_loaded=True")
+        if meta.get("ema_loaded"):
+            print("ema_state_loaded=True")
 
     # Calculate total steps for scheduler
     total_steps_est = 0
@@ -2170,6 +2198,8 @@ def main(argv: list[str] | None = None) -> int:
                         last_epoch_avg=(running / max(1, steps)),
                         last_loss_dict=loss_dict,
                         run_record=run_record,
+                        scheduler=lr_scheduler,
+                        ema=ema,
                     )
 
             if args.max_steps and steps >= int(args.max_steps):
@@ -2238,6 +2268,8 @@ def main(argv: list[str] | None = None) -> int:
             last_epoch_avg=last_epoch_avg,
             last_loss_dict=last_loss_dict,
             run_record=run_record,
+            scheduler=lr_scheduler,
+            ema=ema,
         )
 
     if args.export_onnx:
