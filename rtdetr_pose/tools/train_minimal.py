@@ -1904,6 +1904,9 @@ def main(argv: list[str] | None = None) -> int:
                 }
                 print("loss_breakdown", " ".join(f"{k}={v:.6g}" for k, v in sorted(printable.items())))
 
+            # Store unscaled loss for logging
+            loss_for_logging = loss.detach().cpu()
+            
             # Gradient accumulation: scale loss by accumulation steps
             accum_steps = int(args.gradient_accumulation_steps)
             if accum_steps > 1:
@@ -1950,7 +1953,7 @@ def main(argv: list[str] | None = None) -> int:
             for group in optim.param_groups:
                 group["lr"] = lr_now
 
-            running += float(loss.detach().cpu())
+            running += float(loss_for_logging)
             steps += 1
             global_step += 1
 
