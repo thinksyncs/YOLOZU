@@ -14,12 +14,11 @@ sys.path.insert(0, str(repo_root / "rtdetr_pose"))
 
 try:
     import torch
-    import torch.nn.functional as F
 except ImportError as exc:
     raise SystemExit("torch is required; install requirements-test.txt") from exc
 
 from rtdetr_pose.model import RTDETRPose
-from rtdetr_pose.losses import mim_reconstruction_loss, entropy_loss
+from rtdetr_pose.losses import mim_reconstruction_loss
 
 
 def generate_block_mask(height, width, patch_size=16, mask_prob=0.6):
@@ -223,7 +222,7 @@ def main():
     # Test-time adaptation (optional)
     if args.ttt:
         print(f"\nRunning test-time adaptation ({args.ttt_steps} steps)...")
-        losses = test_time_adapt(
+        _ = test_time_adapt(
             model,
             image,
             geom_input,

@@ -136,7 +136,6 @@ def refine_detection_hessian(
     """
     try:
         import torch
-        from torch.nn import functional as F
     except ImportError:  # pragma: no cover
         raise RuntimeError("torch is required for Hessian refinement")
     

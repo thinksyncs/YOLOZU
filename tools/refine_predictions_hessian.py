@@ -228,7 +228,7 @@ def main():
                         if det["hessian_refinement"].get("converged"):
                             converged_detections += 1
     
-    print(f"Refinement complete:", file=sys.stderr)
+    print("Refinement complete:", file=sys.stderr)
     print(f"  Total detections: {total_detections}", file=sys.stderr)
     print(f"  Refined: {refined_detections}", file=sys.stderr)
     print(f"  Converged: {converged_detections}", file=sys.stderr)
