@@ -109,6 +109,170 @@ def _resolve_boxes_and_scores(outputs: dict[str, object], *, boxes_key: str, sco
     return boxes, scores, class_ids
 
 
+class _CudaBackend:
+    def __init__(self, name: str, module):
+        self.name = name
+        self.module = module
+
+
+def _load_cuda_backend() -> _CudaBackend:
+    try:
+        import pycuda.driver as cuda  # type: ignore
+        import pycuda.autoinit  # type: ignore
+
+        return _CudaBackend("pycuda", cuda)
+    except Exception:
+        pass
+    try:
+        from cuda import cudart  # type: ignore
+
+        return _CudaBackend("cuda", cudart)
+    except Exception:
+        raise RuntimeError("CUDA bindings not found (install pycuda or cuda-python)")
+
+
+class _TrtRunner:
+    def __init__(self, *, engine_path: Path, input_name: str):
+        try:
+            import tensorrt as trt  # type: ignore
+        except Exception as exc:  # pragma: no cover
+            raise RuntimeError("tensorrt is required (pip install nvidia-tensorrt)") from exc
+
+        self.trt = trt
+        self.logger = trt.Logger(trt.Logger.WARNING)
+        runtime = trt.Runtime(self.logger)
+        with engine_path.open("rb") as f:
+            engine_bytes = f.read()
+        self.engine = runtime.deserialize_cuda_engine(engine_bytes)
+        if self.engine is None:
+            raise RuntimeError("failed to deserialize TensorRT engine")
+        self.context = self.engine.create_execution_context()
+        if self.context is None:
+            raise RuntimeError("failed to create TensorRT execution context")
+
+        self.backend = _load_cuda_backend()
+        self.input_name = input_name
+        self.bindings = [0] * self.engine.num_bindings
+        self.device_buffers: dict[str, object] = {}
+        self.host_buffers: dict[str, np.ndarray] = {}
+        self.last_shapes: dict[str, tuple[int, ...]] = {}
+        self.stream = self._create_stream()
+
+        self.binding_indices = {self.engine.get_binding_name(i): i for i in range(self.engine.num_bindings)}
+        if self.input_name not in self.binding_indices:
+            raise ValueError(f"input binding not found: {self.input_name}")
+
+    def _create_stream(self):
+        if self.backend.name == "pycuda":
+            return self.backend.module.Stream()
+        _, stream = self.backend.module.cudaStreamCreate()
+        return stream
+
+    def _alloc(self, name: str, shape: tuple[int, ...], dtype):
+        size = int(np.prod(shape))
+        host = np.empty(size, dtype=dtype)
+        nbytes = host.nbytes
+        if self.backend.name == "pycuda":
+            device = self.backend.module.mem_alloc(nbytes)
+        else:
+            err, device = self.backend.module.cudaMalloc(nbytes)
+            if err != 0:
+                raise RuntimeError(f"cudaMalloc failed for {name} (error {err})")
+        self.host_buffers[name] = host
+        self.device_buffers[name] = device
+        self.last_shapes[name] = shape
+
+    def _ensure_buffers(self, input_shape: tuple[int, ...]):
+        input_idx = self.binding_indices[self.input_name]
+        self.context.set_binding_shape(input_idx, input_shape)
+
+        for i in range(self.engine.num_bindings):
+            name = self.engine.get_binding_name(i)
+            shape = tuple(self.context.get_binding_shape(i))
+            if any(dim <= 0 for dim in shape):
+                raise RuntimeError(f"binding shape unresolved for {name}: {shape}")
+            dtype = self.trt.nptype(self.engine.get_binding_dtype(i))
+            if name not in self.last_shapes or self.last_shapes[name] != shape:
+                self._alloc(name, shape, dtype)
+
+            if self.backend.name == "pycuda":
+                self.bindings[i] = int(self.device_buffers[name])
+            else:
+                self.bindings[i] = int(self.device_buffers[name])
+
+    def infer(self, input_tensor: np.ndarray) -> dict[str, np.ndarray]:
+        input_shape = tuple(input_tensor.shape)
+        self._ensure_buffers(input_shape)
+
+        input_idx = self.binding_indices[self.input_name]
+        input_name = self.input_name
+        input_dtype = self.trt.nptype(self.engine.get_binding_dtype(input_idx))
+        if input_tensor.dtype != input_dtype:
+            input_tensor = input_tensor.astype(input_dtype)
+        host_input = self.host_buffers[input_name]
+        np.copyto(host_input.reshape(input_shape), input_tensor)
+
+        if self.backend.name == "pycuda":
+            self.backend.module.memcpy_htod_async(
+                self.device_buffers[input_name], host_input, self.stream
+            )
+            self.context.execute_async_v2(bindings=self.bindings, stream_handle=self.stream.handle)
+            output_names = []
+            for i in range(self.engine.num_bindings):
+                if self.engine.binding_is_input(i):
+                    continue
+                name = self.engine.get_binding_name(i)
+                output_names.append(name)
+                host = self.host_buffers[name]
+                self.backend.module.memcpy_dtoh_async(host, self.device_buffers[name], self.stream)
+            self.stream.synchronize()
+            outputs: dict[str, np.ndarray] = {}
+            for name in output_names:
+                host = self.host_buffers[name]
+                outputs[name] = host.reshape(self.last_shapes[name]).copy()
+            return outputs
+
+        err = self.backend.module.cudaMemcpyAsync(
+            self.device_buffers[input_name],
+            host_input,
+            host_input.nbytes,
+            self.backend.module.cudaMemcpyKind.cudaMemcpyHostToDevice,
+            self.stream,
+        )
+        if err != 0:
+            raise RuntimeError(f"cudaMemcpy H2D failed (error {err})")
+
+        ok = self.context.execute_async_v2(bindings=self.bindings, stream_handle=self.stream)
+        if not ok:
+            raise RuntimeError("TensorRT execution failed")
+
+        outputs: dict[str, np.ndarray] = {}
+        output_names = []
+        for i in range(self.engine.num_bindings):
+            if self.engine.binding_is_input(i):
+                continue
+            name = self.engine.get_binding_name(i)
+            output_names.append(name)
+            host = self.host_buffers[name]
+            err = self.backend.module.cudaMemcpyAsync(
+                host,
+                self.device_buffers[name],
+                host.nbytes,
+                self.backend.module.cudaMemcpyKind.cudaMemcpyDeviceToHost,
+                self.stream,
+            )
+            if err != 0:
+                raise RuntimeError(f"cudaMemcpy D2H failed for {name} (error {err})")
+
+        err = self.backend.module.cudaStreamSynchronize(self.stream)
+        if err != 0:
+            raise RuntimeError(f"cudaStreamSynchronize failed (error {err})")
+        for name in output_names:
+            host = self.host_buffers[name]
+            outputs[name] = host.reshape(self.last_shapes[name]).copy()
+        return outputs
+
+
 def _split_combined_output(values, *, fmt: str):
     if fmt != "xyxy_score_class":
         raise ValueError(f"unsupported combined format: {fmt}")
@@ -298,80 +462,6 @@ def _decode_raw_ultralytics(
     return boxes, scores, class_ids
 
 
-def _load_engine(engine_path: Path):
-    try:
-        import tensorrt as trt  # type: ignore
-    except Exception as exc:  # pragma: no cover
-        raise RuntimeError("tensorrt is required (pip install tensorrt)") from exc
-
-    logger = trt.Logger(trt.Logger.WARNING)
-    with engine_path.open("rb") as f, trt.Runtime(logger) as runtime:
-        engine = runtime.deserialize_cuda_engine(f.read())
-    if engine is None:
-        raise RuntimeError(f"failed to deserialize TensorRT engine: {engine_path}")
-    return engine
-
-
-def _infer_trt(engine, *, input_name: str, input_array, output_names: list[str]):
-    try:
-        import pycuda.driver as cuda  # type: ignore
-        import pycuda.autoinit  # type: ignore  # noqa: F401
-    except Exception as exc:  # pragma: no cover
-        raise RuntimeError("pycuda is required for TensorRT inference (pip install pycuda)") from exc
-
-    import tensorrt as trt  # type: ignore
-
-    context = engine.create_execution_context()
-    if context is None:
-        raise RuntimeError("failed to create TensorRT execution context")
-
-    input_idx = engine.get_binding_index(input_name)
-    if input_idx < 0:
-        raise ValueError(f"input binding not found: {input_name}")
-    if not engine.binding_is_input(input_idx):
-        raise ValueError(f"binding is not input: {input_name}")
-
-    input_array = np.ascontiguousarray(input_array)
-    if not context.set_binding_shape(input_idx, tuple(input_array.shape)):
-        raise RuntimeError(f"failed to set binding shape for {input_name}: {input_array.shape}")
-
-    bindings = [None] * engine.num_bindings
-    stream = cuda.Stream()
-
-    dtype_in = trt.nptype(engine.get_binding_dtype(input_idx))
-    host_in = input_array.astype(dtype_in, copy=False)
-    device_in = cuda.mem_alloc(host_in.nbytes)
-    cuda.memcpy_htod_async(device_in, host_in, stream)
-    bindings[input_idx] = int(device_in)
-
-    outputs: dict[str, np.ndarray] = {}
-    output_buffers = {}
-    for name in output_names:
-        idx = engine.get_binding_index(name)
-        if idx < 0:
-            raise ValueError(f"output binding not found: {name}")
-        if engine.binding_is_input(idx):
-            raise ValueError(f"binding is not output: {name}")
-        shape = context.get_binding_shape(idx)
-        if any(dim < 0 for dim in shape):
-            raise RuntimeError(f"dynamic output shape unresolved for {name}: {shape}")
-        dtype = trt.nptype(engine.get_binding_dtype(idx))
-        host_out = cuda.pagelocked_empty(trt.volume(shape), dtype)
-        device_out = cuda.mem_alloc(host_out.nbytes)
-        bindings[idx] = int(device_out)
-        output_buffers[name] = (host_out, device_out, tuple(shape))
-
-    if not context.execute_async_v2(bindings=bindings, stream_handle=stream.handle):
-        raise RuntimeError("TensorRT execution failed")
-
-    for name, (host_out, device_out, shape) in output_buffers.items():
-        cuda.memcpy_dtoh_async(host_out, device_out, stream)
-        outputs[name] = host_out.reshape(shape)
-
-    stream.synchronize()
-    return outputs
-
-
 def main(argv=None):
     args = _parse_args(sys.argv[1:] if argv is None else argv)
 
@@ -382,222 +472,191 @@ def main(argv=None):
     if args.max_images is not None:
         records = records[: args.max_images]
 
-    predictions = []
+    predictions: list[dict[str, Any]] = []
+    engine_path: Path | None = None
+
     if args.dry_run:
-        for record in records:
-            predictions.append({"image": record["image"], "detections": []})
+        predictions = [{"image": record["image"], "detections": []} for record in records]
         validate_predictions_entries(predictions, strict=args.strict)
-        payload = (
-            {
-                "predictions": predictions,
-                "meta": {
-                    "timestamp": _now_utc(),
-                    "exporter": "tensorrt",
-                    "dry_run": True,
-                    "protocol_id": "yolo26",
-                    "imgsz": input_size,
-                    "dataset": args.dataset,
-                    "split": manifest["split"],
-                    "max_images": args.max_images,
-                    "note": "dry-run mode: no inference performed",
-                },
-            }
-            if args.wrap
-            else predictions
-        )
-        out_path = repo_root / args.output
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_text(json.dumps(payload, indent=2, sort_keys=True))
-        print(out_path)
-        return
+    else:
+        if not args.engine:
+            raise SystemExit("--engine is required unless --dry-run is set")
+        if np is None:  # pragma: no cover
+            raise RuntimeError("numpy is required for TensorRT exporter")
+        try:
+            import cv2  # type: ignore
+        except Exception as exc:  # pragma: no cover
+            raise RuntimeError("opencv-python is required for image loading (pip install opencv-python)") from exc
 
-    if not args.engine:
-        raise SystemExit("--engine is required unless --dry-run is set")
-
-    if np is None:  # pragma: no cover
-        raise RuntimeError("numpy is required for TensorRT exporter")
-
-    try:
-        import cv2  # type: ignore
-    except Exception as exc:  # pragma: no cover
-        raise RuntimeError("opencv-python is required for image loading (pip install opencv-python)") from exc
-
-    engine_path = None
-    if args.engine:
         engine_path = Path(args.engine)
         if not engine_path.is_absolute():
             engine_path = repo_root / engine_path
+        if not engine_path.exists():
+            raise SystemExit(f"engine not found: {engine_path}")
 
-    if engine_path is None:
-        raise RuntimeError("engine path missing")
-    if not engine_path.exists():
-        raise SystemExit(f"TensorRT engine not found: {engine_path}")
+        runner = _TrtRunner(engine_path=engine_path, input_name=args.input_name)
 
-    engine = _load_engine(engine_path)
+        def preprocess(image_path: str):
+            w, h = get_image_size(image_path)
+            letterbox = compute_letterbox(orig_w=w, orig_h=h, input_size=input_size)
 
-    def preprocess(image_path: str):
-        w, h = get_image_size(image_path)
-        letterbox = compute_letterbox(orig_w=w, orig_h=h, input_size=input_size)
+            img = cv2.imread(image_path)
+            if img is None:
+                raise RuntimeError(f"failed to load image: {image_path}")
 
-        img = cv2.imread(image_path)
-        if img is None:
-            raise RuntimeError(f"failed to load image: {image_path}")
+            pad_w = float(input_size) - float(letterbox.new_w)
+            pad_h = float(input_size) - float(letterbox.new_h)
+            pad_x = pad_w / 2.0
+            pad_y = pad_h / 2.0
+            left = int(letterbox.pad_x)
+            top = int(letterbox.pad_y)
+            right = int(round(pad_x + 0.1))
+            bottom = int(round(pad_y + 0.1))
 
-        pad_w = float(input_size) - float(letterbox.new_w)
-        pad_h = float(input_size) - float(letterbox.new_h)
-        pad_x = pad_w / 2.0
-        pad_y = pad_h / 2.0
-        left = int(letterbox.pad_x)
-        top = int(letterbox.pad_y)
-        right = int(round(pad_x + 0.1))
-        bottom = int(round(pad_y + 0.1))
+            if (img.shape[1], img.shape[0]) != (letterbox.new_w, letterbox.new_h):
+                img = cv2.resize(img, (letterbox.new_w, letterbox.new_h), interpolation=cv2.INTER_LINEAR)
 
-        if (img.shape[1], img.shape[0]) != (letterbox.new_w, letterbox.new_h):
-            img = cv2.resize(img, (letterbox.new_w, letterbox.new_h), interpolation=cv2.INTER_LINEAR)
-
-        img = cv2.copyMakeBorder(
-            img,
-            top,
-            bottom,
-            left,
-            right,
-            cv2.BORDER_CONSTANT,
-            value=(114, 114, 114),
-        )
-        img = img[..., ::-1]  # BGR to RGB
-
-        x = img.astype(np.float32) / 255.0  # (H,W,C)
-        x = np.transpose(x, (2, 0, 1))  # (C,H,W)
-        x = np.expand_dims(x, axis=0)  # (1,C,H,W)
-        return x, (w, h), letterbox
-
-    for record in records:
-        image_path = record["image"]
-        x, (orig_w, orig_h), letterbox = preprocess(image_path)
-
-        output_names = []
-        if args.combined_output:
-            output_names.append(args.combined_output)
-        elif args.raw_output:
-            output_names.append(args.raw_output)
-        else:
-            output_names.extend([args.boxes_output, args.scores_output])
-            if args.class_output:
-                output_names.append(args.class_output)
-
-        outputs = _infer_trt(engine, input_name=args.input_name, input_array=x, output_names=output_names)
-
-        if args.combined_output:
-            combined = outputs.get(args.combined_output)
-            if combined is None:
-                raise ValueError(f"missing combined output: {args.combined_output}")
-            boxes_t, scores_t, class_t = _split_combined_output(
-                np.asarray(combined), fmt=str(args.combined_format)
+            img = cv2.copyMakeBorder(
+                img,
+                top,
+                bottom,
+                left,
+                right,
+                cv2.BORDER_CONSTANT,
+                value=(114, 114, 114),
             )
-        elif args.raw_output:
-            raw = outputs.get(args.raw_output)
-            if raw is None:
-                raise ValueError(f"missing raw output: {args.raw_output}")
-            if args.raw_postprocess == "ultralytics":
-                boxes_t, scores_t, class_t = _decode_raw_ultralytics(
-                    np.asarray(raw),
-                    min_score=float(args.min_score),
-                    iou_thresh=float(args.nms_iou),
-                    max_det=int(args.topk),
-                    agnostic=bool(args.agnostic_nms),
+            img = img[..., ::-1]  # BGR to RGB
+
+            x = img.astype(np.float32) / 255.0  # (H,W,C)
+            x = np.transpose(x, (2, 0, 1))  # (C,H,W)
+            x = np.expand_dims(x, axis=0)  # (1,C,H,W)
+            return x, (w, h), letterbox
+
+        for record in records:
+            image_path = record["image"]
+            x, (orig_w, orig_h), letterbox = preprocess(image_path)
+            outputs = runner.infer(x)
+
+            if args.combined_output:
+                combined = outputs.get(args.combined_output)
+                if combined is None:
+                    raise ValueError(f"missing combined output: {args.combined_output}")
+                boxes_t, scores_t, class_t = _split_combined_output(
+                    np.asarray(combined), fmt=str(args.combined_format)
                 )
+            elif args.raw_output:
+                raw = outputs.get(args.raw_output)
+                if raw is None:
+                    raise ValueError(f"missing raw output: {args.raw_output}")
+                if args.raw_postprocess == "ultralytics":
+                    boxes_t, scores_t, class_t = _decode_raw_ultralytics(
+                        np.asarray(raw),
+                        min_score=float(args.min_score),
+                        iou_thresh=float(args.nms_iou),
+                        max_det=int(args.topk),
+                        agnostic=bool(args.agnostic_nms),
+                    )
+                else:
+                    boxes_t, scores_t, class_t = _decode_raw_output(
+                        np.asarray(raw),
+                        min_score=float(args.min_score),
+                        iou_thresh=float(args.nms_iou),
+                        max_det=int(args.topk),
+                        agnostic=bool(args.agnostic_nms),
+                    )
             else:
-                boxes_t, scores_t, class_t = _decode_raw_output(
-                    np.asarray(raw),
-                    min_score=float(args.min_score),
-                    iou_thresh=float(args.nms_iou),
-                    max_det=int(args.topk),
-                    agnostic=bool(args.agnostic_nms),
+                boxes_t, scores_t, class_t = _resolve_boxes_and_scores(
+                    outputs,
+                    boxes_key=args.boxes_output,
+                    scores_key=args.scores_output,
+                    class_key=args.class_output,
                 )
-        else:
-            boxes_t, scores_t, class_t = _resolve_boxes_and_scores(
-                outputs, boxes_key=args.boxes_output, scores_key=args.scores_output, class_key=args.class_output
-            )
 
-        boxes = np.asarray(boxes_t)
-        scores = np.asarray(scores_t)
-        class_ids = None if class_t is None else np.asarray(class_t)
+            boxes = np.asarray(boxes_t)
+            scores = np.asarray(scores_t)
+            class_ids = None if class_t is None else np.asarray(class_t)
 
-        if scores.ndim == 2:
-            class_ids = np.argmax(scores, axis=1)
-            scores = np.max(scores, axis=1)
-        elif scores.ndim != 1:
-            raise ValueError(f"unsupported scores shape: {scores.shape}")
+            if scores.ndim == 2:
+                class_ids = np.argmax(scores, axis=1)
+                scores = np.max(scores, axis=1)
+            elif scores.ndim != 1:
+                raise ValueError(f"unsupported scores shape: {scores.shape}")
 
-        if boxes.ndim != 2 or boxes.shape[1] != 4:
-            raise ValueError(f"unsupported boxes shape: {boxes.shape}")
-        if class_ids is None:
-            raise ValueError("class ids missing: provide --class-output or use (N,C) scores")
+            if boxes.ndim != 2 or boxes.shape[1] != 4:
+                raise ValueError(f"unsupported boxes shape: {boxes.shape}")
+            if class_ids is None:
+                raise ValueError("class ids missing: provide --class-output or use (N,C) scores")
 
-        scores = scores.astype(float)
-        class_ids = class_ids.astype(int)
-
-        if args.raw_output:
-            idx = list(range(len(scores)))
-        else:
-            idx = [i for i, s in enumerate(scores.tolist()) if float(s) >= float(args.min_score)]
-            idx.sort(key=lambda i: float(scores[i]), reverse=True)
-            idx = idx[: max(0, int(args.topk))]
-
-        detections = []
-        use_ultra_scale = bool(args.raw_output and args.raw_postprocess == "ultralytics")
-        if use_ultra_scale:
-            try:
-                import torch  # type: ignore
-                from ultralytics.utils import ops as u_ops  # type: ignore
-            except Exception as exc:  # pragma: no cover
-                raise RuntimeError("ultralytics + torch are required for raw-postprocess=ultralytics") from exc
-        for i in idx:
-            b = boxes[i].tolist()
-            if args.boxes_format != "xyxy":
-                raise ValueError("only --boxes-format xyxy is supported in this skeleton")
+            scores = scores.astype(float)
+            class_ids = class_ids.astype(int)
 
             if args.raw_output:
-                if args.boxes_scale != "abs":
-                    raise ValueError("--raw-output expects --boxes-scale abs (input-space pixels)")
-            if args.boxes_scale == "norm":
-                x1, y1, x2, y2 = (
-                    float(b[0]) * input_size,
-                    float(b[1]) * input_size,
-                    float(b[2]) * input_size,
-                    float(b[3]) * input_size,
-                )
+                idx = list(range(len(scores)))
             else:
-                x1, y1, x2, y2 = (float(b[0]), float(b[1]), float(b[2]), float(b[3]))
+                idx = [i for i, s in enumerate(scores.tolist()) if float(s) >= float(args.min_score)]
+                idx.sort(key=lambda i: float(scores[i]), reverse=True)
+                idx = idx[: max(0, int(args.topk))]
 
+            detections = []
+            use_ultra_scale = bool(args.raw_output and args.raw_postprocess == "ultralytics")
             if use_ultra_scale:
-                scaled = u_ops.scale_boxes(
-                    (input_size, input_size),
-                    torch.tensor([[x1, y1, x2, y2]], dtype=torch.float32),
-                    (orig_h, orig_w),
-                )
-                sx1, sy1, sx2, sy2 = scaled[0].tolist()
-                orig_xyxy = (float(sx1), float(sy1), float(sx2), float(sy2))
-            else:
-                orig_xyxy = input_xyxy_to_orig_xyxy((x1, y1, x2, y2), letterbox=letterbox, orig_w=orig_w, orig_h=orig_h)
-            bbox = orig_xyxy_to_cxcywh_norm(orig_xyxy, orig_w=orig_w, orig_h=orig_h)
+                try:
+                    import torch  # type: ignore
+                    from ultralytics.utils import ops as u_ops  # type: ignore
+                except Exception as exc:  # pragma: no cover
+                    raise RuntimeError("ultralytics + torch are required for raw-postprocess=ultralytics") from exc
+            for i in idx:
+                b = boxes[i].tolist()
+                if args.boxes_format != "xyxy":
+                    raise ValueError("only --boxes-format xyxy is supported in this exporter")
 
-            detections.append({"class_id": int(class_ids[i]), "score": float(scores[i]), "bbox": bbox})
+                if args.raw_output and args.boxes_scale != "abs":
+                    raise ValueError("--raw-output expects --boxes-scale abs (input-space pixels)")
 
-        predictions.append({"image": image_path, "detections": detections})
+                if args.boxes_scale == "norm":
+                    x1, y1, x2, y2 = (
+                        float(b[0]) * input_size,
+                        float(b[1]) * input_size,
+                        float(b[2]) * input_size,
+                        float(b[3]) * input_size,
+                    )
+                else:
+                    x1, y1, x2, y2 = (float(b[0]), float(b[1]), float(b[2]), float(b[3]))
 
-    validate_predictions_entries(predictions, strict=args.strict)
+                if use_ultra_scale:
+                    scaled = u_ops.scale_boxes(
+                        (input_size, input_size),
+                        torch.tensor([[x1, y1, x2, y2]], dtype=torch.float32),
+                        (orig_h, orig_w),
+                    )
+                    sx1, sy1, sx2, sy2 = scaled[0].tolist()
+                    orig_xyxy = (float(sx1), float(sy1), float(sx2), float(sy2))
+                else:
+                    orig_xyxy = input_xyxy_to_orig_xyxy(
+                        (x1, y1, x2, y2),
+                        letterbox=letterbox,
+                        orig_w=orig_w,
+                        orig_h=orig_h,
+                    )
+                bbox = orig_xyxy_to_cxcywh_norm(orig_xyxy, orig_w=orig_w, orig_h=orig_h)
+
+                detections.append({"class_id": int(class_ids[i]), "score": float(scores[i]), "bbox": bbox})
+
+            predictions.append({"image": image_path, "detections": detections})
+
+        validate_predictions_entries(predictions, strict=args.strict)
 
     meta = {
         "timestamp": _now_utc(),
         "exporter": "tensorrt",
         "protocol_id": "yolo26",
+        "dry_run": bool(args.dry_run),
         "imgsz": input_size,
         "dataset": args.dataset,
         "split": manifest["split"],
         "max_images": args.max_images,
-        "engine": str(engine_path),
-        "engine_sha256": _sha256(engine_path),
+        "engine": None if engine_path is None else str(engine_path),
+        "engine_sha256": None if engine_path is None or not engine_path.exists() else _sha256(engine_path),
         "input_name": args.input_name,
         "boxes_output": args.boxes_output,
         "scores_output": args.scores_output,
@@ -621,6 +680,7 @@ def main(argv=None):
             "machine": platform.machine(),
             "processor": platform.processor(),
         },
+        "note": "dry-run mode: no inference performed" if args.dry_run else None,
     }
 
     payload = {"predictions": predictions, "meta": meta} if args.wrap else predictions
@@ -632,4 +692,3 @@ def main(argv=None):
 
 if __name__ == "__main__":
     main()
-

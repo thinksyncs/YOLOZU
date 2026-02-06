@@ -379,17 +379,20 @@ class RTDETRPose(nn.Module):
         nhead=8,
         encoder_dim_feedforward=None,
         decoder_dim_feedforward=None,
+        backbone=None,
         use_level_embed=True,
         enable_mim=False,
         mim_geom_channels=2,
     ):
         super().__init__()
-        self.backbone = CSPResNet(
-            stem_channels=stem_channels,
-            stage_channels=backbone_channels,
-            stage_blocks=stage_blocks,
-            use_sppf=bool(use_sppf),
-        )
+        if backbone is None:
+            backbone = CSPResNet(
+                stem_channels=stem_channels,
+                stage_channels=backbone_channels,
+                stage_blocks=stage_blocks,
+                use_sppf=bool(use_sppf),
+            )
+        self.backbone = backbone
         self.position = SinePositionEmbedding(hidden_dim)
         self.encoder = HybridEncoder(
             in_channels=backbone_channels,

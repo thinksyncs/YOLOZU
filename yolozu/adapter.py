@@ -80,6 +80,10 @@ class RTDETRPoseAdapter(ModelAdapter):
             "bbox": {"cx": float, "cy": float, "w": float, "h": float},
             "log_z": float,
             "rot6d": [float, ...],
+            "log_sigma_z": float,        # optional (uncertainty head)
+            "log_sigma_rot": float,      # optional (uncertainty head)
+            "sigma_z": float,            # optional exp(log_sigma_z) convenience
+            "sigma_rot": float,          # optional exp(log_sigma_rot) convenience
             "offsets": [float, float],
             "k_delta": [float, float, float, float],
           },
@@ -127,23 +131,10 @@ class RTDETRPoseAdapter(ModelAdapter):
         import numpy as np
 
         from rtdetr_pose.config import load_config
-        from rtdetr_pose.model import RTDETRPose
+        from rtdetr_pose.factory import build_model
 
         cfg = load_config(self.config_path)
-        model = RTDETRPose(
-            num_classes=cfg.model.num_classes,
-            hidden_dim=cfg.model.hidden_dim,
-            num_queries=cfg.model.num_queries,
-            use_uncertainty=cfg.model.use_uncertainty,
-            stem_channels=getattr(cfg.model, "stem_channels", 32),
-            backbone_channels=tuple(getattr(cfg.model, "backbone_channels", (64, 128, 256))),
-            stage_blocks=tuple(getattr(cfg.model, "stage_blocks", (1, 2, 2))),
-            num_encoder_layers=getattr(cfg.model, "num_encoder_layers", 1),
-            num_decoder_layers=cfg.model.num_decoder_layers,
-            nhead=cfg.model.nhead,
-            encoder_dim_feedforward=getattr(cfg.model, "encoder_dim_feedforward", None),
-            decoder_dim_feedforward=getattr(cfg.model, "decoder_dim_feedforward", None),
-        ).eval()
+        model = build_model(cfg.model).eval()
 
         if self.checkpoint_path:
             state = torch.load(self.checkpoint_path, map_location="cpu", weights_only=False)
@@ -263,6 +254,12 @@ class RTDETRPoseAdapter(ModelAdapter):
             bbox = out["bbox"][0]
             log_z = out["log_z"][0]
             rot6d = out["rot6d"][0]
+            log_sigma_z = out.get("log_sigma_z")
+            log_sigma_rot = out.get("log_sigma_rot")
+            if log_sigma_z is not None:
+                log_sigma_z = log_sigma_z[0].squeeze(-1)
+            if log_sigma_rot is not None:
+                log_sigma_rot = log_sigma_rot[0].squeeze(-1)
             offsets = out["offsets"][0]
             k_delta = out["k_delta"][0]
 
@@ -286,6 +283,14 @@ class RTDETRPoseAdapter(ModelAdapter):
                     "offsets": [float(v) for v in offsets[idx].tolist()],
                     "k_delta": [float(v) for v in k_delta.tolist()],
                 }
+                if log_sigma_z is not None:
+                    ls_z = float(log_sigma_z[idx].item())
+                    det["log_sigma_z"] = ls_z
+                    det["sigma_z"] = float(torch.exp(log_sigma_z[idx]).item())
+                if log_sigma_rot is not None:
+                    ls_r = float(log_sigma_rot[idx].item())
+                    det["log_sigma_rot"] = ls_r
+                    det["sigma_rot"] = float(torch.exp(log_sigma_rot[idx]).item())
                 detections.append(det)
 
             entry = {

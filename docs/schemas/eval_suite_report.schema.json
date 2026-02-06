@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "YOLOZU Eval Suite Report",
+  "description": "Report payload emitted by tools/eval_suite.py (supports dry-run mode).",
+  "type": "object",
+  "required": ["timestamp", "dataset", "bbox_format", "images", "results"],
+  "properties": {
+    "report_schema_version": { "type": "integer", "minimum": 1 },
+    "timestamp": { "type": "string" },
+    "protocol_id": { "type": ["string", "null"] },
+    "protocol": { "type": ["object", "null"], "additionalProperties": true },
+    "dataset": { "type": "string" },
+    "split": { "type": "string" },
+    "split_requested": { "type": ["string", "null"] },
+    "bbox_format": { "type": "string" },
+    "images": { "type": "integer", "minimum": 0 },
+    "results": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/suite_result" }
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "suite_result": {
+      "type": "object",
+      "required": ["name", "path", "warnings", "metrics", "stats", "dry_run", "counts"],
+      "properties": {
+        "name": { "type": "string" },
+        "path": { "type": "string" },
+        "warnings": { "type": "array", "items": { "type": "string" } },
+        "metrics": {
+          "type": "object",
+          "required": ["map50_95", "map50", "map75", "ar100"],
+          "properties": {
+            "map50_95": { "type": ["number", "null"] },
+            "map50": { "type": ["number", "null"] },
+            "map75": { "type": ["number", "null"] },
+            "ar100": { "type": ["number", "null"] }
+          },
+          "additionalProperties": true
+        },
+        "stats": { "type": "array", "items": {} },
+        "dry_run": { "type": "boolean" },
+        "counts": {
+          "type": "object",
+          "required": ["images", "detections"],
+          "properties": {
+            "images": { "type": "integer", "minimum": 0 },
+            "detections": { "type": "integer", "minimum": 0 }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}
+

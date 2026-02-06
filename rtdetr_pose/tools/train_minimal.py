@@ -14,8 +14,10 @@ try:
     import torch
     from torch.nn import functional as F
     from torch.utils.data import DataLoader, Dataset
-except ImportError as exc:  # pragma: no cover
-    raise SystemExit("torch is required; install requirements-test.txt") from exc
+except ImportError:  # pragma: no cover
+    torch = None
+    DataLoader = None
+    Dataset = object
 
 try:  # pragma: no cover - optional dependency
     from torch.utils.tensorboard import SummaryWriter
@@ -29,6 +31,7 @@ except Exception:  # pragma: no cover
 
 from rtdetr_pose.dataset import build_manifest
 from rtdetr_pose.dataset import extract_full_gt_targets, depth_at_bbox_center
+from rtdetr_pose.factory import build_losses, build_model
 from rtdetr_pose.losses import Losses
 from rtdetr_pose.export import export_onnx
 from rtdetr_pose.training import build_query_aligned_targets
@@ -40,6 +43,7 @@ from rtdetr_pose.sched_factory import build_scheduler, EMA
 from yolozu.metrics_report import append_jsonl, build_report, write_csv_row, write_json
 from yolozu.jitter import default_jitter_profile, sample_intrinsics_jitter, sample_extrinsics_jitter
 from yolozu.run_record import build_run_record
+from yolozu.sdft import SdftConfig, compute_sdft_loss
 
 
 def load_config_file(path: str | Path) -> dict[str, Any]:
@@ -179,7 +183,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--device",
         type=str,
-        default="cuda" if torch.cuda.is_available() else "cpu",
+        default="cuda" if torch is not None and torch.cuda.is_available() else "cpu",
         help="Torch device for training (e.g., cpu, cuda, cuda:0).",
     )
     parser.add_argument(
@@ -534,6 +538,55 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=0.0,
         help="Probability to randomize class labels for denoised targets (default: 0.0).",
+    )
+
+    # Continual learning / self-distillation (SDFT-inspired)
+    parser.add_argument(
+        "--self-distill-from",
+        default=None,
+        help="Optional teacher checkpoint to distill against (to reduce catastrophic forgetting).",
+    )
+    parser.add_argument(
+        "--self-distill-weight",
+        type=float,
+        default=1.0,
+        help="Global multiplier for self-distillation loss (only used when --self-distill-from is set).",
+    )
+    parser.add_argument(
+        "--self-distill-temperature",
+        type=float,
+        default=1.0,
+        help="Softmax temperature for logits distillation (>=1 recommended).",
+    )
+    parser.add_argument(
+        "--self-distill-kl",
+        choices=("forward", "reverse", "sym"),
+        default="reverse",
+        help="KL direction for logits distillation (default: reverse, SDFT-style).",
+    )
+    parser.add_argument(
+        "--self-distill-keys",
+        type=str,
+        default="logits,bbox",
+        help="Comma-separated model output keys to distill (default: logits,bbox).",
+    )
+    parser.add_argument(
+        "--self-distill-logits-weight",
+        type=float,
+        default=1.0,
+        help="Per-key weight for logits distillation term.",
+    )
+    parser.add_argument(
+        "--self-distill-bbox-weight",
+        type=float,
+        default=1.0,
+        help="Per-key weight for bbox distillation term (compared in sigmoid space).",
+    )
+    parser.add_argument(
+        "--self-distill-other-l1-weight",
+        type=float,
+        default=1.0,
+        help="Per-key L1 weight for any other distilled tensor outputs.",
     )
 
     # Checkpointing / resume
@@ -1563,6 +1616,8 @@ def collate(batch):
 
 
 def main(argv: list[str] | None = None) -> int:
+    if torch is None:  # pragma: no cover
+        raise SystemExit("torch is required; install requirements-test.txt")
     args = parse_args(sys.argv[1:] if argv is None else argv)
 
     sim_profile = None
@@ -1598,6 +1653,7 @@ def main(argv: list[str] | None = None) -> int:
             dataset_root = repo_root.parent / "data" / "coco128"
 
     model_cfg = None
+    loss_cfg = None
     if args.config:
         try:
             from rtdetr_pose.config import load_config
@@ -1605,9 +1661,12 @@ def main(argv: list[str] | None = None) -> int:
             load_config = None
         if load_config is not None:
             try:
-                model_cfg = load_config(args.config).model
+                cfg_obj = load_config(args.config)
+                model_cfg = cfg_obj.model
+                loss_cfg = getattr(cfg_obj, "loss", None)
             except Exception:
                 model_cfg = None
+                loss_cfg = None
     if model_cfg is not None:
         args.num_queries = int(model_cfg.num_queries)
         args.num_classes = int(model_cfg.num_classes)
@@ -1735,7 +1794,15 @@ def main(argv: list[str] | None = None) -> int:
         if bool(args.lora_freeze_base):
             lora_trainable_info = mark_only_lora_as_trainable(model, train_bias=str(args.lora_train_bias))
 
-    losses_fn = Losses(task_aligner=args.task_aligner)
+    if loss_cfg is not None:
+        if args.task_aligner and args.task_aligner != "none":
+            try:
+                loss_cfg.task_aligner = str(args.task_aligner)
+            except Exception:
+                pass
+        losses_fn = build_losses(loss_cfg)
+    else:
+        losses_fn = Losses(task_aligner=args.task_aligner)
     base_weights = dict(losses_fn.weights)
 
     device_str = str(args.device).strip() if args.device is not None else "cpu"
@@ -1853,6 +1920,37 @@ def main(argv: list[str] | None = None) -> int:
         if lr_scheduler is not None:
             print(f"scheduler={scheduler_type} total_steps={total_steps_est} warmup_steps={args.lr_warmup_steps}")
 
+    sdft_cfg = None
+    teacher_model = None
+    if args.self_distill_from:
+        import copy
+
+        teacher_model = copy.deepcopy(model)
+        load_checkpoint_into(teacher_model, None, args.self_distill_from)
+        teacher_model.to(device)
+        teacher_model.eval()
+        for param in teacher_model.parameters():
+            param.requires_grad_(False)
+
+        keys = tuple(k.strip() for k in str(args.self_distill_keys).split(",") if k.strip())
+        sdft_cfg = SdftConfig(
+            weight=float(args.self_distill_weight),
+            temperature=float(args.self_distill_temperature),
+            kl=str(args.self_distill_kl),
+            keys=keys,
+            logits_weight=float(args.self_distill_logits_weight),
+            bbox_weight=float(args.self_distill_bbox_weight),
+            other_l1_weight=float(args.self_distill_other_l1_weight),
+        )
+        print(
+            "self_distill",
+            f"from={args.self_distill_from}",
+            f"keys={','.join(keys) if keys else '(none)'}",
+            f"kl={sdft_cfg.kl}",
+            f"temp={sdft_cfg.temperature}",
+            f"weight={sdft_cfg.weight}",
+        )
+
     model.train()
     last_loss_dict = None
     last_epoch_avg = None
@@ -1922,6 +2020,24 @@ def main(argv: list[str] | None = None) -> int:
                             loss_items.append(F.l1_loss(out["bbox"], teacher_out["bbox"]))
                         if loss_items:
                             mim_loss = sum(loss_items)
+
+            sdft_total = None
+            sdft_parts = None
+            if teacher_model is not None and sdft_cfg is not None and float(sdft_cfg.weight) != 0.0:
+                with torch.no_grad():
+                    teacher_out = teacher_model(images)
+                student_out_sdft = out
+                teacher_out_sdft = teacher_out
+                if (
+                    "bbox" in sdft_cfg.keys
+                    and isinstance(out.get("bbox"), torch.Tensor)
+                    and isinstance(teacher_out.get("bbox"), torch.Tensor)
+                ):
+                    student_out_sdft = dict(out)
+                    teacher_out_sdft = dict(teacher_out)
+                    student_out_sdft["bbox"] = out["bbox"].sigmoid()
+                    teacher_out_sdft["bbox"] = teacher_out["bbox"].sigmoid()
+                sdft_total, sdft_parts = compute_sdft_loss(student_out_sdft, teacher_out_sdft, sdft_cfg)
 
             if args.use_matcher:
                 staged_costs = compute_stage_costs(
@@ -2004,11 +2120,19 @@ def main(argv: list[str] | None = None) -> int:
 
             loss_dict = losses_fn(out, targets)
             loss = loss_dict["loss"]
+            if sdft_total is not None and sdft_parts is not None:
+                loss_supervised = loss
+                loss_dict = dict(loss_dict)
+                loss_dict["loss_supervised"] = loss_supervised
+                loss_dict.update(sdft_parts)
+                loss = loss_supervised + float(sdft_cfg.weight) * sdft_total
+
             if mim_loss is not None:
                 loss = loss + float(mim_weight) * mim_loss
                 loss_dict = dict(loss_dict)
                 loss_dict["loss_mim"] = mim_loss
-                loss_dict["loss"] = loss
+
+            loss_dict["loss"] = loss
             last_loss_dict = loss_dict
 
             if steps == 0 and args.debug_losses:

@@ -6,6 +6,8 @@ import random
 from pathlib import Path
 from typing import Any, Iterable
 
+from .gates import final_score, passes_template_gate
+
 
 @dataclass(frozen=True)
 class TransformResult:
@@ -185,3 +187,104 @@ def apply_tta(
 
     return TransformResult(entries=out_entries, warnings=warnings)
 
+def fuse_detection_scores(
+    entries: Iterable[dict[str, Any]],
+    *,
+    weights: dict[str, float] | None = None,
+    det_score_key: str = "score",
+    template_score_key: str = "score_tmp_sym",
+    sigma_z_key: str = "sigma_z",
+    sigma_rot_key: str = "sigma_rot",
+    out_score_key: str = "score",
+    preserve_det_score_key: str | None = "score_det",
+    template_gate_enabled: bool = False,
+    template_gate_tau: float = 0.0,
+    min_score: float | None = None,
+    topk_per_image: int | None = None,
+) -> TransformResult:
+    """Fuse detection scores for inference-time gating/tuning.
+
+    The fused score is:
+      w_det * score_det + w_tmp * score_tmp_sym - w_unc * (sigma_z + sigma_rot)
+
+    This is intended for *postprocess-time* score shaping (ordering/thresholding),
+    and can be tuned offline on a fixed eval subset.
+
+    Notes:
+    - Missing template/uncertainty fields default to 0.0.
+    - If template_gate_enabled=True, detections with score_tmp_sym < template_gate_tau are dropped.
+    - If preserve_det_score_key is set and missing, the original det score is stored there.
+    """
+
+    warnings: list[str] = []
+    w = {"det": 1.0, "tmp": 1.0, "unc": 1.0}
+    if weights:
+        for k, v in weights.items():
+            try:
+                w[str(k)] = float(v)
+            except Exception:
+                continue
+
+    out_entries: list[dict[str, Any]] = []
+    for idx, entry in enumerate(entries):
+        if not isinstance(entry, dict):
+            continue
+        image = entry.get("image")
+        if not image:
+            warnings.append(f"predictions[{idx}]: missing image")
+            continue
+
+        dets = entry.get("detections") or []
+        if not isinstance(dets, list):
+            warnings.append(f"predictions[{idx}]: detections must be a list")
+            dets = []
+
+        new_dets: list[dict[str, Any]] = []
+        for j, det in enumerate(dets):
+            if not isinstance(det, dict):
+                continue
+
+            try:
+                score_det = float(det.get(det_score_key, 0.0))
+            except Exception:
+                warnings.append(f"predictions[{idx}].detections[{j}]: invalid {det_score_key}")
+                score_det = 0.0
+
+            try:
+                score_tmp = float(det.get(template_score_key, 0.0))
+            except Exception:
+                warnings.append(f"predictions[{idx}].detections[{j}]: invalid {template_score_key}")
+                score_tmp = 0.0
+
+            try:
+                sigma_z = float(det.get(sigma_z_key, 0.0))
+            except Exception:
+                warnings.append(f"predictions[{idx}].detections[{j}]: invalid {sigma_z_key}")
+                sigma_z = 0.0
+
+            try:
+                sigma_rot = float(det.get(sigma_rot_key, 0.0))
+            except Exception:
+                warnings.append(f"predictions[{idx}].detections[{j}]: invalid {sigma_rot_key}")
+                sigma_rot = 0.0
+
+            if template_gate_enabled and not passes_template_gate(score_tmp, enabled=True, tau=float(template_gate_tau)):
+                continue
+
+            fused = final_score(score_det, score_tmp, sigma_z, sigma_rot, w)
+            if min_score is not None and fused < float(min_score):
+                continue
+
+            new_det = dict(det)
+            if preserve_det_score_key and preserve_det_score_key not in new_det:
+                new_det[preserve_det_score_key] = float(score_det)
+            new_det[out_score_key] = float(fused)
+            new_dets.append(new_det)
+
+        if topk_per_image is not None and topk_per_image > 0 and len(new_dets) > topk_per_image:
+            new_dets.sort(key=lambda d: float(d.get(out_score_key, 0.0)), reverse=True)
+            new_dets = new_dets[: int(topk_per_image)]
+
+        out_entries.append({"image": image, "detections": new_dets})
+
+    return TransformResult(entries=out_entries, warnings=warnings)

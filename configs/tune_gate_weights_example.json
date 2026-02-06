@@ -1,0 +1,28 @@
+{
+  "dataset": "data/coco128",
+  "predictions": "reports/predictions.json",
+  "metric": "map50_95",
+  "keys": {
+    "det_score": "score",
+    "template_score": "score_tmp_sym",
+    "sigma_z": "sigma_z",
+    "sigma_rot": "sigma_rot",
+    "preserve_det_score": "score_det"
+  },
+  "template_gate": {
+    "enabled": false,
+    "tau": 0.0
+  },
+  "grid": {
+    "det": [1.0],
+    "tmp": [0.0, 0.5, 1.0],
+    "unc": [0.0, 0.5, 1.0]
+  },
+  "output_report": "reports/gate_tuning_report.json",
+  "output_predictions": null,
+  "wrap_output": true,
+  "max_images": 50,
+  "topk_per_image": 300,
+  "min_score": null
+}
+
