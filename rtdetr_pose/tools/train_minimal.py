@@ -125,6 +125,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="If >0, clip gradients to this max norm before optimizer step.",
     )
     parser.add_argument(
+        "--gradient-accumulation-steps",
+        type=int,
+        default=1,
+        help="Number of steps to accumulate gradients before optimizer update (default: 1, no accumulation).",
+    )
+    parser.add_argument(
+        "--use-amp",
+        action="store_true",
+        help="Enable Automatic Mixed Precision (AMP) training with torch.cuda.amp.",
+    )
+    parser.add_argument(
         "--lr-warmup-steps",
         type=int,
         default=0,
@@ -1697,6 +1708,15 @@ def main(argv: list[str] | None = None) -> int:
             weight_decay=float(args.weight_decay),
         )
 
+    # Initialize GradScaler for AMP if enabled
+    scaler = None
+    if args.use_amp:
+        if device.startswith("cuda"):
+            scaler = torch.cuda.amp.GradScaler()
+            print("amp_enabled=True device=cuda")
+        else:
+            print("amp_warning: --use-amp requires CUDA device; AMP disabled")
+
     start_epoch = 0
     global_step = 0
     if args.resume_from:
@@ -1755,7 +1775,14 @@ def main(argv: list[str] | None = None) -> int:
                     mim_ratio = float(targets["mim_mask_ratio"].mean().detach().cpu())
                 except Exception:
                     mim_ratio = None
-            out = model(images)
+
+            # Forward pass with optional AMP autocast
+            if scaler is not None:
+                with torch.cuda.amp.autocast():
+                    out = model(images)
+            else:
+                out = model(images)
+
             mim_loss = None
             if args.mim_teacher and float(mim_weight) > 0 and isinstance(targets, dict):
                 image_raw = targets.get("image_raw")
@@ -1766,7 +1793,11 @@ def main(argv: list[str] | None = None) -> int:
                         if was_training:
                             model.eval()
                         with torch.no_grad():
-                            teacher_out = model(image_raw.to(device))
+                            if scaler is not None:
+                                with torch.cuda.amp.autocast():
+                                    teacher_out = model(image_raw.to(device))
+                            else:
+                                teacher_out = model(image_raw.to(device))
                         if was_training:
                             model.train()
                         loss_items = []
@@ -1873,11 +1904,36 @@ def main(argv: list[str] | None = None) -> int:
                 }
                 print("loss_breakdown", " ".join(f"{k}={v:.6g}" for k, v in sorted(printable.items())))
 
-            optim.zero_grad(set_to_none=True)
-            loss.backward()
-            if args.clip_grad_norm and float(args.clip_grad_norm) > 0:
-                torch.nn.utils.clip_grad_norm_(model.parameters(), float(args.clip_grad_norm))
-            optim.step()
+            # Store unscaled loss for logging
+            loss_for_logging = loss.detach().cpu()
+
+            # Gradient accumulation: scale loss by accumulation steps
+            accum_steps = int(args.gradient_accumulation_steps)
+            if accum_steps > 1:
+                loss = loss / accum_steps
+
+            # Backward pass with optional AMP scaling
+            if scaler is not None:
+                scaler.scale(loss).backward()
+            else:
+                loss.backward()
+
+            # Perform optimizer step only at accumulation boundaries
+            # steps is 0-indexed within each epoch, so we use (steps + 1) for the check
+            if (steps + 1) % accum_steps == 0:
+                if scaler is not None:
+                    # Unscale gradients before clipping
+                    if args.clip_grad_norm and float(args.clip_grad_norm) > 0:
+                        scaler.unscale_(optim)
+                        torch.nn.utils.clip_grad_norm_(model.parameters(), float(args.clip_grad_norm))
+                    scaler.step(optim)
+                    scaler.update()
+                    optim.zero_grad(set_to_none=True)
+                else:
+                    if args.clip_grad_norm and float(args.clip_grad_norm) > 0:
+                        torch.nn.utils.clip_grad_norm_(model.parameters(), float(args.clip_grad_norm))
+                    optim.step()
+                    optim.zero_grad(set_to_none=True)
 
             if args.lr_warmup_steps and int(args.lr_warmup_steps) > 0:
                 lr_now = compute_warmup_lr(
@@ -1897,7 +1953,7 @@ def main(argv: list[str] | None = None) -> int:
             for group in optim.param_groups:
                 group["lr"] = lr_now
 
-            running += float(loss.detach().cpu())
+            running += float(loss_for_logging)
             steps += 1
             global_step += 1
 
