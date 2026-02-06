@@ -24,6 +24,48 @@ def _load_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _validate_contracts(contracts: Any) -> tuple[dict[str, dict[str, Any]], list[str]]:
+    errors: list[str] = []
+    out: dict[str, dict[str, Any]] = {}
+    if contracts is None:
+        return out, errors
+    if not isinstance(contracts, dict):
+        return out, ["manifest.contracts: expected object"]
+
+    for name, spec in contracts.items():
+        if not isinstance(name, str) or not name:
+            errors.append("manifest.contracts: contract id must be non-empty string")
+            continue
+        if not isinstance(spec, dict):
+            errors.append(f"manifest.contracts.{name}: expected object")
+            continue
+
+        schema = spec.get("schema")
+        if schema is not None:
+            if not isinstance(schema, str) or not schema:
+                errors.append(f"manifest.contracts.{name}.schema: expected non-empty string")
+            else:
+                if schema.startswith("/"):
+                    errors.append(f"manifest.contracts.{name}.schema: must be repo-relative, got absolute path")
+                elif ".." in Path(schema).parts:
+                    errors.append(f"manifest.contracts.{name}.schema: must not contain '..'")
+                else:
+                    schema_path = _resolve(schema)
+                    if not schema_path.exists():
+                        errors.append(f"manifest.contracts.{name}.schema: file not found: {schema}")
+                    else:
+                        try:
+                            schema_obj = _load_json(schema_path)
+                            if not isinstance(schema_obj, dict):
+                                errors.append(f"manifest.contracts.{name}.schema: expected JSON object: {schema}")
+                        except Exception as exc:
+                            errors.append(f"manifest.contracts.{name}.schema: invalid JSON: {schema}: {exc}")
+
+        out[name] = spec
+
+    return out, errors
+
+
 def _validate_tool(tool: Any, *, index: int) -> list[str]:
     errors: list[str] = []
     where = f"tools[{index}]"
@@ -123,9 +165,23 @@ def validate_manifest(obj: Any) -> list[str]:
         errors.append("manifest.tools: required non-empty list")
         return errors
 
+    contracts_map, contract_errors = _validate_contracts(obj.get("contracts"))
+    errors.extend(contract_errors)
+
     seen: set[str] = set()
     for i, tool in enumerate(tools):
         errors.extend(_validate_tool(tool, index=i))
+        if isinstance(tool, dict) and isinstance(tool.get("contracts"), dict):
+            for direction in ("consumes", "produces"):
+                refs = tool["contracts"].get(direction)
+                if refs is None:
+                    continue
+                if not isinstance(refs, list) or not all(isinstance(x, str) and x for x in refs):
+                    errors.append(f"tools[{i}].contracts.{direction}: expected list[str]")
+                    continue
+                for ref in refs:
+                    if contracts_map and ref not in contracts_map:
+                        errors.append(f"tools[{i}].contracts.{direction}: unknown contract id '{ref}'")
         tool_id = tool.get("id") if isinstance(tool, dict) else None
         if isinstance(tool_id, str) and tool_id:
             if tool_id in seen:
@@ -167,4 +223,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

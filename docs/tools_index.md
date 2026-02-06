@@ -17,6 +17,7 @@ The manifest is intended for:
 Most flows in this repo pass data as JSON artifacts:
 - `predictions_json`: per-image detections JSON (validate with `tools/validate_predictions.py`)
 - `metrics_report_json`: stable report payloads (`yolozu.metrics_report.build_report`)
+- JSON Schemas live under `docs/schemas/` and are referenced from `tools/manifest.json` contracts.
 
 When adding a new tool, prefer:
 1) reading inputs from file paths / flags
@@ -31,4 +32,3 @@ When adding a new tool, prefer:
   - at least one runnable `examples[].command`
   - `contracts.{consumes,produces}` when applicable
 - Run: `python3 tools/validate_tool_manifest.py`
-

@@ -7,11 +7,23 @@
   "contracts": {
     "predictions_json": {
       "summary": "YOLOZU predictions JSON (list of {image,detections} or {predictions:[...],meta:{...}}).",
+      "schema": "docs/schemas/predictions.schema.json",
       "validator": "python3 tools/validate_predictions.py <path> [--strict]"
     },
     "metrics_report_json": {
       "summary": "Stable metrics report schema emitted by yolozu.metrics_report.build_report().",
+      "schema": "docs/schemas/metrics_report.schema.json",
       "builder": "yolozu/metrics_report.py"
+    },
+    "coco_eval_report_json": {
+      "summary": "Report payload emitted by tools/eval_coco.py (COCOeval or dry-run conversion).",
+      "schema": "docs/schemas/coco_eval_report.schema.json",
+      "producer": "python3 tools/eval_coco.py"
+    },
+    "eval_suite_report_json": {
+      "summary": "Report payload emitted by tools/eval_suite.py (suite over prediction JSONs).",
+      "schema": "docs/schemas/eval_suite_report.schema.json",
+      "producer": "python3 tools/eval_suite.py"
     }
   },
   "tools": [
@@ -131,7 +143,7 @@
       "summary": "Evaluate predictions on a YOLO-format dataset using COCOeval (or dry-run convert/validate).",
       "tags": ["eval", "coco"],
       "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
-      "contracts": { "consumes": ["predictions_json"], "produces": ["metrics_report_json"] },
+      "contracts": { "consumes": ["predictions_json"], "produces": ["coco_eval_report_json"] },
       "inputs": [
         { "name": "dataset", "kind": "dir", "required": true, "flag": "--dataset" },
         { "name": "predictions", "kind": "file", "required": true, "flag": "--predictions" },
@@ -152,7 +164,7 @@
       "summary": "Evaluate a set of bucketed prediction JSONs (glob) and write a single suite report JSON.",
       "tags": ["eval", "suite", "yolo26"],
       "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
-      "contracts": { "consumes": ["predictions_json"] },
+      "contracts": { "consumes": ["predictions_json"], "produces": ["eval_suite_report_json"] },
       "inputs": [
         { "name": "predictions_glob", "kind": "string", "required": true, "flag": "--predictions-glob" },
         { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/eval_suite.json" }
@@ -395,4 +407,3 @@
     }
   ]
 }
-
