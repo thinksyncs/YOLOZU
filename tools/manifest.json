@@ -360,6 +360,57 @@
       "docs": ["docs/tensorrt_pipeline.md"]
     },
     {
+      "id": "measure_trt_latency",
+      "entrypoint": "tools/measure_trt_latency.py",
+      "runner": "python3",
+      "summary": "Measure a TensorRT engine's latency/FPS and write a metrics report JSON.",
+      "tags": ["benchmark", "tensorrt"],
+      "platform": { "cpu_ok": true, "gpu_required": true, "macos_ok": false, "linux_ok": true },
+      "requires": { "python_packages": ["tensorrt", "numpy"], "system": ["CUDA bindings (pycuda or cuda-python)"] },
+      "contracts": { "produces": ["metrics_report_json"] },
+      "inputs": [
+        { "name": "engine", "kind": "file", "required": false, "flag": "--engine" },
+        { "name": "iterations", "kind": "number", "required": false, "flag": "--iterations", "default": 200 },
+        { "name": "warmup", "kind": "number", "required": false, "flag": "--warmup", "default": 20 },
+        { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/latency_trt.json" }
+      ],
+      "outputs": [{ "name": "report_json", "kind": "file", "default": "reports/latency_trt.json" }],
+      "examples": [
+        {
+          "description": "Measure latency (Linux/NVIDIA).",
+          "command": "python3 tools/measure_trt_latency.py --engine engines/yolo26n_fp16.plan --shape 1x3x640x640 --iterations 200 --warmup 20 --output reports/latency_yolo26n.json"
+        }
+      ],
+      "docs": ["docs/benchmark_latency.md", "docs/tensorrt_pipeline.md"]
+    },
+    {
+      "id": "run_trt_pipeline",
+      "entrypoint": "tools/run_trt_pipeline.py",
+      "runner": "python3",
+      "summary": "Orchestrate the YOLO26 TensorRT pipeline (engine build → predictions export → parity → eval_suite → latency report).",
+      "tags": ["deploy", "pipeline", "tensorrt", "yolo26"],
+      "platform": {
+        "cpu_ok": true,
+        "gpu_required": true,
+        "macos_ok": false,
+        "linux_ok": true,
+        "notes": "Designed for Linux+NVIDIA (Runpod). Use --dry-run to generate schema-correct artifacts without GPU."
+      },
+      "contracts": { "produces": ["predictions_json", "eval_suite_report_json", "metrics_report_json"] },
+      "inputs": [
+        { "name": "dataset", "kind": "dir", "required": true, "flag": "--dataset" },
+        { "name": "onnx_template", "kind": "string", "required": true, "flag": "--onnx-template" }
+      ],
+      "outputs": [{ "name": "run_dir", "kind": "dir", "description": "Run folder containing run.json and copied artifacts." }],
+      "examples": [
+        {
+          "description": "Run full TRT pipeline (Runpod/Linux).",
+          "command": "python3 tools/run_trt_pipeline.py --dataset /data/coco-yolo --onnx-template /data/models/{bucket}.onnx --precision fp16 --combined-output output0 --boxes-scale abs --min-score 0.0 --topk 300 --max-images 500"
+        }
+      ],
+      "docs": ["deploy/runpod/README.md", "docs/tensorrt_pipeline.md"]
+    },
+    {
       "id": "benchmark_latency",
       "entrypoint": "tools/benchmark_latency.py",
       "runner": "python3",

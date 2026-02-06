@@ -63,6 +63,22 @@ The `metrics_path` file can be either:
 }
 ```
 
+### Generating TensorRT metrics JSON
+
+On Linux+NVIDIA with TensorRT Python bindings, you can generate a compatible per-bucket file using:
+
+```bash
+python3 tools/measure_trt_latency.py \
+  --engine engines/yolo26n_fp16.plan \
+  --shape 1x3x640x640 \
+  --iterations 200 \
+  --warmup 20 \
+  --output reports/latency_yolo26n.json
+```
+
+This writes a metrics report JSON (with a top-level `metrics` dict) that the benchmark harness can consume via
+`metrics_path`.
+
 ## Comparing runs over time
 
 - Each run writes a JSON report to `--output` and appends the full report to `--history` (JSONL).

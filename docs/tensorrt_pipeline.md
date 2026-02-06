@@ -2,6 +2,12 @@
 
 This repo stays Apache-2.0-only, so the TensorRT build and inference steps are scripted but rely on your local TensorRT installation. The goal is a reproducible engine build, plus parity validation against ONNX outputs.
 
+## Runpod shortcut (recommended)
+
+If you're developing on macOS, keep GPU/TensorRT work on Runpod (or any Linux+NVIDIA machine):
+- Docs + Docker skeleton: `deploy/runpod/README.md`
+- One-command runner: `python3 tools/run_trt_pipeline.py ...`
+
 ## 1) Export ONNX (end2end/no-NMS)
 
 Use your preferred exporter (Ultralytics or custom) and keep NMS disabled so parity is meaningful:
