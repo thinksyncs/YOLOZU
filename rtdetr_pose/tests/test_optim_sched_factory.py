@@ -1,7 +1,6 @@
 """Unit tests for optimizer and scheduler factory modules."""
 
 import unittest
-from pathlib import Path
 
 try:
     import torch
@@ -227,9 +226,6 @@ class TestSchedFactory(unittest.TestCase):
         
         model = nn.Linear(10, 10)
         ema = EMA(model, decay=0.9)
-        
-        # Store original weights
-        original_weight = model.weight.data.clone()
         
         # Update EMA a few times
         for _ in range(5):

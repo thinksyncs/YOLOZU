@@ -92,7 +92,6 @@ def build_param_groups(
 
             # Check if this parameter should have wd=0
             no_wd = False
-            full_name = f"{name}.{param_name}" if name else param_name
 
             if wd_exclude_bias and "bias" in param_name.lower():
                 no_wd = True

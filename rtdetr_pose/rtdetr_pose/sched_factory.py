@@ -9,7 +9,6 @@ Supports:
 
 from __future__ import annotations
 
-import math
 from typing import Any
 
 try:
