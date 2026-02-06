@@ -21,3 +21,4 @@ Optional full-GT consumption (mask/depth)
 
 ## Notes
 - The model is a stub to wire losses/metrics and export; integrate with a full RT-DETR implementation next.
+- `configs/base.json` supports `model.backbone_name` (e.g. `cspresnet`, `tiny_cnn`) and a `loss` section for swapping/tuning loss weights.

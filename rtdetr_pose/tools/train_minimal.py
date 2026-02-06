@@ -12,11 +12,14 @@ sys.path.insert(0, str(repo_root.parent))
 try:
     import torch
     from torch.utils.data import DataLoader, Dataset
-except ImportError as exc:  # pragma: no cover
-    raise SystemExit("torch is required; install requirements-test.txt") from exc
+except ImportError:  # pragma: no cover
+    torch = None
+    DataLoader = None
+    Dataset = object
 
 from rtdetr_pose.dataset import build_manifest, extract_pose_intrinsics_targets
 from rtdetr_pose.dataset import extract_full_gt_targets, depth_at_bbox_center
+from rtdetr_pose.factory import build_losses, build_model
 from rtdetr_pose.losses import Losses
 from rtdetr_pose.training import build_query_aligned_targets
 from rtdetr_pose.model import RTDETRPose
@@ -71,7 +74,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--device",
         type=str,
-        default="cuda" if torch.cuda.is_available() else "cpu",
+        default="cuda" if torch is not None and torch.cuda.is_available() else "cpu",
         help="Torch device for training (e.g., cpu, cuda, cuda:0).",
     )
     parser.add_argument(
@@ -949,6 +952,8 @@ def collate(batch):
 
 
 def main(argv: list[str] | None = None) -> int:
+    if torch is None:  # pragma: no cover
+        raise SystemExit("torch is required; install requirements-test.txt")
     args = parse_args(sys.argv[1:] if argv is None else argv)
 
     sim_profile = None
@@ -980,6 +985,7 @@ def main(argv: list[str] | None = None) -> int:
             dataset_root = repo_root.parent / "data" / "coco128"
 
     model_cfg = None
+    loss_cfg = None
     if args.config:
         try:
             from rtdetr_pose.config import load_config
@@ -987,9 +993,12 @@ def main(argv: list[str] | None = None) -> int:
             load_config = None
         if load_config is not None:
             try:
-                model_cfg = load_config(args.config).model
+                cfg_obj = load_config(args.config)
+                model_cfg = cfg_obj.model
+                loss_cfg = getattr(cfg_obj, "loss", None)
             except Exception:
                 model_cfg = None
+                loss_cfg = None
     if model_cfg is not None:
         args.num_queries = int(model_cfg.num_queries)
         args.num_classes = int(model_cfg.num_classes)
@@ -1069,36 +1078,27 @@ def main(argv: list[str] | None = None) -> int:
     model_num_queries = model_cfg.num_queries if model_cfg is not None else args.num_queries
     args.num_queries = int(model_num_queries)
 
-    model = RTDETRPose(
-        num_classes=(model_cfg.num_classes if model_cfg is not None else args.num_classes),
-        hidden_dim=(model_cfg.hidden_dim if model_cfg is not None else args.hidden_dim),
-        num_queries=model_num_queries,
-        num_decoder_layers=(model_cfg.num_decoder_layers if model_cfg is not None else 2),
-        nhead=(model_cfg.nhead if model_cfg is not None else 4),
-        use_uncertainty=(model_cfg.use_uncertainty if model_cfg is not None else bool(args.use_uncertainty)),
-        stem_channels=(getattr(model_cfg, "stem_channels", None) if model_cfg is not None else None) or 32,
-        backbone_channels=(
-            tuple(getattr(model_cfg, "backbone_channels", ()))
-            if model_cfg is not None and getattr(model_cfg, "backbone_channels", None) is not None
-            else (64, 128, 256)
-        ),
-        stage_blocks=(
-            tuple(getattr(model_cfg, "stage_blocks", ()))
-            if model_cfg is not None and getattr(model_cfg, "stage_blocks", None) is not None
-            else (1, 2, 2)
-        ),
-        num_encoder_layers=(
-            getattr(model_cfg, "num_encoder_layers", None) if model_cfg is not None else None
+    if model_cfg is not None:
+        model = build_model(model_cfg)
+    else:
+        model = RTDETRPose(
+            num_classes=args.num_classes,
+            hidden_dim=args.hidden_dim,
+            num_queries=model_num_queries,
+            num_decoder_layers=2,
+            nhead=4,
+            use_uncertainty=bool(args.use_uncertainty),
         )
-        or 1,
-        encoder_dim_feedforward=(
-            getattr(model_cfg, "encoder_dim_feedforward", None) if model_cfg is not None else None
-        ),
-        decoder_dim_feedforward=(
-            getattr(model_cfg, "decoder_dim_feedforward", None) if model_cfg is not None else None
-        ),
-    )
-    losses_fn = Losses(task_aligner=args.task_aligner)
+
+    if loss_cfg is not None:
+        if args.task_aligner and args.task_aligner != "none":
+            try:
+                loss_cfg.task_aligner = str(args.task_aligner)
+            except Exception:
+                pass
+        losses_fn = build_losses(loss_cfg)
+    else:
+        losses_fn = Losses(task_aligner=args.task_aligner)
 
     device_str = str(args.device).strip() if args.device is not None else "cpu"
     if device_str.startswith("cuda") and not torch.cuda.is_available():

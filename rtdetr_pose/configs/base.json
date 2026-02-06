@@ -9,6 +9,7 @@
     "hidden_dim": 256,
     "num_queries": 300,
     "use_uncertainty": false,
+    "backbone_name": "cspresnet",
     "stem_channels": 32,
     "backbone_channels": [64, 128, 256],
     "stage_blocks": [1, 2, 2],
@@ -16,7 +17,13 @@
     "num_decoder_layers": 3,
     "nhead": 8,
     "encoder_dim_feedforward": null,
-    "decoder_dim_feedforward": null
+    "decoder_dim_feedforward": null,
+    "backbone_kwargs": {}
+  },
+  "loss": {
+    "name": "default",
+    "task_aligner": "none",
+    "weights": {}
   },
   "train": {
     "batch_size": 2,

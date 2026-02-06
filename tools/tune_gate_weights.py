@@ -1,0 +1,350 @@
+import argparse
+import json
+import platform
+import subprocess
+import sys
+import time
+from itertools import product
+from pathlib import Path
+from typing import Any
+
+repo_root = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(repo_root))
+
+from yolozu.dataset import build_manifest
+from yolozu.metrics_report import build_report, write_json
+from yolozu.predictions import load_predictions_entries
+from yolozu.predictions_transform import fuse_detection_scores
+from yolozu.simple_map import evaluate_map
+
+
+def _now_utc() -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def _git_head() -> str | None:
+    try:
+        out = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo_root)
+        return out.decode("utf-8").strip() or None
+    except Exception:
+        return None
+
+
+def _as_float_list(value: Any) -> list[float] | None:
+    if value is None:
+        return None
+    if isinstance(value, list):
+        out = []
+        for item in value:
+            try:
+                out.append(float(item))
+            except Exception:
+                continue
+        return out
+    if isinstance(value, str):
+        raw = [p.strip() for p in value.split(",")]
+        out = []
+        for p in raw:
+            if not p:
+                continue
+            out.append(float(p))
+        return out
+    raise ValueError(f"expected list or csv string, got {type(value).__name__}")
+
+
+def _allowed_image_keys(records: list[dict[str, Any]]) -> set[str]:
+    keys: set[str] = set()
+    for r in records:
+        image = str(r.get("image", ""))
+        if not image:
+            continue
+        keys.add(image)
+        base = image.split("/")[-1]
+        if base:
+            keys.add(base)
+    return keys
+
+
+def _filter_entries(entries: list[dict[str, Any]], allowed_keys: set[str]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for e in entries:
+        image = str(e.get("image", ""))
+        if not image:
+            continue
+        base = image.split("/")[-1]
+        if image in allowed_keys or base in allowed_keys:
+            out.append(e)
+    return out
+
+
+def _iou_thresholds(metric: str) -> list[float]:
+    metric = str(metric)
+    if metric == "map50":
+        return [0.5]
+    # simple_map proxy: approximate COCO-style averaging
+    return [round(0.5 + 0.05 * i, 2) for i in range(10)]  # 0.50..0.95
+
+
+def _parse_args(argv: list[str]) -> argparse.Namespace:
+    p = argparse.ArgumentParser(description="Tune inference-time gate weights (CPU-only, simple mAP proxy).")
+    p.add_argument("--config", default=None, help="Optional JSON config file.")
+    p.add_argument("--dataset", default=None, help="YOLO-format dataset root (images/ + labels/).")
+    p.add_argument("--split", default=None, help="Split under images/ and labels/ (default: auto).")
+    p.add_argument("--max-images", type=int, default=None, help="Optional cap for quick runs.")
+    p.add_argument("--predictions", default=None, help="Predictions JSON (YOLOZU schema).")
+    p.add_argument("--output-report", default=None, help="Where to write the tuning report JSON.")
+    p.add_argument("--output-predictions", default=None, help="Optional path to write tuned predictions JSON.")
+    p.add_argument(
+        "--metric",
+        choices=("map50", "map50_95"),
+        default=None,
+        help="Optimization metric (default: map50_95).",
+    )
+    p.add_argument("--det-score-key", default=None, help="Detection score key (default: score).")
+    p.add_argument("--template-score-key", default=None, help="Template score key (default: score_tmp_sym).")
+    p.add_argument("--sigma-z-key", default=None, help="Uncertainty key for depth (default: sigma_z).")
+    p.add_argument("--sigma-rot-key", default=None, help="Uncertainty key for rotation (default: sigma_rot).")
+    p.add_argument("--preserve-det-score-key", default=None, help="Where to store original det score (default: score_det).")
+    p.add_argument("--grid-det", default=None, help="Grid values for w_det (csv or JSON list).")
+    p.add_argument("--grid-tmp", default=None, help="Grid values for w_tmp (csv or JSON list).")
+    p.add_argument("--grid-unc", default=None, help="Grid values for w_unc (csv or JSON list).")
+    p.add_argument("--grid-tau", default=None, help="Optional grid values for template gate tau.")
+    p.add_argument(
+        "--template-gate",
+        default=None,
+        action=argparse.BooleanOptionalAction,
+        help="Enable/disable template gate (default: false).",
+    )
+    p.add_argument("--tau", type=float, default=None, help="Template gate tau when not tuning grid-tau (default: 0.0).")
+    p.add_argument("--min-score", type=float, default=None, help="Optional min fused score threshold.")
+    p.add_argument("--topk-per-image", type=int, default=None, help="Optional top-K per image after fusion.")
+    p.add_argument(
+        "--wrap-output",
+        default=None,
+        action=argparse.BooleanOptionalAction,
+        help="If set, wrap tuned predictions as {predictions:[...], meta:{...}}.",
+    )
+    return p.parse_args(argv)
+
+
+def _load_config(path: str | None) -> dict[str, Any]:
+    if not path:
+        return {}
+    cfg_path = Path(path)
+    if not cfg_path.is_absolute():
+        cfg_path = repo_root / cfg_path
+    if not cfg_path.exists():
+        raise SystemExit(f"config not found: {cfg_path}")
+    data = json.loads(cfg_path.read_text())
+    return data if isinstance(data, dict) else {}
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _parse_args(sys.argv[1:] if argv is None else argv)
+    cfg = _load_config(args.config)
+
+    # Defaults (overridden by config, then CLI).
+    defaults: dict[str, Any] = {
+        "output_report": "reports/gate_tuning_report.json",
+        "metric": "map50_95",
+        "det_score_key": "score",
+        "template_score_key": "score_tmp_sym",
+        "sigma_z_key": "sigma_z",
+        "sigma_rot_key": "sigma_rot",
+        "preserve_det_score_key": "score_det",
+        "grid_det": [1.0],
+        "grid_tmp": [0.0, 0.5, 1.0],
+        "grid_unc": [0.0, 0.5, 1.0],
+        "template_gate": False,
+        "tau": 0.0,
+        "wrap_output": False,
+    }
+
+    # Nested config conveniences.
+    if isinstance(cfg.get("keys"), dict):
+        keys = cfg["keys"]
+        cfg = dict(cfg)
+        cfg.setdefault("det_score_key", keys.get("det_score"))
+        cfg.setdefault("template_score_key", keys.get("template_score"))
+        cfg.setdefault("sigma_z_key", keys.get("sigma_z"))
+        cfg.setdefault("sigma_rot_key", keys.get("sigma_rot"))
+        cfg.setdefault("preserve_det_score_key", keys.get("preserve_det_score"))
+    if isinstance(cfg.get("grid"), dict):
+        grid = cfg["grid"]
+        cfg = dict(cfg)
+        cfg.setdefault("grid_det", grid.get("det"))
+        cfg.setdefault("grid_tmp", grid.get("tmp"))
+        cfg.setdefault("grid_unc", grid.get("unc"))
+        cfg.setdefault("grid_tau", grid.get("tau"))
+    if isinstance(cfg.get("template_gate"), dict):
+        tg = cfg["template_gate"]
+        cfg = dict(cfg)
+        if "enabled" in tg:
+            cfg.setdefault("template_gate", tg.get("enabled"))
+        if "tau" in tg:
+            cfg.setdefault("tau", tg.get("tau"))
+
+    def pick(name: str, cli_value: Any) -> Any:
+        if cli_value is not None:
+            return cli_value
+        if name in cfg and cfg[name] is not None:
+            return cfg[name]
+        return defaults.get(name)
+
+    dataset = pick("dataset", args.dataset)
+    if not dataset:
+        raise SystemExit("--dataset is required (or set it in --config)")
+    predictions_path = pick("predictions", args.predictions)
+    if not predictions_path:
+        raise SystemExit("--predictions is required (or set it in --config)")
+
+    output_report = pick("output_report", args.output_report)
+    metric = pick("metric", args.metric)
+    det_score_key = pick("det_score_key", args.det_score_key)
+    template_score_key = pick("template_score_key", args.template_score_key)
+    sigma_z_key = pick("sigma_z_key", args.sigma_z_key)
+    sigma_rot_key = pick("sigma_rot_key", args.sigma_rot_key)
+    preserve_det_score_key = pick("preserve_det_score_key", args.preserve_det_score_key)
+
+    template_gate = pick("template_gate", args.template_gate)
+    tau = float(pick("tau", args.tau))
+
+    grid_det = _as_float_list(pick("grid_det", args.grid_det)) or [1.0]
+    grid_tmp = _as_float_list(pick("grid_tmp", args.grid_tmp)) or [0.0]
+    grid_unc = _as_float_list(pick("grid_unc", args.grid_unc)) or [0.0]
+    grid_tau = _as_float_list(pick("grid_tau", args.grid_tau))
+    if grid_tau is None:
+        grid_tau = [tau]
+
+    max_images = pick("max_images", args.max_images)
+    min_score = pick("min_score", args.min_score)
+    topk_per_image = pick("topk_per_image", args.topk_per_image)
+    wrap_output = bool(pick("wrap_output", args.wrap_output))
+
+    manifest = build_manifest(dataset, split=pick("split", args.split))
+    records = manifest["images"]
+    if max_images is not None:
+        records = records[: max(0, int(max_images))]
+
+    allowed_keys = _allowed_image_keys(records)
+    base_entries = load_predictions_entries(predictions_path)
+    base_entries = _filter_entries(base_entries, allowed_keys)
+
+    thresholds = _iou_thresholds(str(metric))
+    baseline = evaluate_map(records, base_entries, iou_thresholds=thresholds)
+
+    results: list[dict[str, Any]] = []
+    best: dict[str, Any] | None = None
+    best_value = float("-inf")
+
+    for w_det, w_tmp, w_unc, tau_i in product(grid_det, grid_tmp, grid_unc, grid_tau):
+        fused = fuse_detection_scores(
+            base_entries,
+            weights={"det": float(w_det), "tmp": float(w_tmp), "unc": float(w_unc)},
+            det_score_key=str(det_score_key),
+            template_score_key=str(template_score_key),
+            sigma_z_key=str(sigma_z_key),
+            sigma_rot_key=str(sigma_rot_key),
+            preserve_det_score_key=None if preserve_det_score_key in (None, "") else str(preserve_det_score_key),
+            template_gate_enabled=bool(template_gate),
+            template_gate_tau=float(tau_i),
+            min_score=None if min_score is None else float(min_score),
+            topk_per_image=None if topk_per_image is None else int(topk_per_image),
+        )
+
+        scores = evaluate_map(records, fused.entries, iou_thresholds=thresholds)
+        row = {
+            "det": float(w_det),
+            "tmp": float(w_tmp),
+            "unc": float(w_unc),
+            "tau": float(tau_i),
+            "map50": float(scores.map50),
+            "map50_95": float(scores.map50_95),
+            "warnings": fused.warnings[:50],
+        }
+        results.append(row)
+
+        value = float(scores.map50_95 if str(metric) == "map50_95" else scores.map50)
+        if value > best_value:
+            best_value = value
+            best = row
+
+    results.sort(key=lambda r: float(r.get(str(metric), 0.0)), reverse=True)
+
+    best_weights = None
+    if best is not None:
+        best_weights = {"det": best["det"], "tmp": best["tmp"], "unc": best["unc"]}
+
+    metrics = {
+        "baseline": {"map50": float(baseline.map50), "map50_95": float(baseline.map50_95)},
+        "best": best,
+        "grid_size": len(results),
+    }
+    meta = {
+        "run_id": _now_utc().replace(":", "-"),
+        "git_head": _git_head(),
+        "dataset": str(dataset),
+        "split": manifest.get("split"),
+        "max_images": None if max_images is None else int(max_images),
+        "predictions": str(predictions_path),
+        "metric": str(metric),
+        "iou_thresholds": thresholds,
+        "keys": {
+            "det_score": str(det_score_key),
+            "template_score": str(template_score_key),
+            "sigma_z": str(sigma_z_key),
+            "sigma_rot": str(sigma_rot_key),
+            "preserve_det_score": preserve_det_score_key,
+        },
+        "template_gate": {"enabled": bool(template_gate), "tau_grid": grid_tau, "tau": float(tau)},
+        "weights_grid": {"det": grid_det, "tmp": grid_tmp, "unc": grid_unc},
+        "min_score": min_score,
+        "topk_per_image": topk_per_image,
+        "platform": {
+            "system": platform.system(),
+            "release": platform.release(),
+            "version": platform.version(),
+            "machine": platform.machine(),
+            "processor": platform.processor(),
+        },
+        "python": sys.version,
+    }
+    report = build_report(metrics={"tuning": metrics, "results": results}, meta=meta)
+    report_path = Path(output_report)
+    if not report_path.is_absolute():
+        report_path = repo_root / report_path
+    write_json(report_path, report)
+    print(report_path)
+
+    output_predictions = pick("output_predictions", args.output_predictions)
+    if output_predictions and best_weights is not None:
+        tuned = fuse_detection_scores(
+            base_entries,
+            weights=best_weights,
+            det_score_key=str(det_score_key),
+            template_score_key=str(template_score_key),
+            sigma_z_key=str(sigma_z_key),
+            sigma_rot_key=str(sigma_rot_key),
+            preserve_det_score_key=None if preserve_det_score_key in (None, "") else str(preserve_det_score_key),
+            template_gate_enabled=bool(template_gate),
+            template_gate_tau=float(best.get("tau", tau) if best else tau),
+            min_score=None if min_score is None else float(min_score),
+            topk_per_image=None if topk_per_image is None else int(topk_per_image),
+        )
+
+        payload: Any = tuned.entries
+        if wrap_output:
+            payload = {"predictions": tuned.entries, "meta": {"best": best, "best_weights": best_weights, "source": meta}}
+        out_path = Path(output_predictions)
+        if not out_path.is_absolute():
+            out_path = repo_root / out_path
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(json.dumps(payload, indent=2, sort_keys=True))
+        print(out_path)
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+

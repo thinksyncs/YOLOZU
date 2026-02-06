@@ -3,9 +3,11 @@ try:
     from torch import nn
     from torch.nn import functional as F
 except ImportError:  # pragma: no cover
+    from types import SimpleNamespace
+
     torch = None
-    nn = None
-    F = None
+    nn = SimpleNamespace(Module=object)
+    F = SimpleNamespace()
 
 from .model import rot6d_to_matrix
 from .geometry import corrected_intrinsics, recover_translation
@@ -94,6 +96,8 @@ def upright_loss(rot6d_pred, roll_range, pitch_range):
 class Losses(nn.Module):
     def __init__(self, weights=None, *, task_aligner: str = "none"):
         super().__init__()
+        if torch is None:  # pragma: no cover
+            raise RuntimeError("torch is required for Losses")
         self.task_aligner = str(task_aligner)
         self.weights = {
             "cls": 1.0,

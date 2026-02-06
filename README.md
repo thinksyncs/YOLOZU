@@ -8,6 +8,29 @@ Real-time monocular RGB pipeline for object detection, depth, and 6DoF pose esti
 
 ---
 
+## Pros / Cons (project-level)
+
+### Pros
+- Apache-2.0-only utilities and evaluation harnesses (no vendored GPL/AGPL inference code).
+- CPU-first development workflow: dataset tooling, validators, scenario suite, and unit tests run without a GPU.
+- Adapter interface decouples inference backend from evaluation (PyTorch/ONNXRuntime/TensorRT/custom), so you can
+  run inference elsewhere and still score/compare locally.
+- Reproducible artifacts: stable JSON reports + optional JSONL history for regressions.
+- Symmetry + commonsense constraints are treated as first-class, test-covered utilities (not ad-hoc postprocess).
+
+### Cons / Limitations
+- Not a turnkey training repo: the in-repo `rtdetr_pose/` model is scaffolding to wire data/losses/metrics/export.
+  It is not expected to be competitive without significant upgrades.
+- No “one command” real-time inference app is shipped here. The intended flow is:
+  bring-your-own inference backend → export predictions JSON → run evaluation/scenarios in this repo.
+- TensorRT development is **not** macOS-friendly: engine build/export steps assume an NVIDIA stack (typically Linux).
+  On macOS you can still do CPU-side validation and keep GPU steps for Runpod/remote.
+- Backend parity is fragile: preprocessing (letterbox/RGB order), output layouts, and score calibration can dominate
+  mAP/FPS differences more than the model itself if they drift.
+- Some tools intentionally use lightweight metrics (e.g. `yolozu.simple_map`) to avoid heavy deps; full COCOeval
+  requires optional dependencies and the proper COCO layout.
+- Large model weights/datasets are intentionally kept out of git; you need external storage and reproducible pointers.
+
 ## Copy-light: toppymicroservices
 
 Use these as lightweight landing-page/app-store/one-pager blurbs (edit freely).
@@ -78,6 +101,11 @@ Run a configurable sweep and emit CSV/MD tables:
 
 Report latency/FPS per YOLO26 bucket and archive runs over time:
 - `docs/benchmark_latency.md`
+
+## Inference-time gating / score fusion
+
+Fuse detection/template/uncertainty signals into a single score and tune weights offline (CPU-only):
+- `docs/gate_weight_tuning.md`
 
 ## TensorRT FP16/INT8 pipeline
 
