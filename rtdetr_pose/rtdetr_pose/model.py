@@ -10,6 +10,22 @@ except ImportError:  # pragma: no cover - optional dependency for scaffolding
     F = SimpleNamespace()
 
 
+# Import entropy_loss for MIM branch
+def _entropy_loss_fallback(logits):
+    """Fallback entropy loss if losses module not available."""
+    if torch is None or F is None:
+        raise RuntimeError("torch is required for entropy loss")
+    probs = F.softmax(logits, dim=-1)
+    log_probs = torch.log(torch.clamp(probs, min=1e-12))
+    return -(probs * log_probs).sum(dim=-1).mean()
+
+
+try:
+    from .losses import entropy_loss
+except ImportError:
+    entropy_loss = _entropy_loss_fallback
+
+
 def rot6d_to_matrix(x):
     if torch is None:
         raise RuntimeError("torch is required for rot6d_to_matrix")
@@ -482,10 +498,9 @@ class RTDETRPose(nn.Module):
                 "mask": mask_resized.squeeze() if mask_resized is not None else None,
             }
             
-            # Compute entropy loss on logits for geometric consistency
+            # Compute entropy loss for geometric consistency
             if "logits" in out:
-                probs = F.softmax(out["logits"], dim=-1)
-                entropy = -(probs * torch.log(torch.clamp(probs, min=1e-12))).sum(dim=-1).mean()
+                entropy = entropy_loss(out["logits"])
                 out["mim"]["entropy"] = entropy
         
         return out

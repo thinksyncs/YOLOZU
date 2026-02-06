@@ -116,7 +116,7 @@ def mim_reconstruction_loss(recon_feat, teacher_feat, mask=None):
         mask_expanded = mask.unsqueeze(0).unsqueeze(0) if mask.ndim == 2 else mask.unsqueeze(1)
         mask_expanded = mask_expanded.expand_as(diff).to(dtype=torch.bool)
         
-        if not bool(mask_expanded.any()):
+        if not mask_expanded.any():
             return diff.sum() * 0.0
         
         return diff[mask_expanded].mean()

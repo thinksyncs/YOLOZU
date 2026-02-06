@@ -154,9 +154,9 @@ def test_time_adapt(model, image, geom_input, num_steps=3, lr=1e-4):
         
         losses.append({
             "step": step,
-            "total": float(loss.item()),
-            "mim": float(loss_mim.item()),
-            "entropy": float(loss_ent.item()),
+            "total": float(loss),
+            "mim": float(loss_mim),
+            "entropy": float(loss_ent),
         })
         
         print(f"  Step {step+1}/{num_steps}: loss={loss.item():.4f} "
