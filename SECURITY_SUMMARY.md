@@ -1,7 +1,7 @@
 # Security Summary
 
 **Date**: 2026-02-06
-**PR**: Add masked reconstruction branch to inference loop with entropy loss and geometric consistency
+**PR**: Consolidate all open pull requests (MIM, Hessian solver, gradient accumulation, AMP)
 
 ## Security Scan Results
 
