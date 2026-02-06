@@ -11,6 +11,7 @@ This folder contains a minimal PyTorch/TensorRT-oriented scaffolding for the RT-
 - Install deps: `python3 -m pip install -r requirements-test.txt`
 - Fetch coco128 (once, from repo root): `bash tools/fetch_coco128.sh`
 - Run: `python3 tools/train_minimal.py --epochs 1 --batch-size 2 --max-steps 30`
+- Continual FT (SDFT-inspired): add a frozen teacher checkpoint via `--self-distill-from <ckpt>` (defaults: keys=logits,bbox; logits uses reverse-KL).
 
 Optional full-GT consumption (mask/depth)
 - Derive `z` (and `t` if `K_gt` exists) from per-instance `D_obj` at bbox center: `python3 tools/train_minimal.py --use-matcher --z-from-dobj`

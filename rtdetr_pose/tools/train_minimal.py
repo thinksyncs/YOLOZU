@@ -27,6 +27,7 @@ from rtdetr_pose.model import RTDETRPose
 from yolozu.metrics_report import append_jsonl, build_report, write_csv_row, write_json
 from yolozu.jitter import default_jitter_profile, sample_intrinsics_jitter, sample_extrinsics_jitter
 from yolozu.run_record import build_run_record
+from yolozu.sdft import SdftConfig, compute_sdft_loss
 
 
 def load_config_file(path: str | Path) -> dict[str, Any]:
@@ -259,6 +260,55 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--metrics-jsonl", default=None, help="Append per-step loss/metric report JSONL here.")
     parser.add_argument("--metrics-json", default=None, help="Write final run summary JSON here.")
     parser.add_argument("--metrics-csv", default=None, help="Write final run summary CSV (single row) here.")
+
+    # Continual learning / self-distillation (SDFT-inspired)
+    parser.add_argument(
+        "--self-distill-from",
+        default=None,
+        help="Optional teacher checkpoint to distill against (to reduce catastrophic forgetting).",
+    )
+    parser.add_argument(
+        "--self-distill-weight",
+        type=float,
+        default=1.0,
+        help="Global multiplier for self-distillation loss (only used when --self-distill-from is set).",
+    )
+    parser.add_argument(
+        "--self-distill-temperature",
+        type=float,
+        default=1.0,
+        help="Softmax temperature for logits distillation (>=1 recommended).",
+    )
+    parser.add_argument(
+        "--self-distill-kl",
+        choices=("forward", "reverse", "sym"),
+        default="reverse",
+        help="KL direction for logits distillation (default: reverse, SDFT-style).",
+    )
+    parser.add_argument(
+        "--self-distill-keys",
+        type=str,
+        default="logits,bbox",
+        help="Comma-separated model output keys to distill (default: logits,bbox).",
+    )
+    parser.add_argument(
+        "--self-distill-logits-weight",
+        type=float,
+        default=1.0,
+        help="Per-key weight for logits distillation term.",
+    )
+    parser.add_argument(
+        "--self-distill-bbox-weight",
+        type=float,
+        default=1.0,
+        help="Per-key weight for bbox distillation term (compared in sigmoid space).",
+    )
+    parser.add_argument(
+        "--self-distill-other-l1-weight",
+        type=float,
+        default=1.0,
+        help="Per-key L1 weight for any other distilled tensor outputs.",
+    )
 
     # Checkpointing / resume
     parser.add_argument("--resume-from", default=None, help="Resume weights or full checkpoint bundle from this path.")
@@ -1125,6 +1175,46 @@ def main(argv: list[str] | None = None) -> int:
                 global_step = 0
         print(f"resumed_from={meta.get('path')} start_epoch={start_epoch} global_step={global_step}")
 
+    sdft_cfg = None
+    teacher_model = None
+    if args.self_distill_from:
+        # Build a frozen teacher with identical architecture/config.
+        if model_cfg is not None:
+            teacher_model = build_model(model_cfg)
+        else:
+            teacher_model = RTDETRPose(
+                num_classes=args.num_classes,
+                hidden_dim=args.hidden_dim,
+                num_queries=model_num_queries,
+                num_decoder_layers=2,
+                nhead=4,
+                use_uncertainty=bool(args.use_uncertainty),
+            )
+        load_checkpoint_into(teacher_model, None, args.self_distill_from)
+        teacher_model.to(device)
+        teacher_model.eval()
+        for param in teacher_model.parameters():
+            param.requires_grad_(False)
+
+        keys = tuple(k.strip() for k in str(args.self_distill_keys).split(",") if k.strip())
+        sdft_cfg = SdftConfig(
+            weight=float(args.self_distill_weight),
+            temperature=float(args.self_distill_temperature),
+            kl=str(args.self_distill_kl),
+            keys=keys,
+            logits_weight=float(args.self_distill_logits_weight),
+            bbox_weight=float(args.self_distill_bbox_weight),
+            other_l1_weight=float(args.self_distill_other_l1_weight),
+        )
+        print(
+            "self_distill",
+            f"from={args.self_distill_from}",
+            f"keys={','.join(keys) if keys else '(none)'}",
+            f"kl={sdft_cfg.kl}",
+            f"temp={sdft_cfg.temperature}",
+            f"weight={sdft_cfg.weight}",
+        )
+
     model.train()
     last_loss_dict = None
     last_epoch_avg = None
@@ -1142,6 +1232,24 @@ def main(argv: list[str] | None = None) -> int:
             images = images.to(device)
 
             out = model(images)
+
+            sdft_total = None
+            sdft_parts = None
+            if teacher_model is not None and sdft_cfg is not None and float(sdft_cfg.weight) != 0.0:
+                with torch.no_grad():
+                    teacher_out = teacher_model(images)
+                student_out_sdft = out
+                teacher_out_sdft = teacher_out
+                if (
+                    "bbox" in sdft_cfg.keys
+                    and isinstance(out.get("bbox"), torch.Tensor)
+                    and isinstance(teacher_out.get("bbox"), torch.Tensor)
+                ):
+                    student_out_sdft = dict(out)
+                    teacher_out_sdft = dict(teacher_out)
+                    student_out_sdft["bbox"] = out["bbox"].sigmoid()
+                    teacher_out_sdft["bbox"] = teacher_out["bbox"].sigmoid()
+                sdft_total, sdft_parts = compute_sdft_loss(student_out_sdft, teacher_out_sdft, sdft_cfg)
 
             if args.use_matcher:
                 per_sample = targets.get("per_sample") if isinstance(targets, dict) else targets
@@ -1190,6 +1298,13 @@ def main(argv: list[str] | None = None) -> int:
 
             loss_dict = losses_fn(out, targets)
             loss = loss_dict["loss"]
+            if sdft_total is not None and sdft_parts is not None:
+                loss_supervised = loss
+                loss_dict = dict(loss_dict)
+                loss_dict["loss_supervised"] = loss_supervised
+                loss_dict.update(sdft_parts)
+                loss = loss_supervised + float(sdft_cfg.weight) * sdft_total
+                loss_dict["loss"] = loss
             last_loss_dict = loss_dict
 
             if steps == 0 and args.debug_losses:
