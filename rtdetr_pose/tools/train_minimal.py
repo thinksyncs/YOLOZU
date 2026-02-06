@@ -2063,27 +2063,33 @@ def main(argv: list[str] | None = None) -> int:
             if lr_scheduler is not None:
                 # Get LR from scheduler
                 lr_now = lr_scheduler.get_last_lr()[0] if hasattr(lr_scheduler, "get_last_lr") else optim.param_groups[0]["lr"]
-            elif args.lr_warmup_steps and int(args.lr_warmup_steps) > 0:
-                # Legacy warmup logic
-                lr_now = compute_warmup_lr(
-                    float(args.lr),
-                    int(global_step),
-                    int(args.lr_warmup_steps),
-                    float(args.lr_warmup_init),
-                )
-                for group in optim.param_groups:
-                    group["lr"] = lr_now
             else:
-                # Legacy schedule logic (linear)
-                lr_now = compute_schedule_lr(
-                    base_lr=float(args.lr),
-                    min_lr=float(args.min_lr),
-                    step=int(global_step),
-                    total_steps=int(total_steps_est),
-                    schedule=str(args.scheduler),
-                )
-                for group in optim.param_groups:
-                    group["lr"] = lr_now
+                # Legacy schedule logic - only update at accumulation boundaries to match factory scheduler behavior
+                if (steps + 1) % accum_steps == 0:
+                    if args.lr_warmup_steps and int(args.lr_warmup_steps) > 0:
+                        # Legacy warmup logic
+                        lr_now = compute_warmup_lr(
+                            float(args.lr),
+                            int(global_step),
+                            int(args.lr_warmup_steps),
+                            float(args.lr_warmup_init),
+                        )
+                        for group in optim.param_groups:
+                            group["lr"] = lr_now
+                    else:
+                        # Legacy schedule logic (linear)
+                        lr_now = compute_schedule_lr(
+                            base_lr=float(args.lr),
+                            min_lr=float(args.min_lr),
+                            step=int(global_step),
+                            total_steps=int(total_steps_est),
+                            schedule=str(args.scheduler),
+                        )
+                        for group in optim.param_groups:
+                            group["lr"] = lr_now
+                else:
+                    # Not at accumulation boundary, just read current LR
+                    lr_now = optim.param_groups[0]["lr"]
 
             running += float(loss_for_logging)
             steps += 1

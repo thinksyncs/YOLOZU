@@ -47,16 +47,20 @@ class LinearWarmupWrapper(_LRScheduler):
         self.warmup_steps = warmup_steps
         self.warmup_init_lr = warmup_init_lr
         self.after_scheduler = after_scheduler
-        self._step_count = 0
         super().__init__(optimizer, last_epoch)
 
     def get_lr(self):
-        """Compute learning rate for current step."""
-        if self._step_count < self.warmup_steps:
+        """Compute learning rate for current step.
+        
+        Note: last_epoch starts at -1; after the first step() call it becomes 0.
+        """
+        # Use last_epoch directly as the 0-indexed step number
+        current_step = self.last_epoch
+        if current_step < self.warmup_steps:
             # Linear warmup
             if self.warmup_steps <= 0:
                 return [group["lr"] for group in self.optimizer.param_groups]
-            alpha = self._step_count / self.warmup_steps
+            alpha = current_step / self.warmup_steps
             return [self.warmup_init_lr + (base_lr - self.warmup_init_lr) * alpha for base_lr in self.base_lrs]
         else:
             # After warmup, use the wrapped scheduler if available
@@ -67,10 +71,23 @@ class LinearWarmupWrapper(_LRScheduler):
 
     def step(self, epoch=None):
         """Step the scheduler."""
-        self._step_count += 1
-        if self._step_count > self.warmup_steps and self.after_scheduler is not None:
+        # Check if we're past warmup using last_epoch (before increment)
+        if self.last_epoch >= self.warmup_steps and self.after_scheduler is not None:
             self.after_scheduler.step(epoch)
         super().step(epoch)
+    
+    def state_dict(self):
+        """Return state dict including wrapped scheduler state."""
+        state = super().state_dict()
+        if self.after_scheduler is not None:
+            state['after_scheduler'] = self.after_scheduler.state_dict()
+        return state
+    
+    def load_state_dict(self, state_dict):
+        """Load state dict including wrapped scheduler state."""
+        if 'after_scheduler' in state_dict and self.after_scheduler is not None:
+            self.after_scheduler.load_state_dict(state_dict.pop('after_scheduler'))
+        super().load_state_dict(state_dict)
 
 
 def build_scheduler(
@@ -123,6 +140,8 @@ def build_scheduler(
 
     elif scheduler == "onecycle":
         # OneCycleLR: ramps up to max_lr then down
+        # Adjust total_steps to account for warmup since OneCycleLR runs after warmup
+        onecycle_steps = max(1, total_steps - warmup_steps)
         max_lr = kwargs.get("max_lr")
         if max_lr is None:
             # Use the base lr from optimizer as max_lr
@@ -131,7 +150,7 @@ def build_scheduler(
         main_scheduler = torch.optim.lr_scheduler.OneCycleLR(
             optimizer,
             max_lr=max_lr,
-            total_steps=total_steps,
+            total_steps=onecycle_steps,
             pct_start=kwargs.get("pct_start", 0.3),
             anneal_strategy=kwargs.get("anneal_strategy", "cos"),
             **{k: v for k, v in kwargs.items() if k not in ["max_lr", "pct_start", "anneal_strategy"]},
@@ -139,6 +158,9 @@ def build_scheduler(
 
     elif scheduler == "multistep":
         # MultiStepLR: decay at specific milestones
+        # Note: When used with warmup, milestones are relative to the wrapped scheduler's
+        # step counter, not global training steps. E.g., with warmup_steps=500 and
+        # milestones=[1000, 2000], LR will decay at global steps 1500 and 2500.
         if milestones is None:
             milestones = []
         main_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=milestones, gamma=gamma, **kwargs)
@@ -189,7 +211,17 @@ class EMA:
                 self.shadow[name] = self.decay * self.shadow[name] + (1.0 - self.decay) * param.data
 
     def apply_shadow(self):
-        """Apply shadow weights to model (for evaluation)."""
+        """Apply shadow weights to model (for evaluation).
+        
+        Raises:
+            RuntimeError: If shadow weights are already applied (backup is not empty).
+                         Call restore() first before calling apply_shadow() again.
+        """
+        if self.backup:
+            raise RuntimeError(
+                "Cannot apply shadow weights: shadow weights are already active. "
+                "Call restore() to revert to training weights before calling apply_shadow() again."
+            )
         for name, param in self.model.named_parameters():
             if param.requires_grad and name in self.shadow:
                 self.backup[name] = param.data.clone()
