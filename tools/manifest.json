@@ -24,6 +24,20 @@
       "summary": "Report payload emitted by tools/eval_suite.py (suite over prediction JSONs).",
       "schema": "docs/schemas/eval_suite_report.schema.json",
       "producer": "python3 tools/eval_suite.py"
+    },
+    "seg_dataset_json": {
+      "summary": "Segmentation dataset.json descriptor produced by tools/prepare_*_seg.py.",
+      "schema": "docs/schemas/seg_dataset.schema.json"
+    },
+    "segmentation_predictions_json": {
+      "summary": "Segmentation predictions JSON (list of {id,mask} or {predictions:[...],meta:{...}}).",
+      "schema": "docs/schemas/segmentation_predictions.schema.json",
+      "validator": "python3 tools/validate_segmentation_predictions.py <path>"
+    },
+    "seg_eval_report_json": {
+      "summary": "Segmentation eval report payload emitted by tools/eval_segmentation.py.",
+      "schema": "docs/schemas/seg_eval_report.schema.json",
+      "producer": "python3 tools/eval_segmentation.py"
     }
   },
   "tools": [
@@ -210,6 +224,23 @@
       ]
     },
     {
+      "id": "validate_segmentation_predictions",
+      "entrypoint": "tools/validate_segmentation_predictions.py",
+      "runner": "python3",
+      "summary": "Validate YOLOZU segmentation predictions JSON (id→mask path mapping; meta optional).",
+      "tags": ["segmentation", "predictions", "validation"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "contracts": { "consumes": ["segmentation_predictions_json"] },
+      "inputs": [{ "name": "predictions", "kind": "file", "required": true, "description": "Segmentation predictions JSON path." }],
+      "outputs": [{ "name": "stdout", "kind": "stdout", "description": "OK/WARN lines." }],
+      "examples": [
+        {
+          "description": "Validate a segmentation predictions artifact.",
+          "command": "python3 tools/validate_segmentation_predictions.py reports/seg_predictions.json"
+        }
+      ]
+    },
+    {
       "id": "normalize_predictions",
       "entrypoint": "tools/normalize_predictions.py",
       "runner": "python3",
@@ -227,6 +258,30 @@
         {
           "description": "Remap COCO category_id -> contiguous class_id and wrap output.",
           "command": "python3 tools/normalize_predictions.py --input reports/predictions.json --output reports/predictions_norm.json --classes data/coco-yolo/labels/val2017/classes.json --wrap"
+        }
+      ]
+    },
+    {
+      "id": "eval_segmentation",
+      "entrypoint": "tools/eval_segmentation.py",
+      "runner": "python3",
+      "summary": "Evaluate semantic segmentation predictions (mIoU / per-class IoU) with ignore_index support and optional HTML/overlays.",
+      "tags": ["eval", "segmentation"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "contracts": {
+        "consumes": ["seg_dataset_json", "segmentation_predictions_json"],
+        "produces": ["seg_eval_report_json"]
+      },
+      "inputs": [
+        { "name": "dataset_json", "kind": "file", "required": true, "flag": "--dataset-json" },
+        { "name": "predictions", "kind": "file", "required": true, "flag": "--predictions" },
+        { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/seg_eval.json" }
+      ],
+      "outputs": [{ "name": "seg_eval_json", "kind": "file", "default": "reports/seg_eval.json" }],
+      "examples": [
+        {
+          "description": "Evaluate segmentation predictions and write a JSON report.",
+          "command": "python3 tools/eval_segmentation.py --dataset-json data/cityscapes_seg/dataset.json --predictions reports/seg_predictions.json --output reports/seg_eval.json"
         }
       ]
     },
