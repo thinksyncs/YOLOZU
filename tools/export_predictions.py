@@ -88,8 +88,8 @@ def _parse_args(argv):
     parser.add_argument(
         "--lora-freeze-base",
         action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Freeze base weights and train LoRA params only (default: true).",
+        default=False,
+        help="Freeze base weights and train LoRA params only (default: false).",
     )
     parser.add_argument(
         "--lora-train-bias",
