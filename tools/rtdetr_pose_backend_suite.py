@@ -246,13 +246,13 @@ def _load_cuda_backend() -> _CudaBackend:
     except Exception:
         pass
     try:
-        from cuda import cudart  # type: ignore
+        from cuda.bindings import runtime as cudart  # type: ignore
 
         return _CudaBackend("cuda", cudart)
     except Exception:
         pass
     try:
-        from cuda.bindings import runtime as cudart  # type: ignore
+        from cuda import cudart  # type: ignore
 
         return _CudaBackend("cuda", cudart)
     except Exception:
@@ -266,12 +266,33 @@ class _TrtRunner:
     trt: Any
     backend: _CudaBackend
     input_name: str
+    mode: str  # "v2" (bindings) or "v3" (tensor addresses)
+    io_names: list[str]
+    output_names: list[str]
+
     bindings: list[int]
+    binding_indices: dict[str, int]
+
     device_buffers: dict[str, object]
     host_buffers: dict[str, np.ndarray]
     last_shapes: dict[str, tuple[int, ...]]
     stream: Any
-    binding_indices: dict[str, int]
+
+    @staticmethod
+    def _cuda_error_code(result: object) -> int:
+        if isinstance(result, tuple):
+            if not result:
+                return 1
+            result = result[0]
+        try:
+            return int(result)  # enum/int
+        except Exception:
+            return 1
+
+    def _cuda_check(self, result: object, *, op: str) -> None:
+        code = self._cuda_error_code(result)
+        if code != 0:
+            raise RuntimeError(f"{op} failed (error {code})")
 
     @classmethod
     def create(cls, *, engine_path: Path, input_name: str):
@@ -292,7 +313,12 @@ class _TrtRunner:
             raise RuntimeError("failed to create TensorRT execution context")
 
         backend = _load_cuda_backend()
-        bindings = [0] * engine.num_bindings
+        mode = "v2"
+        io_names: list[str] = []
+        output_names: list[str] = []
+
+        bindings: list[int] = []
+        binding_indices: dict[str, int] = {}
         device_buffers: dict[str, object] = {}
         host_buffers: dict[str, np.ndarray] = {}
         last_shapes: dict[str, tuple[int, ...]] = {}
@@ -300,11 +326,26 @@ class _TrtRunner:
         if backend.name == "pycuda":
             stream = backend.module.Stream()
         else:
-            _, stream = backend.module.cudaStreamCreate()
+            err, stream = backend.module.cudaStreamCreate()
+            if cls._cuda_error_code(err) != 0:
+                raise RuntimeError(f"cudaStreamCreate failed (error {int(err)})")
 
-        binding_indices = {engine.get_binding_name(i): i for i in range(engine.num_bindings)}
-        if str(input_name) not in binding_indices:
-            raise ValueError(f"input binding not found: {input_name}")
+        # TensorRT 10+ uses the v3 API (tensor addresses); older versions use bindings/v2.
+        if hasattr(context, "execute_async_v3") and hasattr(engine, "num_io_tensors") and hasattr(engine, "get_tensor_name"):
+            mode = "v3"
+            io_names = [str(engine.get_tensor_name(i)) for i in range(int(engine.num_io_tensors))]
+            input_names = [n for n in io_names if engine.get_tensor_mode(n) == trt.TensorIOMode.INPUT]
+            output_names = [n for n in io_names if engine.get_tensor_mode(n) == trt.TensorIOMode.OUTPUT]
+            if str(input_name) not in input_names:
+                raise ValueError(f"input tensor not found: {input_name} (available: {input_names})")
+        else:
+            mode = "v2"
+            bindings = [0] * int(engine.num_bindings)
+            io_names = [str(engine.get_binding_name(i)) for i in range(int(engine.num_bindings))]
+            output_names = [str(engine.get_binding_name(i)) for i in range(int(engine.num_bindings)) if not engine.binding_is_input(i)]
+            binding_indices = {str(engine.get_binding_name(i)): i for i in range(int(engine.num_bindings))}
+            if str(input_name) not in binding_indices:
+                raise ValueError(f"input binding not found: {input_name}")
 
         return cls(
             engine=engine,
@@ -312,12 +353,15 @@ class _TrtRunner:
             trt=trt,
             backend=backend,
             input_name=str(input_name),
+            mode=mode,
+            io_names=io_names,
+            output_names=output_names,
             bindings=bindings,
+            binding_indices=binding_indices,
             device_buffers=device_buffers,
             host_buffers=host_buffers,
             last_shapes=last_shapes,
             stream=stream,
-            binding_indices=binding_indices,
         )
 
     def _alloc(self, name: str, shape: tuple[int, ...], dtype):
@@ -328,17 +372,32 @@ class _TrtRunner:
             device = self.backend.module.mem_alloc(nbytes)
         else:
             err, device = self.backend.module.cudaMalloc(nbytes)
-            if err != 0:
-                raise RuntimeError(f"cudaMalloc failed for {name} (error {err})")
+            self._cuda_check(err, op=f"cudaMalloc({name})")
         self.host_buffers[name] = host
         self.device_buffers[name] = device
         self.last_shapes[name] = shape
 
     def _ensure_buffers(self, input_shape: tuple[int, ...]):
+        if self.mode == "v3":
+            self.context.set_input_shape(self.input_name, input_shape)
+            for name in self.io_names:
+                mode = self.engine.get_tensor_mode(name)
+                if mode == self.trt.TensorIOMode.INPUT and name == self.input_name:
+                    shape = tuple(input_shape)
+                else:
+                    shape = tuple(self.context.get_tensor_shape(name))
+                if any(dim <= 0 for dim in shape):
+                    raise RuntimeError(f"tensor shape unresolved for {name}: {shape}")
+                dtype = self.trt.nptype(self.engine.get_tensor_dtype(name))
+                if name not in self.last_shapes or self.last_shapes[name] != shape:
+                    self._alloc(name, shape, dtype)
+                self.context.set_tensor_address(name, int(self.device_buffers[name]))
+            return
+
         input_idx = self.binding_indices[self.input_name]
         self.context.set_binding_shape(input_idx, input_shape)
-        for i in range(self.engine.num_bindings):
-            name = self.engine.get_binding_name(i)
+        for i in range(int(self.engine.num_bindings)):
+            name = str(self.engine.get_binding_name(i))
             shape = tuple(self.context.get_binding_shape(i))
             if any(dim <= 0 for dim in shape):
                 raise RuntimeError(f"binding shape unresolved for {name}: {shape}")
@@ -350,8 +409,11 @@ class _TrtRunner:
     def infer(self, x: np.ndarray) -> dict[str, np.ndarray]:
         input_shape = tuple(x.shape)
         self._ensure_buffers(input_shape)
-        input_idx = self.binding_indices[self.input_name]
-        input_dtype = self.trt.nptype(self.engine.get_binding_dtype(input_idx))
+        if self.mode == "v3":
+            input_dtype = self.trt.nptype(self.engine.get_tensor_dtype(self.input_name))
+        else:
+            input_idx = self.binding_indices[self.input_name]
+            input_dtype = self.trt.nptype(self.engine.get_binding_dtype(input_idx))
         input_tensor = x.astype(input_dtype, copy=False)
 
         host_input = self.host_buffers[self.input_name]
@@ -359,17 +421,17 @@ class _TrtRunner:
 
         if self.backend.name == "pycuda":
             self.backend.module.memcpy_htod_async(self.device_buffers[self.input_name], host_input, self.stream)
-            self.context.execute_async_v2(bindings=self.bindings, stream_handle=self.stream.handle)
-            output_names = []
-            for i in range(self.engine.num_bindings):
-                if self.engine.binding_is_input(i):
-                    continue
-                name = self.engine.get_binding_name(i)
-                output_names.append(name)
+            if self.mode == "v3":
+                ok = self.context.execute_async_v3(stream_handle=self.stream.handle)
+            else:
+                ok = self.context.execute_async_v2(bindings=self.bindings, stream_handle=self.stream.handle)
+            if not ok:
+                raise RuntimeError("TensorRT execution failed")
+            for name in self.output_names:
                 host = self.host_buffers[name]
                 self.backend.module.memcpy_dtoh_async(host, self.device_buffers[name], self.stream)
             self.stream.synchronize()
-            return {name: self.host_buffers[name].reshape(self.last_shapes[name]).copy() for name in output_names}
+            return {name: self.host_buffers[name].reshape(self.last_shapes[name]).copy() for name in self.output_names}
 
         err = self.backend.module.cudaMemcpyAsync(
             self.device_buffers[self.input_name],
@@ -378,19 +440,16 @@ class _TrtRunner:
             self.backend.module.cudaMemcpyKind.cudaMemcpyHostToDevice,
             self.stream,
         )
-        if err != 0:
-            raise RuntimeError(f"cudaMemcpy H2D failed (error {err})")
+        self._cuda_check(err, op="cudaMemcpyAsync H2D")
 
-        ok = self.context.execute_async_v2(bindings=self.bindings, stream_handle=self.stream)
+        if self.mode == "v3":
+            ok = self.context.execute_async_v3(stream_handle=self.stream)
+        else:
+            ok = self.context.execute_async_v2(bindings=self.bindings, stream_handle=self.stream)
         if not ok:
             raise RuntimeError("TensorRT execution failed")
 
-        output_names: list[str] = []
-        for i in range(self.engine.num_bindings):
-            if self.engine.binding_is_input(i):
-                continue
-            name = self.engine.get_binding_name(i)
-            output_names.append(name)
+        for name in self.output_names:
             host = self.host_buffers[name]
             err = self.backend.module.cudaMemcpyAsync(
                 host,
@@ -399,14 +458,12 @@ class _TrtRunner:
                 self.backend.module.cudaMemcpyKind.cudaMemcpyDeviceToHost,
                 self.stream,
             )
-            if err != 0:
-                raise RuntimeError(f"cudaMemcpy D2H failed for {name} (error {err})")
+            self._cuda_check(err, op=f"cudaMemcpyAsync D2H({name})")
 
         err = self.backend.module.cudaStreamSynchronize(self.stream)
-        if err != 0:
-            raise RuntimeError(f"cudaStreamSynchronize failed (error {err})")
+        self._cuda_check(err, op="cudaStreamSynchronize")
 
-        return {name: self.host_buffers[name].reshape(self.last_shapes[name]).copy() for name in output_names}
+        return {name: self.host_buffers[name].reshape(self.last_shapes[name]).copy() for name in self.output_names}
 
 
 def _maybe_torch_cuda_sync() -> None:
