@@ -2,27 +2,40 @@
 
 Pronunciation: Yaoyorozu (yorozu). Official ASCII name: YOLOZU.
 
-YOLOZU is a lightweight evaluation + scaffolding repo for **real-time monocular RGB** detection + depth + 6DoF pose (RT-DETR-based).
+YOLOZU is an Apache-2.0-only, **contract-first evaluation + tooling harness** for:
+- real-time monocular RGB **detection**
+- monocular **depth + 6DoF pose** heads (RT-DETR-based scaffold)
+- **semantic segmentation** utilities (dataset prep + mIoU evaluation)
 
 Recommended deployment path (canonical): PyTorch → ONNX → TensorRT (TRT).
 
 It focuses on:
 - CPU-minimum dev/tests (GPU optional)
-- A versioned predictions-JSON contract for evaluation
-- Minimal training scaffold (RT-DETR pose) with useful defaults (metrics, progress, export)
+- A stable predictions-JSON contract for evaluation (bring-your-own inference backend)
+- Minimal training scaffold (RT-DETR pose) with reproducible artifacts
 - Hessian-based refinement for regression head predictions (depth, rotation, offsets)
+
+## Why YOLOZU (what’s “sellable”)
+
+- **Backend-agnostic evaluation**: run inference in PyTorch / ONNXRuntime / TensorRT / C++ / Rust → export the same `predictions.json` → compare apples-to-apples.
+- **Unified CLI**: `python3 tools/yolozu.py` wraps backends with consistent args, caching (`--cache`), and always writes run metadata (git SHA / env / GPU / config hash).
+- **Parity + benchmarks**: backend diff stats (torch vs onnxrt vs trt) and fixed-protocol latency/FPS reports.
+- **Safe test-time adaptation hooks**: TTA (prediction-space) + TTT (Tent / MIM) with guard rails (non-finite/loss/update-norm stops, reset policies).
+- **AI-friendly repo surface**: stable schemas + `tools/manifest.json` for tool discovery / automation.
 
 ## Feature highlights (what you can do)
 
 - Dataset I/O: YOLO-format images/labels + optional per-image JSON metadata.
 - Stable evaluation contract: versioned predictions-JSON schema + adapter contract.
-- Inference/export: `tools/export_predictions.py` produces predictions JSON from adapters.
+- Unified CLI: `python3 tools/yolozu.py` (`doctor`, `export`, `predict-images`, `sweep`) for research/eval workflows.
+- Inference/export: `tools/export_predictions.py` (torch adapter), `tools/export_predictions_onnxrt.py`, `tools/export_predictions_trt.py`.
 - Test-time adaptation options:
   - TTA: lightweight prediction-space post-transform (`--tta`).
   - TTT: pre-prediction test-time training (Tent or MIM) via `--ttt` (adapter + torch required).
 - Hessian solver: per-detection iterative refinement of regression outputs (depth, rotation, offsets) using Gauss-Newton optimization.
 - Evaluation: COCO mAP conversion/eval and scenario suite reporting.
-- Training scaffold: minimal RT-DETR pose trainer with metrics output, ONNX export, and optional LoRA.
+- Semantic seg: dataset prep helpers + `tools/eval_segmentation.py` (mIoU/per-class IoU/ignore_index + optional HTML overlays).
+- Training scaffold: minimal RT-DETR pose trainer with metrics output, ONNX export, and optional SDFT-style self-distillation.
 
 ## Documentation
 
@@ -39,9 +52,9 @@ Start here: [docs/training_inference_export.md](docs/training_inference_export.m
 
 ## Roadmap (priorities)
 
-- P0: Unified CLI (`torch` / `onnxruntime` / `tensorrt`) with consistent args + same output schema; always write meta (git SHA / env / GPU / seed / config hash); keep `tools/manifest.json` updated.
-- P1: `doctor` (deps/GPU/driver/onnxrt/TRT diagnostics) + `predict-images` (folder input → predictions JSON + overlays) + HTML report.
-- P2: Cache/re-run (fingerprinted runs) + sweeps (TTT / thresholds / gate weights) + production inference cores (C++/Rust) as needed.
+- P0 (done): Unified CLI (`torch` / `onnxruntime` / `tensorrt`) with consistent args + same output schema; always write meta (git SHA / env / GPU / seed / config hash); keep `tools/manifest.json` updated.
+- P1 (done): `doctor` (deps/GPU/driver/onnxrt/TRT diagnostics) + `predict-images` (folder input → predictions JSON + overlays) + HTML report.
+- P2 (partial): cache/re-run (fingerprinted runs) + sweeps (wrapper exists; expand sweeps for TTT/threshold/gate weights) + production inference cores (C++/Rust) as needed.
 
 ## Pros / Cons (project-level)
 
@@ -86,6 +99,12 @@ bash tools/fetch_coco128.sh
 pytest -q
 ```
 
+Or:
+
+```bash
+python3 -m unittest -q
+```
+
 ### GPU notes
 - GPU is supported (training/inference): install CUDA-enabled PyTorch in your environment and use `--device cuda:0`.
 - CI/dev does not require GPU; many checks are CPU-friendly.
@@ -114,29 +133,28 @@ Templates:
 
 The minimal trainer is implemented in `rtdetr_pose/tools/train_minimal.py`.
 
-What it provides out-of-the-box:
-- Optimizers: AdamW or SGD
-- LR warmup + schedule (`none`, `linear`, `cos`)
-- Progress display (tqdm) + per-step loss logging
-- Metrics written by default:
-  - JSONL: `reports/train_metrics.jsonl`
-  - CSV: `reports/train_metrics.csv`
-- Optional TensorBoard logging: `--tensorboard-logdir reports/tb`
+Recommended usage is to set `--run-dir`, which writes a standard, reproducible artifact set:
+- `metrics.jsonl` (+ final `metrics.json` / `metrics.csv`)
+- `checkpoint.pt` (+ optional `checkpoint_bundle.pt`)
+- `model.onnx` (+ `model.onnx.meta.json`)
+- `run_record.json` (git SHA / platform / args)
 
 Plot a loss curve (requires matplotlib):
 
 ```bash
-python3 tools/plot_metrics.py --jsonl reports/train_metrics.jsonl --out reports/train_loss.png
+python3 tools/plot_metrics.py --jsonl runs/<run>/metrics.jsonl --out reports/train_loss.png
 ```
 
 ### ONNX export
 
-ONNX export runs **by default after training**.
+ONNX export runs when `--run-dir` is set (defaulting to `<run-dir>/model.onnx`) or when `--onnx-out` is provided.
 
-Control it via flags in the minimal trainer:
-- `--export-onnx` / `--no-export-onnx`
+Useful flags:
+- `--run-dir <dir>`
 - `--onnx-out <path>`
+- `--onnx-meta-out <path>`
 - `--onnx-opset <int>`
+- `--onnx-dynamic-hw` (dynamic H/W axes)
 
 ## Dataset format (YOLO + optional metadata)
 
@@ -148,7 +166,7 @@ Optional per-image metadata (JSON): `labels/<split>/<image>.json`
 - Masks/seg: `mask_path` / `mask` / `M`
 - Depth: `depth_path` / `depth` / `D_obj`
 - Pose: `R_gt` / `t_gt` (or `pose`)
-- Intrinsics: `K_gt` / `intrinsics`
+- Intrinsics: `K_gt` / `intrinsics` (also supports OpenCV FileStorage-style `camera_matrix: {rows, cols, data:[...]}`)
 
 Notes on units (pixels vs mm/m) and intrinsics coordinate frames:
 - [docs/predictions_schema.md](docs/predictions_schema.md)
