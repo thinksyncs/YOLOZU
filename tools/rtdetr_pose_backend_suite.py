@@ -3,10 +3,8 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import os
 import platform
-import shlex
 import subprocess
 import sys
 import time
@@ -586,4 +584,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
