@@ -105,7 +105,7 @@ class RTDETRPoseAdapter(ModelAdapter):
         lora_alpha: float | None = None,
         lora_dropout: float = 0.0,
         lora_target: str = "head",
-        lora_freeze_base: bool = True,
+        lora_freeze_base: bool = False,
         lora_train_bias: str = "none",
     ):
         self.config_path = str(config_path)
