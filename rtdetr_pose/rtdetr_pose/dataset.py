@@ -439,10 +439,23 @@ def build_manifest(root, split="train2017"):
 def _k_to_3x3(k):
     if k is None:
         return None
+    if hasattr(k, "tolist"):
+        try:
+            k = k.tolist()
+        except Exception:
+            pass
     # K may be a 3x3 nested list, or (fx, fy, cx, cy)
     if isinstance(k, (list, tuple)) and len(k) == 4 and not isinstance(k[0], (list, tuple)):
         fx, fy, cx, cy = [float(v) for v in k]
         return [[fx, 0.0, cx], [0.0, fy, cy], [0.0, 0.0, 1.0]]
+    # Flat row-major 3x3.
+    if isinstance(k, (list, tuple)) and len(k) == 9 and not isinstance(k[0], (list, tuple)):
+        flat = [float(v) for v in k]
+        return [
+            [flat[0], flat[1], flat[2]],
+            [flat[3], flat[4], flat[5]],
+            [flat[6], flat[7], flat[8]],
+        ]
     if isinstance(k, (list, tuple)) and len(k) == 3 and isinstance(k[0], (list, tuple)):
         return [[float(v) for v in row] for row in k]
     if isinstance(k, dict) and {"fx", "fy", "cx", "cy"}.issubset(k.keys()):
@@ -451,6 +464,27 @@ def _k_to_3x3(k):
         cx = float(k["cx"])
         cy = float(k["cy"])
         return [[fx, 0.0, cx], [0.0, fy, cy], [0.0, 0.0, 1.0]]
+    # OpenCV FileStorage / YAML style: {rows:3, cols:3, dt:..., data:[...]}
+    if isinstance(k, dict):
+        try:
+            rows = int(k.get("rows"))
+            cols = int(k.get("cols"))
+        except Exception:
+            rows = None
+            cols = None
+        data = k.get("data")
+        if rows == 3 and cols == 3 and isinstance(data, (list, tuple)) and len(data) >= 9:
+            flat = [float(data[i]) for i in range(9)]
+            return [
+                [flat[0], flat[1], flat[2]],
+                [flat[3], flat[4], flat[5]],
+                [flat[6], flat[7], flat[8]],
+            ]
+        for key in ("camera_matrix", "cameraMatrix", "K", "K_gt", "intrinsics"):
+            if key in k:
+                nested = _k_to_3x3(k.get(key))
+                if nested is not None:
+                    return nested
     return None
 
 

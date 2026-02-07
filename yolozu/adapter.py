@@ -200,26 +200,7 @@ class RTDETRPoseAdapter(ModelAdapter):
 
         model.to(self.device)
 
-        def _parse_intrinsics(value):
-            if value is None:
-                return None
-            if isinstance(value, dict) and all(k in value for k in ("fx", "fy", "cx", "cy")):
-                return {
-                    "fx": float(value["fx"]),
-                    "fy": float(value["fy"]),
-                    "cx": float(value["cx"]),
-                    "cy": float(value["cy"]),
-                }
-            if isinstance(value, (list, tuple)) and len(value) == 3:
-                try:
-                    fx = float(value[0][0])
-                    fy = float(value[1][1])
-                    cx = float(value[0][2])
-                    cy = float(value[1][2])
-                    return {"fx": fx, "fy": fy, "cx": cx, "cy": cy}
-                except Exception:
-                    return None
-            return None
+        from .intrinsics import parse_intrinsics as _parse_intrinsics
 
         def preprocess(record_or_path):
             path = record_or_path["image"] if isinstance(record_or_path, dict) else record_or_path

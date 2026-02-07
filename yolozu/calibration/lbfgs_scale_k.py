@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Iterable
 
 from yolozu.boxes import iou_xyxy_abs
+from yolozu.intrinsics import parse_intrinsics
 
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -23,20 +24,10 @@ def _as_float_list(value: Any) -> list[float] | None:
 
 
 def _parse_intrinsics(value: Any) -> tuple[float, float, float, float] | None:
-    if value is None:
+    intr = parse_intrinsics(value)
+    if intr is None:
         return None
-    if isinstance(value, dict) and all(k in value for k in ("fx", "fy", "cx", "cy")):
-        return (float(value["fx"]), float(value["fy"]), float(value["cx"]), float(value["cy"]))
-    if isinstance(value, (list, tuple)) and len(value) == 3:
-        try:
-            fx = float(value[0][0])
-            fy = float(value[1][1])
-            cx = float(value[0][2])
-            cy = float(value[1][2])
-            return (fx, fy, cx, cy)
-        except Exception:
-            return None
-    return None
+    return (float(intr["fx"]), float(intr["fy"]), float(intr["cx"]), float(intr["cy"]))
 
 
 def _get_intrinsics(record: dict[str, Any]) -> tuple[float, float, float, float] | None:
