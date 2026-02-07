@@ -231,12 +231,13 @@ def _build_engine_python(
         config.set_flag(trt.BuilderFlag.FP16)
 
     profile = builder.create_optimization_profile()
-    ok = profile.set_shape(str(input_name), min=min_shape, opt=opt_shape, max=max_shape)
-    if not bool(ok):
-        raise RuntimeError(
-            f"failed to set optimization profile for input '{input_name}' "
-            f"(min={min_shape} opt={opt_shape} max={max_shape})"
-        )
+    input_names = [network.get_input(i).name for i in range(int(network.num_inputs))]
+    if not input_names:
+        raise RuntimeError("TensorRT network has no inputs")
+    # TensorRT does not reliably validate the input name on set_shape() across versions.
+    # Apply the same profile to all network inputs (typical ONNX models here have 1 input).
+    for name in input_names:
+        profile.set_shape(str(name), min_shape, opt_shape, max_shape)
     config.add_optimization_profile(profile)
 
     serialized = builder.build_serialized_network(network, config)
@@ -248,12 +249,8 @@ def _build_engine_python(
         "builder": "python",
         "tensorrt_py": getattr(trt, "__version__", None),
         "explicit_batch": True,
-        "profile": {
-            "input_name": str(input_name),
-            "min": list(min_shape),
-            "opt": list(opt_shape),
-            "max": list(max_shape),
-        },
+        "network_inputs": [{"name": str(name)} for name in input_names],
+        "profile": {"min": list(min_shape), "opt": list(opt_shape), "max": list(max_shape)},
     }
 
 
