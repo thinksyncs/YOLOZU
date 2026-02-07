@@ -102,6 +102,31 @@
       "docs": ["docs/real_model_interface.md"]
     },
     {
+      "id": "yolozu",
+      "entrypoint": "tools/yolozu.py",
+      "runner": "python3",
+      "summary": "Unified CLI: doctor + export (dummy/torch/onnxrt/trt) + predict-images (folder→JSON+overlays+HTML) + sweep wrapper + fingerprinted caching.",
+      "tags": ["cli", "predictions", "diagnostics", "report", "sweep"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "contracts": { "produces": ["predictions_json"] },
+      "examples": [
+        { "description": "Doctor report.", "command": "python3 tools/yolozu.py doctor --output reports/doctor.json" },
+        {
+          "description": "Export dummy predictions with run meta.",
+          "command": "python3 tools/yolozu.py export --backend dummy --dataset data/coco128 --max-images 5 --output reports/predictions_dummy_run.json"
+        },
+        {
+          "description": "Folder input → predictions JSON + overlays + HTML (dummy backend).",
+          "command": "python3 tools/yolozu.py predict-images --backend dummy --input-dir data/coco128/images/val2017 --max-images 5 --output reports/predict_images_dummy.json --overlays-dir reports/overlays_dummy --html reports/predict_images_dummy.html"
+        },
+        {
+          "description": "Run a sweep config (dry-run).",
+          "command": "python3 tools/yolozu.py sweep --config docs/hpo_sweep_example.json --dry-run"
+        }
+      ],
+      "docs": ["docs/tools_index.md"]
+    },
+    {
       "id": "validate_predictions",
       "entrypoint": "tools/validate_predictions.py",
       "runner": "python3",
@@ -254,6 +279,27 @@
         }
       ],
       "docs": ["docs/distillation.md"]
+    },
+    {
+      "id": "hpo_sweep",
+      "entrypoint": "tools/hpo_sweep.py",
+      "runner": "python3",
+      "summary": "Run a configurable parameter sweep (grid or list) and emit JSONL/CSV/MD results.",
+      "tags": ["sweep", "hpo"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "inputs": [{ "name": "config", "kind": "file", "required": true, "flag": "--config" }],
+      "outputs": [
+        { "name": "result_jsonl", "kind": "file", "default": "reports/hpo_sweep.jsonl" },
+        { "name": "result_csv", "kind": "file", "default": "reports/hpo_sweep.csv" },
+        { "name": "result_md", "kind": "file", "default": "reports/hpo_sweep.md" }
+      ],
+      "examples": [
+        {
+          "description": "Dry-run example sweep.",
+          "command": "python3 tools/hpo_sweep.py --config docs/hpo_sweep_example.json --dry-run"
+        }
+      ],
+      "docs": ["docs/hpo_sweep.md"]
     },
     {
       "id": "tune_gate_weights",

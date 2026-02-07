@@ -15,6 +15,8 @@ from typing import Any, Iterable
 
 repo_root = Path(__file__).resolve().parents[1]
 
+DEFAULT_PREDICTIONS_PATH = "reports/predictions.json"
+
 
 def _now_utc() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
@@ -184,10 +186,54 @@ def _ensure_wrapper(payload: Any) -> dict[str, Any]:
     raise ValueError("unsupported predictions payload")
 
 
-def _subprocess_or_die(cmd: list[str]) -> None:
+def _subprocess_or_die(cmd: list[str]) -> str:
     proc = subprocess.run(cmd, cwd=str(repo_root), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    if proc.stderr and proc.stderr.strip():
+        print(proc.stderr, file=sys.stderr, end="" if proc.stderr.endswith("\n") else "\n")
     if proc.returncode != 0:
         raise SystemExit(f"command failed ({proc.returncode}): {' '.join(cmd)}\n{proc.stdout}\n{proc.stderr}")
+    return proc.stdout
+
+
+def _resolve_path(path: str | Path) -> Path:
+    p = Path(path)
+    if p.is_absolute():
+        return p
+    return repo_root / p
+
+
+def _output_config_hash(path: Path) -> str | None:
+    try:
+        payload = _ensure_wrapper(_load_json(path))
+    except Exception:
+        return None
+    meta = payload.get("meta")
+    if not isinstance(meta, dict):
+        return None
+    run = meta.get("run")
+    if not isinstance(run, dict):
+        return None
+    got = run.get("config_hash")
+    return got if isinstance(got, str) and got else None
+
+
+def _ensure_output_matches(path: Path, *, expected_config_hash: str) -> None:
+    got = _output_config_hash(path)
+    if got is None:
+        raise SystemExit(f"output exists but missing meta.run.config_hash: {path} (use --force to overwrite)")
+    if got != expected_config_hash:
+        raise SystemExit(
+            "output exists but does not match current config_hash:\n"
+            f"  path: {path}\n"
+            f"  expected: {expected_config_hash}\n"
+            f"  got: {got}\n"
+            "Use --force to overwrite, or choose a different --output/--run-dir/--cache-dir."
+        )
+
+
+def _copy_file(src: Path, dst: Path) -> None:
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    dst.write_bytes(src.read_bytes())
 
 
 def _parse_common_export_args(p: argparse.ArgumentParser) -> None:
@@ -200,7 +246,18 @@ def _parse_common_export_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--dataset", default=None, help="YOLO-format dataset root (defaults to data/coco128).")
     p.add_argument("--split", default=None, help="Dataset split under images/ and labels/ (default: auto).")
     p.add_argument("--max-images", type=int, default=None, help="Optional cap for number of images.")
-    p.add_argument("--output", default="reports/predictions.json", help="Predictions JSON output path.")
+    p.add_argument("--output", default=DEFAULT_PREDICTIONS_PATH, help="Predictions JSON output path.")
+    p.add_argument(
+        "--run-dir",
+        default=None,
+        help="Optional run directory. When set and --output is default, writes <run-dir>/predictions.json.",
+    )
+    p.add_argument(
+        "--cache",
+        action="store_true",
+        help="Enable fingerprinted run cache. When set and --output is default, writes into --cache-dir/<config_hash>/predictions.json.",
+    )
+    p.add_argument("--cache-dir", default="runs/yolozu_runs", help="Cache root directory (default: runs/yolozu_runs).")
     p.add_argument("--notes", default=None, help="Notes to store in meta.run.")
     p.add_argument("--seed", type=int, default=None, help="Optional seed to store in meta.run.")
     p.add_argument("--force", action="store_true", help="Overwrite outputs if they exist.")
@@ -213,6 +270,67 @@ def _parse_common_export_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--image-size", type=int, nargs="+", default=None, help="Torch image size (one or two ints).")
     p.add_argument("--score-threshold", type=float, default=0.3, help="Torch score threshold (default: 0.3).")
     p.add_argument("--max-detections", type=int, default=50, help="Torch max detections (default: 50).")
+    p.add_argument("--lora-r", type=int, default=0, help="Enable LoRA by setting rank r>0 (default: 0 disables).")
+    p.add_argument("--lora-alpha", type=float, default=None, help="LoRA alpha scaling (default: r).")
+    p.add_argument("--lora-dropout", type=float, default=0.0, help="LoRA dropout on inputs (default: 0.0).")
+    p.add_argument(
+        "--lora-target",
+        default="head",
+        choices=("head", "all_linear", "all_conv1x1", "all_linear_conv1x1"),
+        help="Where to apply LoRA (default: head).",
+    )
+    p.add_argument(
+        "--lora-freeze-base",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Freeze base weights and train LoRA params only (default: false).",
+    )
+    p.add_argument(
+        "--lora-train-bias",
+        choices=("none", "all"),
+        default="none",
+        help="If LoRA is enabled, optionally train biases too (default: none).",
+    )
+    p.add_argument("--tta", action="store_true", help="Enable TTA post-transform on predictions.")
+    p.add_argument("--tta-seed", type=int, default=None, help="Seed for TTA randomness.")
+    p.add_argument("--tta-flip-prob", type=float, default=0.5, help="Flip probability for TTA.")
+    p.add_argument("--tta-norm-only", action="store_true", help="Update only normalized bbox values for TTA.")
+    p.add_argument("--tta-log-out", default=None, help="Optional path to write TTA log JSON.")
+    p.add_argument("--ttt", action="store_true", help="Enable test-time training (TTT) before inference.")
+    p.add_argument(
+        "--ttt-preset",
+        choices=("safe", "adapter_only", "mim_safe"),
+        default=None,
+        help="Recommended TTT presets that override method/steps/lr/filter.",
+    )
+    p.add_argument("--ttt-method", choices=("tent", "mim"), default="tent", help="TTT method (default: tent).")
+    p.add_argument("--ttt-steps", type=int, default=1, help="Total TTT steps to run (default: 1).")
+    p.add_argument("--ttt-batch-size", type=int, default=1, help="TTT batch size (default: 1).")
+    p.add_argument("--ttt-lr", type=float, default=1e-4, help="TTT learning rate (default: 1e-4).")
+    p.add_argument(
+        "--ttt-update-filter",
+        choices=("all", "norm_only", "adapter_only"),
+        default="all",
+        help="Which parameters to update during TTT (default: all).",
+    )
+    p.add_argument(
+        "--ttt-include",
+        action="append",
+        default=None,
+        help="Only update parameters whose name contains this substring (repeatable).",
+    )
+    p.add_argument(
+        "--ttt-exclude",
+        action="append",
+        default=None,
+        help="Exclude parameters whose name contains this substring (repeatable).",
+    )
+    p.add_argument("--ttt-max-batches", type=int, default=1, help="Cap number of distinct batches used for TTT.")
+    p.add_argument("--ttt-seed", type=int, default=None, help="Optional RNG seed for TTT.")
+    p.add_argument("--ttt-mask-prob", type=float, default=0.6, help="MIM mask probability (default: 0.6).")
+    p.add_argument("--ttt-patch-size", type=int, default=16, help="MIM patch size (default: 16).")
+    p.add_argument("--ttt-mask-value", type=float, default=0.0, help="MIM mask fill value (default: 0.0).")
+    p.add_argument("--ttt-log-out", default=None, help="Optional path to write TTT log JSON.")
 
     # ONNXRuntime/TensorRT backend (YOLO26 exporters).
     p.add_argument("--model", default=None, help="Model path (.onnx for onnxrt, .plan for trt).")
@@ -236,17 +354,136 @@ def _export_with_backend(
 ) -> Path:
     dataset = dataset_override or (args.dataset if args.dataset else str(repo_root / "data" / "coco128"))
     dataset_fp = dataset_meta or dataset
-    out_path = Path(args.output)
-    if not out_path.is_absolute():
-        out_path = repo_root / out_path
-
-    if out_path.exists() and not args.force:
-        return out_path
 
     backend = str(args.backend)
 
+    adapter = None
+    config_fp: dict[str, Any]
+
     if backend in ("dummy", "torch"):
         adapter = "dummy" if backend == "dummy" else "rtdetr_pose"
+        lora_enabled = bool(backend == "torch" and int(args.lora_r) > 0)
+        tta_enabled = bool(args.tta)
+        ttt_enabled = bool(args.ttt)
+        config_fp = {
+            "backend": backend,
+            "dataset": str(dataset_fp),
+            "split": args.split,
+            "max_images": args.max_images,
+            "adapter": adapter,
+            "config": str(args.config) if backend == "torch" else None,
+            "config_sha256": _sha256_file(repo_root / str(args.config)) if backend == "torch" else None,
+            "checkpoint": str(args.checkpoint) if backend == "torch" else None,
+            "checkpoint_sha256": _sha256_file(args.checkpoint) if backend == "torch" and args.checkpoint else None,
+            "device": str(args.device) if backend == "torch" else None,
+            "image_size": list(args.image_size) if backend == "torch" and args.image_size else None,
+            "score_threshold": float(args.score_threshold) if backend == "torch" else None,
+            "max_detections": int(args.max_detections) if backend == "torch" else None,
+            "lora": {
+                "enabled": lora_enabled,
+                "r": int(args.lora_r) if lora_enabled else 0,
+                "alpha": float(args.lora_alpha) if lora_enabled and args.lora_alpha is not None else None,
+                "dropout": float(args.lora_dropout) if lora_enabled else None,
+                "target": str(args.lora_target) if lora_enabled else None,
+                "freeze_base": bool(args.lora_freeze_base) if lora_enabled else None,
+                "train_bias": str(args.lora_train_bias) if lora_enabled else None,
+            },
+            "tta": {
+                "enabled": tta_enabled,
+                "seed": args.tta_seed if tta_enabled else None,
+                "flip_prob": float(args.tta_flip_prob) if tta_enabled else None,
+                "norm_only": bool(args.tta_norm_only) if tta_enabled else None,
+            },
+            "ttt": {
+                "enabled": ttt_enabled,
+                "preset": args.ttt_preset if ttt_enabled else None,
+                "method": str(args.ttt_method) if ttt_enabled else None,
+                "steps": int(args.ttt_steps) if ttt_enabled else None,
+                "batch_size": int(args.ttt_batch_size) if ttt_enabled else None,
+                "lr": float(args.ttt_lr) if ttt_enabled else None,
+                "update_filter": str(args.ttt_update_filter) if ttt_enabled else None,
+                "include": list(args.ttt_include) if ttt_enabled and args.ttt_include else None,
+                "exclude": list(args.ttt_exclude) if ttt_enabled and args.ttt_exclude else None,
+                "max_batches": int(args.ttt_max_batches) if ttt_enabled else None,
+                "seed": args.ttt_seed if ttt_enabled else None,
+                "mim": {
+                    "mask_prob": float(args.ttt_mask_prob) if ttt_enabled else None,
+                    "patch_size": int(args.ttt_patch_size) if ttt_enabled else None,
+                    "mask_value": float(args.ttt_mask_value) if ttt_enabled else None,
+                },
+            },
+        }
+    elif backend == "onnxrt":
+        if args.tta or args.ttt or int(args.lora_r) > 0:
+            raise SystemExit("--tta/--ttt/--lora-* are only supported for --backend dummy/torch")
+        model = args.model
+        if not model:
+            raise SystemExit("--model is required for --backend onnxrt")
+        config_fp = {
+            "backend": backend,
+            "dataset": str(dataset_fp),
+            "split": args.split,
+            "max_images": args.max_images,
+            "model": str(model),
+            "model_sha256": _sha256_file(model),
+            "input_name": str(args.input_name),
+            "combined_output": str(args.combined_output),
+            "boxes_scale": str(args.boxes_scale),
+            "min_score": float(args.min_score),
+            "topk": int(args.topk),
+            "dry_run": bool(args.dry_run),
+        }
+    elif backend == "trt":
+        if args.tta or args.ttt or int(args.lora_r) > 0:
+            raise SystemExit("--tta/--ttt/--lora-* are only supported for --backend dummy/torch")
+        model = args.model
+        if not model:
+            raise SystemExit("--model is required for --backend trt")
+        config_fp = {
+            "backend": backend,
+            "dataset": str(dataset_fp),
+            "split": args.split,
+            "max_images": args.max_images,
+            "engine": str(model),
+            "engine_sha256": _sha256_file(model),
+            "input_name": str(args.input_name),
+            "combined_output": str(args.combined_output),
+            "boxes_scale": str(args.boxes_scale),
+            "min_score": float(args.min_score),
+            "topk": int(args.topk),
+            "dry_run": bool(args.dry_run),
+        }
+    else:
+        raise SystemExit(f"unknown backend: {backend}")
+
+    config_hash = _sha256_json(config_fp)
+
+    out_path = _resolve_path(args.output)
+
+    run_dir = None
+    if args.run_dir and args.output == DEFAULT_PREDICTIONS_PATH:
+        run_dir = _resolve_path(args.run_dir)
+        out_path = run_dir / "predictions.json"
+
+    cache_out = None
+    if args.cache:
+        cache_out = _resolve_path(args.cache_dir) / config_hash / "predictions.json"
+        if args.output == DEFAULT_PREDICTIONS_PATH and not args.run_dir:
+            out_path = cache_out
+
+    if out_path.exists() and not args.force:
+        _ensure_output_matches(out_path, expected_config_hash=config_hash)
+        return out_path
+
+    if cache_out is not None and cache_out.exists() and not args.force:
+        _ensure_output_matches(cache_out, expected_config_hash=config_hash)
+        if cache_out != out_path:
+            _copy_file(cache_out, out_path)
+        return out_path
+
+    if backend in ("dummy", "torch"):
+        if adapter is None:
+            raise SystemExit("internal error: missing adapter")
         cmd = [
             sys.executable,
             "tools/export_predictions.py",
@@ -263,6 +500,40 @@ def _export_with_backend(
         if args.max_images is not None:
             cmd.extend(["--max-images", str(int(args.max_images))])
 
+        if args.tta:
+            cmd.append("--tta")
+        if args.tta_seed is not None:
+            cmd.extend(["--tta-seed", str(int(args.tta_seed))])
+        cmd.extend(["--tta-flip-prob", str(float(args.tta_flip_prob))])
+        if args.tta_norm_only:
+            cmd.append("--tta-norm-only")
+        if args.tta_log_out:
+            cmd.extend(["--tta-log-out", str(args.tta_log_out)])
+
+        if args.ttt:
+            cmd.append("--ttt")
+            if args.ttt_preset:
+                cmd.extend(["--ttt-preset", str(args.ttt_preset)])
+            cmd.extend(["--ttt-method", str(args.ttt_method)])
+            cmd.extend(["--ttt-steps", str(int(args.ttt_steps))])
+            cmd.extend(["--ttt-batch-size", str(int(args.ttt_batch_size))])
+            cmd.extend(["--ttt-lr", str(float(args.ttt_lr))])
+            cmd.extend(["--ttt-update-filter", str(args.ttt_update_filter)])
+            if args.ttt_include:
+                for inc in args.ttt_include:
+                    cmd.extend(["--ttt-include", str(inc)])
+            if args.ttt_exclude:
+                for exc in args.ttt_exclude:
+                    cmd.extend(["--ttt-exclude", str(exc)])
+            cmd.extend(["--ttt-max-batches", str(int(args.ttt_max_batches))])
+            if args.ttt_seed is not None:
+                cmd.extend(["--ttt-seed", str(int(args.ttt_seed))])
+            cmd.extend(["--ttt-mask-prob", str(float(args.ttt_mask_prob))])
+            cmd.extend(["--ttt-patch-size", str(int(args.ttt_patch_size))])
+            cmd.extend(["--ttt-mask-value", str(float(args.ttt_mask_value))])
+            if args.ttt_log_out:
+                cmd.extend(["--ttt-log-out", str(args.ttt_log_out)])
+
         if backend == "torch":
             cmd.extend(
                 [
@@ -274,46 +545,33 @@ def _export_with_backend(
                     str(float(args.score_threshold)),
                     "--max-detections",
                     str(int(args.max_detections)),
+                    "--lora-r",
+                    str(int(args.lora_r)),
+                    "--lora-dropout",
+                    str(float(args.lora_dropout)),
+                    "--lora-target",
+                    str(args.lora_target),
+                    "--lora-train-bias",
+                    str(args.lora_train_bias),
                 ]
             )
             if args.checkpoint:
                 cmd.extend(["--checkpoint", str(args.checkpoint)])
             if args.image_size:
                 cmd.extend(["--image-size", *[str(int(x)) for x in args.image_size]])
+            if args.lora_alpha is not None:
+                cmd.extend(["--lora-alpha", str(float(args.lora_alpha))])
+            cmd.append("--lora-freeze-base" if bool(args.lora_freeze_base) else "--no-lora-freeze-base")
 
         _subprocess_or_die(cmd)
-
-        payload = _ensure_wrapper(_load_json(out_path))
-        config_fp = {
-            "backend": backend,
-            "dataset": str(dataset_fp),
-            "split": args.split,
-            "max_images": args.max_images,
-            "adapter": adapter,
-            "config": str(args.config) if backend == "torch" else None,
-            "config_sha256": _sha256_file(repo_root / str(args.config)) if backend == "torch" else None,
-            "checkpoint": str(args.checkpoint) if backend == "torch" else None,
-            "checkpoint_sha256": _sha256_file(args.checkpoint) if backend == "torch" and args.checkpoint else None,
-            "device": str(args.device) if backend == "torch" else None,
-            "image_size": list(args.image_size) if backend == "torch" and args.image_size else None,
-            "score_threshold": float(args.score_threshold) if backend == "torch" else None,
-            "max_detections": int(args.max_detections) if backend == "torch" else None,
-        }
-        payload["meta"]["run"] = _base_run_meta(seed=args.seed, notes=args.notes, config_fingerprint=config_fp)
-        _write_json(out_path, payload)
-        return out_path
-
-    if backend == "onnxrt":
-        model = args.model
-        if not model:
-            raise SystemExit("--model is required for --backend onnxrt")
+    elif backend == "onnxrt":
         cmd = [
             sys.executable,
             "tools/export_predictions_onnxrt.py",
             "--dataset",
             str(dataset),
             "--onnx",
-            str(model),
+            str(args.model),
             "--input-name",
             str(args.input_name),
             "--combined-output",
@@ -335,37 +593,14 @@ def _export_with_backend(
         if args.dry_run:
             cmd.append("--dry-run")
         _subprocess_or_die(cmd)
-
-        payload = _ensure_wrapper(_load_json(out_path))
-        config_fp = {
-            "backend": backend,
-            "dataset": str(dataset_fp),
-            "split": args.split,
-            "max_images": args.max_images,
-            "model": str(model),
-            "model_sha256": _sha256_file(model),
-            "input_name": str(args.input_name),
-            "combined_output": str(args.combined_output),
-            "boxes_scale": str(args.boxes_scale),
-            "min_score": float(args.min_score),
-            "topk": int(args.topk),
-            "dry_run": bool(args.dry_run),
-        }
-        payload["meta"]["run"] = _base_run_meta(seed=args.seed, notes=args.notes, config_fingerprint=config_fp)
-        _write_json(out_path, payload)
-        return out_path
-
-    if backend == "trt":
-        model = args.model
-        if not model:
-            raise SystemExit("--model is required for --backend trt")
+    elif backend == "trt":
         cmd = [
             sys.executable,
             "tools/export_predictions_trt.py",
             "--dataset",
             str(dataset),
             "--engine",
-            str(model),
+            str(args.model),
             "--input-name",
             str(args.input_name),
             "--combined-output",
@@ -387,27 +622,21 @@ def _export_with_backend(
         if args.dry_run:
             cmd.append("--dry-run")
         _subprocess_or_die(cmd)
+    else:  # pragma: no cover
+        raise SystemExit(f"unknown backend: {backend}")
 
-        payload = _ensure_wrapper(_load_json(out_path))
-        config_fp = {
-            "backend": backend,
-            "dataset": str(dataset_fp),
-            "split": args.split,
-            "max_images": args.max_images,
-            "engine": str(model),
-            "engine_sha256": _sha256_file(model),
-            "input_name": str(args.input_name),
-            "combined_output": str(args.combined_output),
-            "boxes_scale": str(args.boxes_scale),
-            "min_score": float(args.min_score),
-            "topk": int(args.topk),
-            "dry_run": bool(args.dry_run),
-        }
-        payload["meta"]["run"] = _base_run_meta(seed=args.seed, notes=args.notes, config_fingerprint=config_fp)
-        _write_json(out_path, payload)
-        return out_path
+    payload = _ensure_wrapper(_load_json(out_path))
+    payload["meta"]["run"] = _base_run_meta(seed=args.seed, notes=args.notes, config_fingerprint=config_fp)
+    _write_json(out_path, payload)
 
-    raise SystemExit(f"unknown backend: {backend}")
+    if cache_out is not None and cache_out != out_path:
+        _copy_file(out_path, cache_out)
+
+    meta_dir = cache_out.parent if cache_out is not None else run_dir
+    if meta_dir is not None:
+        _write_json(meta_dir / "run_config.json", {"config_hash": config_hash, "config_fingerprint": config_fp})
+
+    return out_path
 
 
 def _doctor(args: argparse.Namespace) -> int:
@@ -443,6 +672,25 @@ def _doctor(args: argparse.Namespace) -> int:
 
     _write_json(out_path, report)
     print(out_path)
+    return 0
+
+
+def _sweep(args: argparse.Namespace) -> int:
+    cmd = [
+        sys.executable,
+        "tools/hpo_sweep.py",
+        "--config",
+        str(args.config),
+    ]
+    if args.resume:
+        cmd.append("--resume")
+    if args.dry_run:
+        cmd.append("--dry-run")
+    if args.max_runs is not None:
+        cmd.extend(["--max-runs", str(int(args.max_runs))])
+    out = _subprocess_or_die(cmd)
+    if out:
+        print(out, end="" if out.endswith("\n") else "\n")
     return 0
 
 
@@ -672,12 +920,19 @@ def _predict_images(args: argparse.Namespace) -> int:
 
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
-    p = argparse.ArgumentParser(prog="yolozu", description="YOLOZU unified CLI (P0/P1 building blocks).")
+    p = argparse.ArgumentParser(prog="yolozu", description="YOLOZU unified CLI (P0/P1/P2 building blocks).")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     p_doctor = sub.add_parser("doctor", help="Print environment diagnostics as JSON.")
     p_doctor.add_argument("--output", default="reports/doctor.json", help="Output JSON path.")
     p_doctor.set_defaults(_fn=_doctor)
+
+    p_sweep = sub.add_parser("sweep", help="Run a parameter sweep (wrapper around tools/hpo_sweep.py).")
+    p_sweep.add_argument("--config", required=True, help="Path to sweep config JSON.")
+    p_sweep.add_argument("--resume", action="store_true", help="Skip runs already present in results jsonl.")
+    p_sweep.add_argument("--dry-run", action="store_true", help="Print commands without executing.")
+    p_sweep.add_argument("--max-runs", type=int, default=None, help="Optional cap for number of runs.")
+    p_sweep.set_defaults(_fn=_sweep)
 
     p_export = sub.add_parser("export", help="Export predictions JSON via a selected backend.")
     _parse_common_export_args(p_export)

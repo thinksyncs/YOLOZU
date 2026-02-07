@@ -5,6 +5,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
+try:
+    import torch  # type: ignore
+except Exception:  # pragma: no cover
+    torch = None  # type: ignore
+
 repo_root = Path(__file__).resolve().parents[1]
 
 
@@ -80,6 +85,8 @@ class TestExportPredictionsLoRACLI(unittest.TestCase):
         self.assertIn("--lora-* flags are only supported", msg)
 
     def test_rtdetr_pose_export_smoke_with_lora(self):
+        if torch is None:
+            self.skipTest("torch not installed")
         try:
             from PIL import Image
         except ImportError as exc:  # pragma: no cover

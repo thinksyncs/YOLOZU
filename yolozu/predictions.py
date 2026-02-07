@@ -123,6 +123,13 @@ def validate_predictions_entries(entries: Iterable[dict[str, Any]], *, strict: b
     return ValidationResult(warnings=warnings)
 
 
+def validate_predictions_payload(payload: Any, *, strict: bool = False) -> ValidationResult:
+    """Validate any supported predictions JSON payload shape (wrapper/list/mapping)."""
+
+    entries = normalize_predictions_json(payload)
+    return validate_predictions_entries(entries, strict=strict)
+
+
 def load_predictions_entries(path: str | Path) -> list[dict[str, Any]]:
     path = Path(path)
     data = json.loads(path.read_text())
