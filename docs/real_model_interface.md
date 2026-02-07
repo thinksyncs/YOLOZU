@@ -8,6 +8,7 @@ scaffold. It is Apache-2.0-compatible and already wired into the adapter layer.
 Training (CPU scaffold, metrics output):
 - `python3 rtdetr_pose/tools/train_minimal.py --dataset-root data/coco128 --epochs 1 --metrics-json reports/train_metrics.json`
 - Optional checkpoint save: `--checkpoint-out /path/to/checkpoint.pt`
+- GPU (AMP + accum + standard artifacts): `python3 rtdetr_pose/tools/train_minimal.py --dataset-root data/coco128 --device cuda --amp fp16 --grad-accum 2 --run-dir runs/train_minimal_demo --epochs 1 --max-steps 30`
 
 Inference / predictions export:
 - `python3 tools/export_predictions.py --adapter rtdetr_pose --dataset data/coco128 --checkpoint /path/to/checkpoint.pt --max-images 50 --wrap`
@@ -19,7 +20,8 @@ Baseline report (real outputs + fps):
 - `./.venv/bin/python tools/run_baseline.py --adapter rtdetr_pose --dataset data/coco128 --max-images 50 --output reports/baseline.json`
 
 Export (ONNX):
-- `python3 -c "from rtdetr_pose.export import export_onnx; ..."` (see `rtdetr_pose/rtdetr_pose/export.py`)
+- Prefer `train_minimal.py --run-dir ...` (writes `model.onnx` + `model.onnx.meta.json`).
+- Or call `python3 -c "from rtdetr_pose.export import export_onnx; ..."` (see `rtdetr_pose/rtdetr_pose/export.py`).
 
 ## No-torch path (precomputed predictions)
 

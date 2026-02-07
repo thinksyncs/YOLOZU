@@ -7,10 +7,13 @@ This folder contains a minimal PyTorch/TensorRT-oriented scaffolding for the RT-
 - Dataset audit (with deeper checks): `python3 tools/dataset_audit.py --check-content --check-ranges --fail-on-issues`
 - Dataset test: `python3 -m unittest tests/test_dataset.py`
 
-## Minimal training scaffold (CPU)
+## Minimal training scaffold (CPU/GPU)
 - Install deps: `python3 -m pip install -r requirements-test.txt`
 - Fetch coco128 (once, from repo root): `bash tools/fetch_coco128.sh`
 - Run: `python3 tools/train_minimal.py --epochs 1 --batch-size 2 --max-steps 30`
+- GPU example (AMP + accum + standard artifacts):
+  - `python3 tools/train_minimal.py --device cuda --amp fp16 --grad-accum 2 --run-dir runs/train_minimal_demo --epochs 1 --max-steps 30`
+  - Outputs include `runs/train_minimal_demo/model.onnx` (+ `model.onnx.meta.json`) and checkpoints/metrics.
 - Continual FT (SDFT-inspired): add a frozen teacher checkpoint via `--self-distill-from <ckpt>` (defaults: keys=logits,bbox; logits uses reverse-KL).
 
 Optional full-GT consumption (mask/depth)

@@ -1,7 +1,10 @@
 import argparse
 import json
 import math
+import os
 import sys
+import time
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +31,10 @@ from yolozu.metrics_report import append_jsonl, build_report, write_csv_row, wri
 from yolozu.jitter import default_jitter_profile, sample_intrinsics_jitter, sample_extrinsics_jitter
 from yolozu.run_record import build_run_record
 from yolozu.sdft import SdftConfig, compute_sdft_loss
+
+
+def _now_utc() -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
 def load_config_file(path: str | Path) -> dict[str, Any]:
@@ -61,7 +68,7 @@ def load_config_file(path: str | Path) -> dict[str, Any]:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Minimal RTDETRPose training scaffold (CPU).")
+    parser = argparse.ArgumentParser(description="Minimal RTDETRPose training scaffold.")
     parser.add_argument(
         "--config",
         default=None,
@@ -71,12 +78,34 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--split", type=str, default="train2017")
     parser.add_argument("--epochs", type=int, default=1)
     parser.add_argument("--batch-size", type=int, default=2)
+    parser.add_argument(
+        "--grad-accum",
+        type=int,
+        default=1,
+        help="Gradient accumulation steps (default: 1). Optimizer steps happen every N batches.",
+    )
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument(
         "--device",
         type=str,
         default="cuda" if torch is not None and torch.cuda.is_available() else "cpu",
         help="Torch device for training (e.g., cpu, cuda, cuda:0).",
+    )
+    parser.add_argument(
+        "--amp",
+        choices=("none", "fp16", "bf16"),
+        default="none",
+        help="Automatic mixed precision (cuda only): none|fp16|bf16 (default: none).",
+    )
+    parser.add_argument(
+        "--ddp",
+        action="store_true",
+        help="Enable DistributedDataParallel (single node). Use via torchrun; outputs written on rank0 only.",
+    )
+    parser.add_argument(
+        "--ddp-backend",
+        default=None,
+        help="DDP backend override (default: nccl for cuda, else gloo).",
     )
     parser.add_argument(
         "--clip-grad-norm",
@@ -326,7 +355,79 @@ def build_parser() -> argparse.ArgumentParser:
 
     # Back-compat: weights-only checkpoint
     parser.add_argument("--checkpoint-out", default=None, help="Write model state_dict to this path at end.")
+
+    # Reproducible artifacts
+    parser.add_argument(
+        "--run-dir",
+        default=None,
+        help="If set, write standard artifacts into this folder (run_record.json, metrics.jsonl/json/csv, checkpoint*.pt, model.onnx).",
+    )
+    parser.add_argument(
+        "--onnx-out",
+        default=None,
+        help="Optional ONNX export output path (overrides --run-dir default).",
+    )
+    parser.add_argument(
+        "--onnx-meta-out",
+        default=None,
+        help="Optional ONNX export metadata JSON path (default: <onnx-out>.meta.json).",
+    )
+    parser.add_argument("--onnx-opset", type=int, default=17, help="ONNX opset version (default: 17).")
+    parser.add_argument(
+        "--onnx-dynamic-hw",
+        action="store_true",
+        help="Export ONNX with dynamic height/width axes (batch is always dynamic).",
+    )
     return parser
+
+
+def apply_run_dir_defaults(args: argparse.Namespace) -> tuple[argparse.Namespace, Path | None]:
+    run_dir = None
+    if args.run_dir:
+        run_dir = Path(str(args.run_dir))
+        run_dir.mkdir(parents=True, exist_ok=True)
+
+        def _default_path(current: str | None, name: str) -> str:
+            return current if current else str(run_dir / name)
+
+        args.metrics_jsonl = _default_path(args.metrics_jsonl, "metrics.jsonl")
+        args.metrics_json = _default_path(args.metrics_json, "metrics.json")
+        args.metrics_csv = _default_path(args.metrics_csv, "metrics.csv")
+        args.checkpoint_out = _default_path(args.checkpoint_out, "checkpoint.pt")
+        args.checkpoint_bundle_out = _default_path(args.checkpoint_bundle_out, "checkpoint_bundle.pt")
+        args.onnx_out = _default_path(args.onnx_out, "model.onnx")
+
+    return args, run_dir
+
+
+def unwrap_model(model: "torch.nn.Module") -> "torch.nn.Module":
+    if hasattr(model, "module"):
+        try:
+            return model.module
+        except Exception:
+            return model
+    return model
+
+
+def collect_torch_cuda_meta() -> dict[str, Any]:
+    if torch is None:
+        return {"available": False}
+    if not torch.cuda.is_available():
+        return {"available": False, "reason": "torch.cuda.is_available() is false"}
+    try:
+        idx = int(torch.cuda.current_device())
+    except Exception:
+        idx = 0
+    meta: dict[str, Any] = {
+        "available": True,
+        "device_index": idx,
+        "device_name": torch.cuda.get_device_name(idx),
+        "device_capability": ".".join(str(x) for x in torch.cuda.get_device_capability(idx)),
+        "total_memory_mb": int(torch.cuda.get_device_properties(idx).total_memory // (1024 * 1024)),
+        "cuda_version": getattr(torch.version, "cuda", None),
+        "cudnn_version": (torch.backends.cudnn.version() if hasattr(torch.backends, "cudnn") else None),
+    }
+    return meta
 
 
 def _rotation_matrix_from_rpy(roll_rad: float, pitch_rad: float, yaw_rad: float) -> "torch.Tensor":
@@ -1005,6 +1106,21 @@ def main(argv: list[str] | None = None) -> int:
     if torch is None:  # pragma: no cover
         raise SystemExit("torch is required; install requirements-test.txt")
     args = parse_args(sys.argv[1:] if argv is None else argv)
+    args, run_dir = apply_run_dir_defaults(args)
+
+    # Optional DDP (torchrun sets WORLD_SIZE/RANK/LOCAL_RANK)
+    world_size_env = int(os.environ.get("WORLD_SIZE", "1") or "1")
+    ddp_enabled = bool(args.ddp) or world_size_env > 1
+    if bool(args.ddp) and world_size_env <= 1:
+        raise SystemExit("--ddp requires torchrun (WORLD_SIZE>1). Example: torchrun --nproc_per_node=2 ... --ddp")
+    rank = int(os.environ.get("RANK", "0") or "0") if ddp_enabled else 0
+    local_rank = int(os.environ.get("LOCAL_RANK", "0") or "0") if ddp_enabled else 0
+    world_size = int(os.environ.get("WORLD_SIZE", "1") or "1") if ddp_enabled else 1
+    if ddp_enabled:
+        backend = str(args.ddp_backend or ("nccl" if torch.cuda.is_available() else "gloo"))
+        torch.distributed.init_process_group(backend=backend, init_method="env://")
+
+    is_main = rank == 0
 
     sim_profile = None
     if args.sim_jitter:
@@ -1023,6 +1139,11 @@ def main(argv: list[str] | None = None) -> int:
         argv=(sys.argv[1:] if argv is None else argv),
         args=vars(args),
         dataset_root=(args.dataset_root or None),
+        extra={
+            "timestamp_utc": _now_utc(),
+            "ddp": {"enabled": bool(ddp_enabled), "backend": (str(args.ddp_backend) if args.ddp_backend else None), "rank": rank, "local_rank": local_rank, "world_size": world_size},
+            "cuda": collect_torch_cuda_meta(),
+        },
     )
 
     torch.manual_seed(args.seed)
@@ -1061,28 +1182,29 @@ def main(argv: list[str] | None = None) -> int:
             "Fetch coco128 first: bash tools/fetch_coco128.sh"
         )
 
-    stats = {
-        "mask": 0,
-        "depth": 0,
-        "pose": 0,
-        "intrinsics": 0,
-        "cad_points": 0,
-    }
-    for rec in records:
-        if rec.get("mask_path") is not None:
-            stats["mask"] += 1
-        if rec.get("depth_path") is not None:
-            stats["depth"] += 1
-        if rec.get("R_gt") is not None or rec.get("t_gt") is not None or rec.get("pose") is not None:
-            stats["pose"] += 1
-        if rec.get("K_gt") is not None or rec.get("intrinsics") is not None:
-            stats["intrinsics"] += 1
-        if rec.get("cad_points") is not None:
-            stats["cad_points"] += 1
-    print(
-        "dataset_stats "
-        + " ".join(f"{key}={value}" for key, value in sorted(stats.items()))
-    )
+    if is_main:
+        stats = {
+            "mask": 0,
+            "depth": 0,
+            "pose": 0,
+            "intrinsics": 0,
+            "cad_points": 0,
+        }
+        for rec in records:
+            if rec.get("mask_path") is not None:
+                stats["mask"] += 1
+            if rec.get("depth_path") is not None:
+                stats["depth"] += 1
+            if rec.get("R_gt") is not None or rec.get("t_gt") is not None or rec.get("pose") is not None:
+                stats["pose"] += 1
+            if rec.get("K_gt") is not None or rec.get("intrinsics") is not None:
+                stats["intrinsics"] += 1
+            if rec.get("cad_points") is not None:
+                stats["cad_points"] += 1
+        print(
+            "dataset_stats "
+            + " ".join(f"{key}={value}" for key, value in sorted(stats.items()))
+        )
 
     ds = ManifestDataset(
         records,
@@ -1115,14 +1237,25 @@ def main(argv: list[str] | None = None) -> int:
         jitter_dpitch=args.jitter_dpitch,
         jitter_dyaw=args.jitter_dyaw,
     )
+    sampler = None
+    if ddp_enabled:
+        sampler = torch.utils.data.distributed.DistributedSampler(
+            ds,
+            num_replicas=int(world_size),
+            rank=int(rank),
+            shuffle=bool(args.shuffle),
+            seed=int(args.seed),
+            drop_last=False,
+        )
     loader = DataLoader(
         ds,
         batch_size=args.batch_size,
-        shuffle=bool(args.shuffle),
+        shuffle=(bool(args.shuffle) if sampler is None else False),
+        sampler=sampler,
         num_workers=0,
         collate_fn=collate,
         drop_last=False,
-        generator=(torch.Generator().manual_seed(int(args.seed)) if args.deterministic else None),
+        generator=(torch.Generator().manual_seed(int(args.seed)) if args.deterministic and sampler is None else None),
     )
 
     model_num_queries = model_cfg.num_queries if model_cfg is not None else args.num_queries
@@ -1152,8 +1285,13 @@ def main(argv: list[str] | None = None) -> int:
 
     device_str = str(args.device).strip() if args.device is not None else "cpu"
     if device_str.startswith("cuda") and not torch.cuda.is_available():
-        print("warning: cuda requested but not available; falling back to cpu")
+        if is_main:
+            print("warning: cuda requested but not available; falling back to cpu")
         device_str = "cpu"
+    if ddp_enabled and device_str.startswith("cuda"):
+        if torch.cuda.is_available():
+            torch.cuda.set_device(int(local_rank))
+        device_str = f"cuda:{int(local_rank)}"
     device = torch.device(device_str)
     model.to(device)
 
@@ -1173,7 +1311,8 @@ def main(argv: list[str] | None = None) -> int:
                 global_step = int(meta["global_step"])
             except Exception:
                 global_step = 0
-        print(f"resumed_from={meta.get('path')} start_epoch={start_epoch} global_step={global_step}")
+        if is_main:
+            print(f"resumed_from={meta.get('path')} start_epoch={start_epoch} global_step={global_step}")
 
     sdft_cfg = None
     teacher_model = None
@@ -1206,19 +1345,46 @@ def main(argv: list[str] | None = None) -> int:
             bbox_weight=float(args.self_distill_bbox_weight),
             other_l1_weight=float(args.self_distill_other_l1_weight),
         )
-        print(
-            "self_distill",
-            f"from={args.self_distill_from}",
-            f"keys={','.join(keys) if keys else '(none)'}",
-            f"kl={sdft_cfg.kl}",
-            f"temp={sdft_cfg.temperature}",
-            f"weight={sdft_cfg.weight}",
+        if is_main:
+            print(
+                "self_distill",
+                f"from={args.self_distill_from}",
+                f"keys={','.join(keys) if keys else '(none)'}",
+                f"kl={sdft_cfg.kl}",
+                f"temp={sdft_cfg.temperature}",
+                f"weight={sdft_cfg.weight}",
+            )
+
+    if ddp_enabled:
+        model = torch.nn.parallel.DistributedDataParallel(
+            model,
+            device_ids=[int(local_rank)] if device.type == "cuda" else None,
+            output_device=int(local_rank) if device.type == "cuda" else None,
         )
+
+    # AMP setup
+    amp_mode = str(args.amp or "none").lower()
+    scaler = None
+    if amp_mode != "none":
+        if device.type != "cuda":
+            raise SystemExit("--amp requires --device cuda")
+        if amp_mode == "fp16":
+            scaler = torch.cuda.amp.GradScaler()
+            autocast = torch.cuda.amp.autocast(dtype=torch.float16)
+        elif amp_mode == "bf16":
+            autocast = torch.cuda.amp.autocast(dtype=torch.bfloat16)
+        else:
+            raise SystemExit(f"unknown --amp mode: {args.amp}")
+    else:
+        autocast = nullcontext()
 
     model.train()
     last_loss_dict = None
     last_epoch_avg = None
+    last_epoch_steps = 0
     for epoch in range(int(start_epoch), int(args.epochs)):
+        if sampler is not None:
+            sampler.set_epoch(int(epoch))
         if args.hflip_prob_start is not None and args.hflip_prob_end is not None:
             ds.hflip_prob = compute_linear_schedule(
                 float(args.hflip_prob_start),
@@ -1228,155 +1394,196 @@ def main(argv: list[str] | None = None) -> int:
             )
         running = 0.0
         steps = 0
+        max_micro_steps = len(loader)
+        if args.max_steps and int(args.max_steps) > 0:
+            max_micro_steps = min(max_micro_steps, int(args.max_steps))
+
+        grad_accum = max(1, int(args.grad_accum))
+
         for images, targets in loader:
+            if max_micro_steps and steps >= int(max_micro_steps):
+                break
+
+            # Start of accumulation window.
+            step_in_window = int(steps) % int(grad_accum)
+            window_size = int(min(int(grad_accum), int(max_micro_steps) - int(steps))) if max_micro_steps else int(grad_accum)
+            if step_in_window == 0:
+                optim.zero_grad(set_to_none=True)
+
             images = images.to(device)
 
-            out = model(images)
+            sync_step = step_in_window == window_size - 1
+            ddp_nosync = ddp_enabled and hasattr(model, "no_sync") and not sync_step
+            sync_context = model.no_sync() if ddp_nosync else nullcontext()
 
-            sdft_total = None
-            sdft_parts = None
-            if teacher_model is not None and sdft_cfg is not None and float(sdft_cfg.weight) != 0.0:
-                with torch.no_grad():
-                    teacher_out = teacher_model(images)
-                student_out_sdft = out
-                teacher_out_sdft = teacher_out
-                if (
-                    "bbox" in sdft_cfg.keys
-                    and isinstance(out.get("bbox"), torch.Tensor)
-                    and isinstance(teacher_out.get("bbox"), torch.Tensor)
-                ):
-                    student_out_sdft = dict(out)
-                    teacher_out_sdft = dict(teacher_out)
-                    student_out_sdft["bbox"] = out["bbox"].sigmoid()
-                    teacher_out_sdft["bbox"] = teacher_out["bbox"].sigmoid()
-                sdft_total, sdft_parts = compute_sdft_loss(student_out_sdft, teacher_out_sdft, sdft_cfg)
+            with sync_context:
+                with autocast:
+                    out = model(images)
 
-            if args.use_matcher:
-                per_sample = targets.get("per_sample") if isinstance(targets, dict) else targets
-                aligned = build_query_aligned_targets(
-                    out["logits"],
-                    out["bbox"],
-                    per_sample,
-                    num_queries=model_num_queries,
-                    cost_cls=args.cost_cls,
-                    cost_bbox=args.cost_bbox,
-                    log_z_pred=out.get("log_z"),
-                    rot6d_pred=out.get("rot6d"),
-                    cost_z=args.cost_z,
-                    cost_rot=args.cost_rot,
-                    offsets_pred=out.get("offsets"),
-                    k_delta=out.get("k_delta"),
-                    cost_t=args.cost_t,
-                )
-                out = dict(out)
-                # For box regression we train in normalized space.
-                out["bbox"] = aligned["bbox_norm"]
-                targets = {
-                    "labels": aligned["labels"],
-                    "bbox": aligned["bbox"],
-                    "mask": aligned["mask"],
-                    "z_gt": aligned["z_gt"],
-                    "z_mask": aligned["z_mask"],
-                    "R_gt": aligned["R_gt"],
-                    "rot_mask": aligned["rot_mask"],
-                    "offsets": aligned["offsets"],
-                    "off_mask": aligned["off_mask"],
-                    "t_gt": aligned["t_gt"],
-                    "K_gt": aligned["K_gt"],
-                    "image_hw": aligned["image_hw"],
-                    "K_mask": aligned["K_mask"],
-                    "t_mask": aligned["t_mask"],
-                    "M_mask": aligned.get("M_mask"),
-                    "D_obj_mask": aligned.get("D_obj_mask"),
-                }
-            else:
-                # legacy padded targets
-                targets = {
-                    "labels": torch.stack([t["labels"] for t in targets], dim=0).to(device),
-                    "bbox": torch.stack([t["bbox"] for t in targets], dim=0).to(device),
-                }
+                    sdft_total = None
+                    sdft_parts = None
+                    if teacher_model is not None and sdft_cfg is not None and float(sdft_cfg.weight) != 0.0:
+                        with torch.no_grad():
+                            with autocast:
+                                teacher_out = teacher_model(images)
+                        student_out_sdft = out
+                        teacher_out_sdft = teacher_out
+                        if (
+                            "bbox" in sdft_cfg.keys
+                            and isinstance(out.get("bbox"), torch.Tensor)
+                            and isinstance(teacher_out.get("bbox"), torch.Tensor)
+                        ):
+                            student_out_sdft = dict(out)
+                            teacher_out_sdft = dict(teacher_out)
+                            student_out_sdft["bbox"] = out["bbox"].sigmoid()
+                            teacher_out_sdft["bbox"] = teacher_out["bbox"].sigmoid()
+                        sdft_total, sdft_parts = compute_sdft_loss(student_out_sdft, teacher_out_sdft, sdft_cfg)
 
-            loss_dict = losses_fn(out, targets)
-            loss = loss_dict["loss"]
-            if sdft_total is not None and sdft_parts is not None:
-                loss_supervised = loss
-                loss_dict = dict(loss_dict)
-                loss_dict["loss_supervised"] = loss_supervised
-                loss_dict.update(sdft_parts)
-                loss = loss_supervised + float(sdft_cfg.weight) * sdft_total
-                loss_dict["loss"] = loss
-            last_loss_dict = loss_dict
+                    if args.use_matcher:
+                        per_sample = targets.get("per_sample") if isinstance(targets, dict) else targets
+                        aligned = build_query_aligned_targets(
+                            out["logits"],
+                            out["bbox"],
+                            per_sample,
+                            num_queries=model_num_queries,
+                            cost_cls=args.cost_cls,
+                            cost_bbox=args.cost_bbox,
+                            log_z_pred=out.get("log_z"),
+                            rot6d_pred=out.get("rot6d"),
+                            cost_z=args.cost_z,
+                            cost_rot=args.cost_rot,
+                            offsets_pred=out.get("offsets"),
+                            k_delta=out.get("k_delta"),
+                            cost_t=args.cost_t,
+                        )
+                        out = dict(out)
+                        # For box regression we train in normalized space.
+                        out["bbox"] = aligned["bbox_norm"]
+                        targets = {
+                            "labels": aligned["labels"],
+                            "bbox": aligned["bbox"],
+                            "mask": aligned["mask"],
+                            "z_gt": aligned["z_gt"],
+                            "z_mask": aligned["z_mask"],
+                            "R_gt": aligned["R_gt"],
+                            "rot_mask": aligned["rot_mask"],
+                            "offsets": aligned["offsets"],
+                            "off_mask": aligned["off_mask"],
+                            "t_gt": aligned["t_gt"],
+                            "K_gt": aligned["K_gt"],
+                            "image_hw": aligned["image_hw"],
+                            "K_mask": aligned["K_mask"],
+                            "t_mask": aligned["t_mask"],
+                            "M_mask": aligned.get("M_mask"),
+                            "D_obj_mask": aligned.get("D_obj_mask"),
+                        }
+                    else:
+                        # legacy padded targets
+                        targets = {
+                            "labels": torch.stack([t["labels"] for t in targets], dim=0).to(device),
+                            "bbox": torch.stack([t["bbox"] for t in targets], dim=0).to(device),
+                        }
 
-            if steps == 0 and args.debug_losses:
-                printable = {
-                    k: float(v.detach().cpu())
-                    for k, v in loss_dict.items()
-                    if hasattr(v, "detach")
-                }
-                print("loss_breakdown", " ".join(f"{k}={v:.6g}" for k, v in sorted(printable.items())))
+                    loss_dict = losses_fn(out, targets)
+                    loss = loss_dict["loss"]
+                    if sdft_total is not None and sdft_parts is not None:
+                        loss_supervised = loss
+                        loss_dict = dict(loss_dict)
+                        loss_dict["loss_supervised"] = loss_supervised
+                        loss_dict.update(sdft_parts)
+                        loss = loss_supervised + float(sdft_cfg.weight) * sdft_total
+                        loss_dict["loss"] = loss
+                    last_loss_dict = loss_dict
 
-            optim.zero_grad(set_to_none=True)
-            loss.backward()
-            if args.clip_grad_norm and float(args.clip_grad_norm) > 0:
-                torch.nn.utils.clip_grad_norm_(model.parameters(), float(args.clip_grad_norm))
-            optim.step()
+                    if steps == 0 and args.debug_losses and is_main:
+                        printable = {
+                            k: float(v.detach().cpu())
+                            for k, v in loss_dict.items()
+                            if hasattr(v, "detach")
+                        }
+                        print("loss_breakdown", " ".join(f"{k}={v:.6g}" for k, v in sorted(printable.items())))
 
-            if args.lr_warmup_steps and int(args.lr_warmup_steps) > 0:
-                lr_now = compute_warmup_lr(
-                    float(args.lr),
-                    int(global_step),
-                    int(args.lr_warmup_steps),
-                    float(args.lr_warmup_init),
-                )
-                for group in optim.param_groups:
-                    group["lr"] = lr_now
+                    loss_value = float(loss.detach().cpu())
+                    running += loss_value
+                    loss_for_backward = loss / float(window_size)
 
-            running += float(loss.detach().cpu())
+                if scaler is not None:
+                    scaler.scale(loss_for_backward).backward()
+                else:
+                    loss_for_backward.backward()
+
+            if sync_step:
+                if scaler is not None:
+                    scaler.unscale_(optim)
+                if args.clip_grad_norm and float(args.clip_grad_norm) > 0:
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), float(args.clip_grad_norm))
+
+                if scaler is not None:
+                    scaler.step(optim)
+                    scaler.update()
+                else:
+                    optim.step()
+
+                global_step += 1
+                if args.lr_warmup_steps and int(args.lr_warmup_steps) > 0:
+                    lr_now = compute_warmup_lr(
+                        float(args.lr),
+                        int(global_step),
+                        int(args.lr_warmup_steps),
+                        float(args.lr_warmup_init),
+                    )
+                    for group in optim.param_groups:
+                        group["lr"] = lr_now
+
             steps += 1
-            global_step += 1
 
-            if steps == 1 or (args.log_every and steps % int(args.log_every) == 0):
+            if is_main and (steps == 1 or (args.log_every and steps % int(args.log_every) == 0)):
                 avg = running / steps
-                print(f"epoch={epoch} step={steps} global_step={global_step} loss={avg:.4f}")
+                print(f"epoch={epoch} step={steps} optim_step={global_step} loss={avg:.4f}")
                 if args.metrics_jsonl:
-                    losses_out = {k: float(v.detach().cpu()) for k, v in loss_dict.items() if hasattr(v, "detach")}
+                    losses_out = {k: float(v.detach().cpu()) for k, v in last_loss_dict.items() if hasattr(v, "detach")} if last_loss_dict is not None else {}
                     report = build_report(
                         losses=losses_out,
-                        metrics={"loss_avg": float(avg)},
+                        metrics={"loss_avg": float(avg), "optim_step": int(global_step)},
                         meta={
                             "kind": "train_step",
                             "epoch": int(epoch),
                             "step": int(steps),
-                            "global_step": int(global_step),
+                            "optim_step": int(global_step),
                         },
                     )
                     append_jsonl(args.metrics_jsonl, report)
 
-            if args.checkpoint_bundle_out and args.checkpoint_every and int(args.checkpoint_every) > 0:
+            if (
+                is_main
+                and sync_step
+                and args.checkpoint_bundle_out
+                and args.checkpoint_every
+                and int(args.checkpoint_every) > 0
+            ):
                 every = int(args.checkpoint_every)
                 if global_step % every == 0:
                     bundle_path = Path(args.checkpoint_bundle_out)
                     stepped = bundle_path.with_name(f"{bundle_path.stem}.step{global_step}{bundle_path.suffix or '.pt'}")
                     save_checkpoint_bundle(
                         stepped,
-                        model=model,
+                        model=unwrap_model(model),
                         optim=optim,
                         args=args,
                         epoch=epoch,
                         global_step=global_step,
                         last_epoch_steps=steps,
                         last_epoch_avg=(running / max(1, steps)),
-                        last_loss_dict=loss_dict,
+                        last_loss_dict=last_loss_dict,
                         run_record=run_record,
                     )
 
-            if args.max_steps and steps >= int(args.max_steps):
-                break
-
         avg = running / max(1, steps)
         last_epoch_avg = float(avg)
-        print(f"epoch={epoch} done steps={steps} loss={avg:.4f}")
-        if args.metrics_jsonl and last_loss_dict is not None:
+        last_epoch_steps = int(steps)
+        if is_main:
+            print(f"epoch={epoch} done steps={steps} optim_step={global_step} loss={avg:.4f}")
+        if is_main and args.metrics_jsonl and last_loss_dict is not None:
             losses_out = {k: float(v.detach().cpu()) for k, v in last_loss_dict.items() if hasattr(v, "detach")}
             report = build_report(
                 losses=losses_out,
@@ -1385,7 +1592,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             append_jsonl(args.metrics_jsonl, report)
 
-    if args.metrics_json or args.metrics_csv:
+    if is_main and (args.metrics_json or args.metrics_csv):
         losses_out = {}
         if last_loss_dict is not None:
             losses_out = {k: float(v.detach().cpu()) for k, v in last_loss_dict.items() if hasattr(v, "detach")}
@@ -1402,24 +1609,62 @@ def main(argv: list[str] | None = None) -> int:
         if args.metrics_csv:
             write_csv_row(args.metrics_csv, summary)
 
-    if args.checkpoint_out:
+    if is_main and args.checkpoint_out:
         ckpt_path = Path(args.checkpoint_out)
         ckpt_path.parent.mkdir(parents=True, exist_ok=True)
-        torch.save(model.state_dict(), ckpt_path)
+        torch.save(unwrap_model(model).state_dict(), ckpt_path)
 
-    if args.checkpoint_bundle_out:
+    if is_main and args.checkpoint_bundle_out:
         save_checkpoint_bundle(
             args.checkpoint_bundle_out,
-            model=model,
+            model=unwrap_model(model),
             optim=optim,
             args=args,
             epoch=int(args.epochs) - 1,
             global_step=int(global_step),
-            last_epoch_steps=int(args.max_steps),
+            last_epoch_steps=int(last_epoch_steps),
             last_epoch_avg=last_epoch_avg,
             last_loss_dict=last_loss_dict,
             run_record=run_record,
         )
+
+    if is_main and args.onnx_out:
+        try:
+            from rtdetr_pose.export import export_onnx
+        except Exception as exc:  # pragma: no cover
+            raise SystemExit("rtdetr_pose.export.export_onnx is required for ONNX export") from exc
+
+        onnx_path = Path(str(args.onnx_out))
+        onnx_path.parent.mkdir(parents=True, exist_ok=True)
+        dummy = torch.zeros((1, 3, int(args.image_size), int(args.image_size)), dtype=torch.float32, device=device)
+        export_onnx(
+            unwrap_model(model).eval(),
+            dummy,
+            str(onnx_path),
+            opset_version=int(args.onnx_opset),
+            dynamic_hw=bool(args.onnx_dynamic_hw),
+        )
+        meta_path = Path(str(args.onnx_meta_out)) if args.onnx_meta_out else onnx_path.with_suffix(onnx_path.suffix + ".meta.json")
+        meta_path.parent.mkdir(parents=True, exist_ok=True)
+        meta = {
+            "timestamp_utc": _now_utc(),
+            "onnx": str(onnx_path),
+            "opset": int(args.onnx_opset),
+            "dynamic_hw": bool(args.onnx_dynamic_hw),
+            "dummy_input": {"shape": [1, 3, int(args.image_size), int(args.image_size)], "dtype": "float32"},
+            "run_record": run_record,
+        }
+        meta_path.write_text(json.dumps(meta, indent=2, sort_keys=True), encoding="utf-8")
+
+    if is_main and run_dir is not None:
+        (run_dir / "run_record.json").write_text(
+            json.dumps(run_record, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+
+    if ddp_enabled:
+        torch.distributed.barrier()
+        torch.distributed.destroy_process_group()
 
     return 0
 
