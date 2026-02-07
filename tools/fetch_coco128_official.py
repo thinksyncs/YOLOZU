@@ -5,8 +5,10 @@ import argparse
 import json
 import os
 import shutil
+import ssl
 import sys
 import tempfile
+import urllib.error
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -49,8 +51,28 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
 
 def _download(url: str, dst: Path) -> None:
     dst.parent.mkdir(parents=True, exist_ok=True)
-    with urllib.request.urlopen(url) as r, dst.open("wb") as f:
-        shutil.copyfileobj(r, f)
+    try:
+        with urllib.request.urlopen(url) as r, dst.open("wb") as f:
+            shutil.copyfileobj(r, f)
+        return
+    except Exception as exc:
+        # Some environments (observed on Runpod) can present a certificate that
+        # fails hostname verification for images.cocodataset.org. Fall back to
+        # plain HTTP for this public dataset host.
+        if (
+            isinstance(exc, urllib.error.URLError)
+            and isinstance(getattr(exc, "reason", None), ssl.SSLCertVerificationError)
+            and str(url).startswith("https://images.cocodataset.org/")
+        ):
+            url_http = "http://images.cocodataset.org/" + str(url).removeprefix("https://images.cocodataset.org/")
+            print(
+                f"warning: HTTPS download failed ({exc.reason}); retrying over HTTP: {url_http}",
+                file=sys.stderr,
+            )
+            with urllib.request.urlopen(url_http) as r, dst.open("wb") as f:
+                shutil.copyfileobj(r, f)
+            return
+        raise
 
 
 def _load_instances_from_local(coco_root: Path, split: str) -> dict:
