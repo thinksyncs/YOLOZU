@@ -11,6 +11,10 @@ def export_onnx(
         import torch
     except ImportError as exc:  # pragma: no cover
         raise RuntimeError("torch is required for export") from exc
+    try:
+        import onnx  # type: ignore  # noqa: F401
+    except Exception as exc:  # pragma: no cover
+        raise RuntimeError("onnx is required for torch.onnx.export (pip install onnx)") from exc
 
     class ExportWrapper(torch.nn.Module):
         def __init__(self, model):

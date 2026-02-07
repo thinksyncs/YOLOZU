@@ -1369,10 +1369,22 @@ def main(argv: list[str] | None = None) -> int:
         if device.type != "cuda":
             raise SystemExit("--amp requires --device cuda")
         if amp_mode == "fp16":
-            scaler = torch.cuda.amp.GradScaler()
-            autocast = torch.cuda.amp.autocast(dtype=torch.float16)
+            if hasattr(torch, "amp") and hasattr(torch.amp, "GradScaler"):
+                try:
+                    scaler = torch.amp.GradScaler("cuda")
+                except TypeError:
+                    scaler = torch.amp.GradScaler(device="cuda")
+            else:  # pragma: no cover
+                scaler = torch.cuda.amp.GradScaler()
+            if hasattr(torch, "amp") and hasattr(torch.amp, "autocast"):
+                autocast = torch.amp.autocast(device_type="cuda", dtype=torch.float16)
+            else:  # pragma: no cover
+                autocast = torch.cuda.amp.autocast(dtype=torch.float16)
         elif amp_mode == "bf16":
-            autocast = torch.cuda.amp.autocast(dtype=torch.bfloat16)
+            if hasattr(torch, "amp") and hasattr(torch.amp, "autocast"):
+                autocast = torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16)
+            else:  # pragma: no cover
+                autocast = torch.cuda.amp.autocast(dtype=torch.bfloat16)
         else:
             raise SystemExit(f"unknown --amp mode: {args.amp}")
     else:
