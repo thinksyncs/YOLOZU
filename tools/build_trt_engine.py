@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 import platform
+import re
 import shlex
 import subprocess
 import sys
@@ -101,6 +102,67 @@ def _git_head() -> str | None:
         return None
 
 
+def _run_capture(cmd: list[str]) -> str | None:
+    try:
+        out = subprocess.check_output(cmd, cwd=repo_root, stderr=subprocess.STDOUT)
+    except Exception:
+        return None
+    try:
+        return out.decode("utf-8", errors="replace").strip()
+    except Exception:
+        return None
+
+
+def _parse_cuda_version(nvidia_smi_text: str) -> str | None:
+    m = re.search(r"CUDA Version:\\s*([0-9]+\\.[0-9]+)", nvidia_smi_text)
+    return None if not m else m.group(1)
+
+
+def _nvidia_smi_info() -> dict[str, Any]:
+    info: dict[str, Any] = {}
+    raw = _run_capture(["nvidia-smi"])
+    if raw:
+        info["raw"] = raw
+        info["cuda_version"] = _parse_cuda_version(raw)
+
+    query = _run_capture(
+        [
+            "nvidia-smi",
+            "--query-gpu=name,uuid,compute_cap,driver_version",
+            "--format=csv,noheader,nounits",
+        ]
+    )
+    gpus = []
+    if query:
+        for line in query.splitlines():
+            parts = [p.strip() for p in line.split(",")]
+            if len(parts) < 4:
+                continue
+            gpus.append(
+                {
+                    "name": parts[0],
+                    "uuid": parts[1],
+                    "compute_cap": parts[2],
+                    "driver_version": parts[3],
+                }
+            )
+    info["gpus"] = gpus
+    return info
+
+
+def _trtexec_version(trtexec: str) -> str | None:
+    return _run_capture([trtexec, "--version"])
+
+
+def _tensorrt_py_version() -> str | None:
+    try:
+        import tensorrt  # type: ignore
+    except Exception:
+        return None
+    v = getattr(tensorrt, "__version__", None)
+    return None if v is None else str(v)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(sys.argv[1:] if argv is None else argv)
 
@@ -143,7 +205,17 @@ def main(argv: list[str] | None = None) -> int:
         "calib_images": None if calib_list is None else len(calib_list),
         "command": cmd,
         "command_str": shlex.join(cmd),
-        "env": {"PYTHONHASHSEED": os.environ.get("PYTHONHASHSEED")},
+        "env": {
+            "PYTHONHASHSEED": os.environ.get("PYTHONHASHSEED"),
+            "CUDA_VISIBLE_DEVICES": os.environ.get("CUDA_VISIBLE_DEVICES"),
+            "NVIDIA_VISIBLE_DEVICES": os.environ.get("NVIDIA_VISIBLE_DEVICES"),
+        },
+        "nvidia": _nvidia_smi_info(),
+        "tensorrt": {
+            "trtexec": str(args.trtexec),
+            "trtexec_version": _trtexec_version(str(args.trtexec)),
+            "tensorrt_py": _tensorrt_py_version(),
+        },
         "platform": {
             "system": platform.system(),
             "release": platform.release(),
