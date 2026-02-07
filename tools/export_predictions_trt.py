@@ -107,7 +107,7 @@ class _CudaBackend:
 def _load_cuda_backend() -> _CudaBackend:
     try:
         import pycuda.driver as cuda  # type: ignore
-        import pycuda.autoinit  # type: ignore
+        import pycuda.autoinit  # type: ignore  # noqa: F401
 
         return _CudaBackend("pycuda", cuda)
     except Exception:
@@ -686,4 +686,3 @@ def main(argv=None):
 
 if __name__ == "__main__":
     main()
-

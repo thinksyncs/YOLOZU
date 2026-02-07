@@ -68,7 +68,7 @@ class _CudaBackend:
 def _load_cuda_backend() -> _CudaBackend:
     try:
         import pycuda.driver as cuda  # type: ignore
-        import pycuda.autoinit  # type: ignore
+        import pycuda.autoinit  # type: ignore  # noqa: F401
 
         return _CudaBackend("pycuda", cuda)
     except Exception:
@@ -104,7 +104,7 @@ class _TrtRunner:
         self.input_name = input_name
         self.bindings = [0] * self.engine.num_bindings
         self.device_buffers: dict[str, object] = {}
-        self.host_buffers: dict[str, "np.ndarray"] = {}
+        self.host_buffers: dict[str, Any] = {}
         self.last_shapes: dict[str, tuple[int, ...]] = {}
         self.stream = self._create_stream()
 

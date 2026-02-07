@@ -20,7 +20,7 @@ except ImportError:  # pragma: no cover
     DataLoader = None
     Dataset = object
 
-from rtdetr_pose.dataset import build_manifest, extract_pose_intrinsics_targets
+from rtdetr_pose.dataset import build_manifest
 from rtdetr_pose.dataset import extract_full_gt_targets, depth_at_bbox_center
 from rtdetr_pose.factory import build_losses, build_model
 from rtdetr_pose.losses import Losses
