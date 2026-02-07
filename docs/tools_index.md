@@ -2,6 +2,15 @@
 
 This repo treats `tools/` as a stable, scriptable interface layer on top of the lightweight `yolozu/` core.
 
+## Unified CLI (recommended entrypoint)
+
+For most day-to-day flows, start with:
+
+- `python3 tools/yolozu.py doctor ...`
+- `python3 tools/yolozu.py export --backend {dummy,torch,onnxrt,trt} ...`
+- `python3 tools/yolozu.py predict-images --input-dir /path/to/images ...`
+- `python3 tools/yolozu.py sweep --config docs/hpo_sweep_example.json ...`
+
 ## Machine-readable tool registry
 
 - Tool manifest: `tools/manifest.json`

@@ -66,6 +66,29 @@
       ]
     },
     {
+      "id": "prepare_cityscapes_seg",
+      "entrypoint": "tools/prepare_cityscapes_seg.py",
+      "runner": "python3",
+      "summary": "Prepare Cityscapes semantic segmentation layout + dataset.json manifest.",
+      "tags": ["dataset", "cityscapes", "segmentation"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "inputs": [
+        { "name": "cityscapes_root", "kind": "dir", "required": true, "flag": "--cityscapes-root" },
+        { "name": "out", "kind": "dir", "required": true, "flag": "--out" },
+        { "name": "split", "kind": "string", "required": false, "flag": "--split", "default": "train" }
+      ],
+      "outputs": [
+        { "name": "dataset_root", "kind": "dir", "description": "Prepared output root created at --out." },
+        { "name": "dataset_descriptor", "kind": "file", "description": "dataset.json manifest.", "default": "<out>/dataset.json" }
+      ],
+      "examples": [
+        {
+          "description": "Create a manifest-only dataset.json (no copying).",
+          "command": "python3 tools/prepare_cityscapes_seg.py --cityscapes-root /path/to/cityscapes --split train --out data/cityscapes_seg --mode manifest"
+        }
+      ]
+    },
+    {
       "id": "build_manifest",
       "entrypoint": "tools/build_manifest.py",
       "runner": "python3",
@@ -100,6 +123,31 @@
         }
       ],
       "docs": ["docs/real_model_interface.md"]
+    },
+    {
+      "id": "yolozu",
+      "entrypoint": "tools/yolozu.py",
+      "runner": "python3",
+      "summary": "Unified CLI: doctor + export (dummy/torch/onnxrt/trt) + predict-images (folder→JSON+overlays+HTML) + sweep wrapper + fingerprinted caching.",
+      "tags": ["cli", "predictions", "diagnostics", "report", "sweep"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "contracts": { "produces": ["predictions_json"] },
+      "examples": [
+        { "description": "Doctor report.", "command": "python3 tools/yolozu.py doctor --output reports/doctor.json" },
+        {
+          "description": "Export dummy predictions with run meta.",
+          "command": "python3 tools/yolozu.py export --backend dummy --dataset data/coco128 --max-images 5 --output reports/predictions_dummy_run.json"
+        },
+        {
+          "description": "Folder input → predictions JSON + overlays + HTML (dummy backend).",
+          "command": "python3 tools/yolozu.py predict-images --backend dummy --input-dir data/coco128/images/val2017 --max-images 5 --output reports/predict_images_dummy.json --overlays-dir reports/overlays_dummy --html reports/predict_images_dummy.html"
+        },
+        {
+          "description": "Run a sweep config (dry-run).",
+          "command": "python3 tools/yolozu.py sweep --config docs/hpo_sweep_example.json --dry-run"
+        }
+      ],
+      "docs": ["docs/tools_index.md"]
     },
     {
       "id": "validate_predictions",
@@ -256,6 +304,27 @@
       "docs": ["docs/distillation.md"]
     },
     {
+      "id": "hpo_sweep",
+      "entrypoint": "tools/hpo_sweep.py",
+      "runner": "python3",
+      "summary": "Run a configurable parameter sweep (grid or list) and emit JSONL/CSV/MD results.",
+      "tags": ["sweep", "hpo"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "inputs": [{ "name": "config", "kind": "file", "required": true, "flag": "--config" }],
+      "outputs": [
+        { "name": "result_jsonl", "kind": "file", "default": "reports/hpo_sweep.jsonl" },
+        { "name": "result_csv", "kind": "file", "default": "reports/hpo_sweep.csv" },
+        { "name": "result_md", "kind": "file", "default": "reports/hpo_sweep.md" }
+      ],
+      "examples": [
+        {
+          "description": "Dry-run example sweep.",
+          "command": "python3 tools/hpo_sweep.py --config docs/hpo_sweep_example.json --dry-run"
+        }
+      ],
+      "docs": ["docs/hpo_sweep.md"]
+    },
+    {
       "id": "tune_gate_weights",
       "entrypoint": "tools/tune_gate_weights.py",
       "runner": "python3",
@@ -296,6 +365,27 @@
         }
       ],
       "docs": ["docs/onnx_export_parity.md"]
+    },
+    {
+      "id": "refine_predictions_hessian",
+      "entrypoint": "tools/refine_predictions_hessian.py",
+      "runner": "python3",
+      "summary": "Refine pose-related prediction fields with a safe Newton/finite-diff Hessian stepper (experimental).",
+      "tags": ["predictions", "refine", "hessian", "pose"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "requires": { "python_packages": ["torch"] },
+      "contracts": { "consumes": ["predictions_json"], "produces": ["predictions_json"] },
+      "inputs": [
+        { "name": "predictions", "kind": "file", "required": true, "flag": "--predictions" },
+        { "name": "output", "kind": "file", "required": true, "flag": "--output" }
+      ],
+      "outputs": [{ "name": "predictions_json", "kind": "file", "description": "Refined predictions JSON written to --output." }],
+      "examples": [
+        {
+          "description": "Refine offsets in-place (CPU default).",
+          "command": "python3 tools/refine_predictions_hessian.py --predictions reports/predictions.json --refine-offsets --steps 5 --output reports/predictions_refined.json --wrap"
+        }
+      ]
     },
     {
       "id": "export_predictions_onnxrt",
@@ -341,6 +431,55 @@
         }
       ],
       "docs": ["docs/tensorrt_pipeline.md"]
+    },
+    {
+      "id": "export_trt",
+      "entrypoint": "tools/export_trt.py",
+      "runner": "python3",
+      "summary": "Canonical PyTorch → ONNX → TensorRT export route for in-repo rtdetr_pose models.",
+      "tags": ["export", "onnx", "tensorrt", "rtdetr_pose"],
+      "platform": {
+        "cpu_ok": true,
+        "gpu_required": false,
+        "macos_ok": true,
+        "linux_ok": true,
+        "notes": "ONNX export can run on CPU; engine build requires Linux+NVIDIA+trtexec unless --skip-engine is set."
+      },
+      "requires": { "python_packages": ["torch", "onnx"], "system": ["trtexec (optional, for engine build)"] },
+      "examples": [
+        {
+          "description": "Export ONNX and build a FP16 engine (Linux/NVIDIA).",
+          "command": "python3 tools/export_trt.py --config rtdetr_pose/configs/base.json --checkpoint /path/to/checkpoint.pt --image-size 320 --onnx models/rtdetr_pose.onnx --dynamic-hw --engine engines/rtdetr_pose_fp16.plan --precision fp16 --min-shape 1x3x320x320 --opt-shape 1x3x640x640 --max-shape 1x3x960x960"
+        }
+      ],
+      "docs": ["docs/tensorrt_pipeline.md"]
+    },
+    {
+      "id": "rtdetr_pose_backend_suite",
+      "entrypoint": "tools/rtdetr_pose_backend_suite.py",
+      "runner": "python3",
+      "summary": "Backend parity + benchmark suite for rtdetr_pose (torch vs onnxruntime vs tensorrt).",
+      "tags": ["rtdetr_pose", "parity", "benchmark"],
+      "platform": {
+        "cpu_ok": true,
+        "gpu_required": false,
+        "macos_ok": true,
+        "linux_ok": true,
+        "notes": "torch/onnxrt can run on CPU; TensorRT requires Linux+NVIDIA+tensorrt and a built engine plan."
+      },
+      "requires": { "python_packages": ["torch", "numpy"] },
+      "inputs": [
+        { "name": "config", "kind": "file", "required": true, "flag": "--config" },
+        { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/rtdetr_pose_backend_suite.json" }
+      ],
+      "outputs": [{ "name": "report_json", "kind": "file", "default": "reports/rtdetr_pose_backend_suite.json" }],
+      "examples": [
+        {
+          "description": "Torch ↔ ONNXRuntime parity + benchmark (CPU).",
+          "command": "python3 tools/rtdetr_pose_backend_suite.py --config rtdetr_pose/configs/base.json --checkpoint /path/to/checkpoint.pt --onnx models/rtdetr_pose.onnx --backends torch,onnxrt --device cpu --image-size 320 --samples 2 --warmup 20 --iterations 200 --output reports/rtdetr_pose_backend_suite.json"
+        }
+      ],
+      "docs": ["docs/real_model_interface.md", "docs/tensorrt_pipeline.md"]
     },
     {
       "id": "export_predictions_trt",

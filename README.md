@@ -37,6 +37,12 @@ Start here: [docs/training_inference_export.md](docs/training_inference_export.m
 - License policy: [docs/license_policy.md](docs/license_policy.md)
 - Tools index (AI-friendly): [docs/tools_index.md](docs/tools_index.md) / [tools/manifest.json](tools/manifest.json)
 
+## Roadmap (priorities)
+
+- P0: Unified CLI (`torch` / `onnxruntime` / `tensorrt`) with consistent args + same output schema; always write meta (git SHA / env / GPU / seed / config hash); keep `tools/manifest.json` updated.
+- P1: `doctor` (deps/GPU/driver/onnxrt/TRT diagnostics) + `predict-images` (folder input → predictions JSON + overlays) + HTML report.
+- P2: Cache/re-run (fingerprinted runs) + sweeps (TTT / thresholds / gate weights) + production inference cores (C++/Rust) as needed.
+
 ## Pros / Cons (project-level)
 
 ### Pros
@@ -168,7 +174,7 @@ If you run real inference elsewhere (PyTorch/TensorRT/etc.), you can evaluate th
 
 - Export predictions (in an environment where the adapter can run):
   - `python3 tools/export_predictions.py --adapter rtdetr_pose --checkpoint /path/to.ckpt --max-images 50 --wrap --output reports/predictions.json`
-  - TTA (prediction-space transform): `python3 tools/export_predictions.py --adapter rtdetr_pose --tta --tta-seed 0 --tta-flip-prob 0.5 --wrap --output reports/predictions_tta.json`
+  - TTA (post-transform): `python3 tools/export_predictions.py --adapter rtdetr_pose --tta --tta-seed 0 --tta-flip-prob 0.5 --wrap --output reports/predictions_tta.json`
   - TTT (pre-prediction test-time training; updates model weights in-memory):
     - Tent: `python3 tools/export_predictions.py --adapter rtdetr_pose --ttt --ttt-method tent --ttt-steps 5 --ttt-lr 1e-4 --wrap --output reports/predictions_ttt_tent.json`
     - MIM: `python3 tools/export_predictions.py --adapter rtdetr_pose --ttt --ttt-method mim --ttt-steps 5 --ttt-mask-prob 0.6 --ttt-patch-size 16 --wrap --output reports/predictions_ttt_mim.json`

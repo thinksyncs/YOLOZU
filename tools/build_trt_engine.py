@@ -3,7 +3,9 @@ import hashlib
 import json
 import os
 import platform
+import re
 import shlex
+import shutil
 import subprocess
 import sys
 import time
@@ -37,6 +39,12 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         help="Where to write calibration image list (if --calib-dataset is set).",
     )
     p.add_argument("--trtexec", default="trtexec", help="Path to trtexec binary.")
+    p.add_argument(
+        "--builder",
+        choices=("auto", "trtexec", "python"),
+        default="auto",
+        help="Engine builder backend (default: auto). 'python' uses TensorRT Python API when trtexec is unavailable.",
+    )
     p.add_argument("--extra-args", default=None, help="Extra trtexec args (quoted string).")
     p.add_argument("--meta-output", default="reports/trt_engine_meta.json", help="Where to write build metadata JSON.")
     p.add_argument("--dry-run", action="store_true", help="Print command and write meta without running trtexec.")
@@ -93,6 +101,17 @@ def _write_calib_list(dataset_root: str, *, split: str | None, limit: int, outpu
     return paths
 
 
+def _parse_shape(value: str) -> tuple[int, ...]:
+    raw = str(value).replace(",", "x").lower()
+    parts = [p.strip() for p in raw.split("x") if p.strip()]
+    if not parts:
+        raise ValueError(f"invalid shape: {value!r}")
+    dims = tuple(int(p) for p in parts)
+    if any(d <= 0 for d in dims):
+        raise ValueError(f"invalid shape: {value!r}")
+    return dims
+
+
 def _build_command(args: argparse.Namespace, *, onnx_path: Path, engine_path: Path, timing_cache: Path) -> list[str]:
     cmd = [
         args.trtexec,
@@ -115,12 +134,146 @@ def _build_command(args: argparse.Namespace, *, onnx_path: Path, engine_path: Pa
     return cmd
 
 
+def _trtexec_available(trtexec: str) -> bool:
+    if not trtexec:
+        return False
+    p = Path(trtexec)
+    if p.is_absolute() or "/" in str(trtexec):
+        return p.exists()
+    return shutil.which(str(trtexec)) is not None
+
+
 def _git_head() -> str | None:
     try:
         out = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo_root)
         return out.decode("utf-8").strip() or None
     except Exception:
         return None
+
+
+def _run_capture(cmd: list[str]) -> str | None:
+    try:
+        out = subprocess.check_output(cmd, cwd=repo_root, stderr=subprocess.STDOUT)
+    except Exception:
+        return None
+    try:
+        return out.decode("utf-8", errors="replace").strip()
+    except Exception:
+        return None
+
+
+def _parse_cuda_version(nvidia_smi_text: str) -> str | None:
+    m = re.search(r"CUDA Version:\\s*([0-9]+\\.[0-9]+)", nvidia_smi_text)
+    return None if not m else m.group(1)
+
+
+def _nvidia_smi_info() -> dict[str, Any]:
+    info: dict[str, Any] = {}
+    raw = _run_capture(["nvidia-smi"])
+    if raw:
+        info["raw"] = raw
+        info["cuda_version"] = _parse_cuda_version(raw)
+
+    query = _run_capture(
+        [
+            "nvidia-smi",
+            "--query-gpu=name,uuid,compute_cap,driver_version",
+            "--format=csv,noheader,nounits",
+        ]
+    )
+    gpus = []
+    if query:
+        for line in query.splitlines():
+            parts = [p.strip() for p in line.split(",")]
+            if len(parts) < 4:
+                continue
+            gpus.append(
+                {
+                    "name": parts[0],
+                    "uuid": parts[1],
+                    "compute_cap": parts[2],
+                    "driver_version": parts[3],
+                }
+            )
+    info["gpus"] = gpus
+    return info
+
+
+def _trtexec_version(trtexec: str) -> str | None:
+    return _run_capture([trtexec, "--version"])
+
+
+def _tensorrt_py_version() -> str | None:
+    try:
+        import tensorrt  # type: ignore
+    except Exception:
+        return None
+    v = getattr(tensorrt, "__version__", None)
+    return None if v is None else str(v)
+
+
+def _build_engine_python(
+    *,
+    onnx_path: Path,
+    engine_path: Path,
+    precision: str,
+    input_name: str,
+    min_shape: tuple[int, ...],
+    opt_shape: tuple[int, ...],
+    max_shape: tuple[int, ...],
+    workspace_mib: int,
+) -> dict[str, Any]:
+    try:
+        import tensorrt as trt  # type: ignore
+    except Exception as exc:  # pragma: no cover
+        raise RuntimeError("tensorrt python package is required for --builder python") from exc
+
+    if str(precision) == "int8":
+        raise RuntimeError("--builder python does not support --precision int8 yet (use --builder trtexec)")
+
+    logger = trt.Logger(trt.Logger.WARNING)
+    builder = trt.Builder(logger)
+    network = builder.create_network(1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH))
+    parser = trt.OnnxParser(network, logger)
+
+    onnx_bytes = onnx_path.read_bytes()
+    if not parser.parse(onnx_bytes):
+        errors: list[str] = []
+        for i in range(int(parser.num_errors)):
+            try:
+                errors.append(str(parser.get_error(i)))
+            except Exception:
+                errors.append("<unknown parser error>")
+        raise RuntimeError("failed to parse ONNX with TensorRT OnnxParser:\n" + "\n".join(errors))
+
+    config = builder.create_builder_config()
+    config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, int(workspace_mib) * 1024 * 1024)
+
+    if str(precision) == "fp16":
+        config.set_flag(trt.BuilderFlag.FP16)
+
+    profile = builder.create_optimization_profile()
+    input_names = [network.get_input(i).name for i in range(int(network.num_inputs))]
+    if not input_names:
+        raise RuntimeError("TensorRT network has no inputs")
+    # TensorRT does not reliably validate the input name on set_shape() across versions.
+    # Apply the same profile to all network inputs (typical ONNX models here have 1 input).
+    for name in input_names:
+        profile.set_shape(str(name), min_shape, opt_shape, max_shape)
+    config.add_optimization_profile(profile)
+
+    serialized = builder.build_serialized_network(network, config)
+    if serialized is None:
+        raise RuntimeError("TensorRT build_serialized_network returned None")
+
+    engine_path.write_bytes(bytes(serialized))
+    return {
+        "builder": "python",
+        "tensorrt_py": getattr(trt, "__version__", None),
+        "explicit_batch": True,
+        "network_inputs": [{"name": str(name)} for name in input_names],
+        "profile": {"min": list(min_shape), "opt": list(opt_shape), "max": list(max_shape)},
+    }
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -163,9 +316,20 @@ def main(argv: list[str] | None = None) -> int:
         "calib_cache": None if not args.calib_cache else str(_resolve_path(args.calib_cache)),
         "calib_list": None if calib_list_path is None else str(calib_list_path),
         "calib_images": None if calib_list is None else len(calib_list),
+        "builder": str(args.builder),
         "command": cmd,
         "command_str": shlex.join(cmd),
-        "env": {"PYTHONHASHSEED": os.environ.get("PYTHONHASHSEED")},
+        "env": {
+            "PYTHONHASHSEED": os.environ.get("PYTHONHASHSEED"),
+            "CUDA_VISIBLE_DEVICES": os.environ.get("CUDA_VISIBLE_DEVICES"),
+            "NVIDIA_VISIBLE_DEVICES": os.environ.get("NVIDIA_VISIBLE_DEVICES"),
+        },
+        "nvidia": _nvidia_smi_info(),
+        "tensorrt": {
+            "trtexec": str(args.trtexec),
+            "trtexec_version": _trtexec_version(str(args.trtexec)),
+            "tensorrt_py": _tensorrt_py_version(),
+        },
         "platform": {
             "system": platform.system(),
             "release": platform.release(),
@@ -187,10 +351,39 @@ def main(argv: list[str] | None = None) -> int:
         print(meta["command_str"])
         return 0
 
-    try:
-        subprocess.run(cmd, check=True)
-    except FileNotFoundError as exc:
-        raise SystemExit(f"trtexec not found: {args.trtexec}") from exc
+    builder_mode = str(args.builder or "auto").lower()
+    if builder_mode not in ("auto", "trtexec", "python"):
+        raise SystemExit(f"unknown --builder: {args.builder}")
+
+    effective = builder_mode
+    if builder_mode == "auto":
+        effective = "trtexec" if _trtexec_available(str(args.trtexec)) else "python"
+    meta["builder_effective"] = effective
+
+    if effective == "trtexec":
+        try:
+            subprocess.run(cmd, check=True)
+        except FileNotFoundError as exc:
+            raise SystemExit(f"trtexec not found: {args.trtexec} (try --builder python)") from exc
+    else:
+        try:
+            python_report = _build_engine_python(
+                onnx_path=onnx_path,
+                engine_path=engine_path,
+                precision=str(args.precision),
+                input_name=str(args.input_name),
+                min_shape=_parse_shape(str(args.min_shape)),
+                opt_shape=_parse_shape(str(args.opt_shape)),
+                max_shape=_parse_shape(str(args.max_shape)),
+                workspace_mib=int(args.workspace),
+            )
+        except Exception as exc:
+            raise SystemExit(f"TensorRT python build failed: {exc}") from exc
+        meta["python_builder"] = python_report
+
+    if engine_path.exists():
+        meta["engine_sha256"] = _sha256(engine_path)
+    meta_path.write_text(json.dumps(meta, indent=2, sort_keys=True))
 
     return 0
 

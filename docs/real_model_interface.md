@@ -8,6 +8,7 @@ scaffold. It is Apache-2.0-compatible and already wired into the adapter layer.
 Training (CPU scaffold, metrics output):
 - `python3 rtdetr_pose/tools/train_minimal.py --dataset-root data/coco128 --max-steps 50 --metrics-jsonl reports/train_metrics.jsonl --metrics-csv reports/train_metrics.csv`
 - Optional checkpoint save: `--checkpoint-out /path/to/checkpoint.pt`
+- GPU (AMP + accum + standard artifacts): `python3 rtdetr_pose/tools/train_minimal.py --dataset-root data/coco128 --device cuda --amp fp16 --grad-accum 2 --run-dir runs/train_minimal_demo --epochs 1 --max-steps 30`
 
 Inference / predictions export:
 - `python3 tools/export_predictions.py --adapter rtdetr_pose --dataset data/coco128 --checkpoint /path/to/checkpoint.pt --max-images 50 --wrap`
@@ -19,7 +20,16 @@ Baseline report (real outputs + fps):
 - `python3 tools/run_baseline.py --adapter rtdetr_pose --dataset data/coco128 --max-images 50 --output reports/baseline.json`
 
 Export (ONNX):
-- `python3 -c "from rtdetr_pose.export import export_onnx; ..."` (see `rtdetr_pose/rtdetr_pose/export.py`)
+- Prefer `train_minimal.py --run-dir ...` (writes `model.onnx` + `model.onnx.meta.json`).
+- Or call `python3 -c "from rtdetr_pose.export import export_onnx; ..."` (see `rtdetr_pose/rtdetr_pose/export.py`).
+- Canonical PyTorch → ONNX → TensorRT (engine build): `python3 tools/export_trt.py ...` (see `docs/tensorrt_pipeline.md`).
+
+Backend parity + benchmark (torch vs ONNXRuntime vs TensorRT):
+- Export ONNX (and optional engine): `python3 tools/export_trt.py --skip-engine ...`
+- Run the suite: `python3 tools/rtdetr_pose_backend_suite.py --config ... --checkpoint ... --onnx ... [--engine ...] --backends torch,onnxrt,trt --output reports/rtdetr_pose_backend_suite.json`
+- Notes:
+  - ONNXRuntime path needs `onnxruntime` (CPU is fine for CI).
+  - TensorRT path needs `tensorrt` + CUDA bindings (`pycuda` or `cuda-python`) and a built engine plan.
 
 ## No-torch path (precomputed predictions)
 

@@ -1,8 +1,10 @@
 import argparse
 import json
 import math
+import os
 import sys
 import time
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
 
@@ -12,38 +14,27 @@ sys.path.insert(0, str(repo_root.parent))
 
 try:
     import torch
-    from torch.nn import functional as F
     from torch.utils.data import DataLoader, Dataset
 except ImportError:  # pragma: no cover
     torch = None
     DataLoader = None
     Dataset = object
 
-try:  # pragma: no cover - optional dependency
-    from torch.utils.tensorboard import SummaryWriter
-except Exception:  # pragma: no cover
-    SummaryWriter = None
-
-try:
-    from tqdm import tqdm
-except Exception:  # pragma: no cover
-    tqdm = None
-
 from rtdetr_pose.dataset import build_manifest
 from rtdetr_pose.dataset import extract_full_gt_targets, depth_at_bbox_center
 from rtdetr_pose.factory import build_losses, build_model
 from rtdetr_pose.losses import Losses
-from rtdetr_pose.export import export_onnx
 from rtdetr_pose.training import build_query_aligned_targets
 from rtdetr_pose.model import RTDETRPose
-from rtdetr_pose.lora import apply_lora, count_trainable_params, mark_only_lora_as_trainable
-from rtdetr_pose.optim_factory import build_optimizer
-from rtdetr_pose.sched_factory import build_scheduler, EMA
 
 from yolozu.metrics_report import append_jsonl, build_report, write_csv_row, write_json
 from yolozu.jitter import default_jitter_profile, sample_intrinsics_jitter, sample_extrinsics_jitter
 from yolozu.run_record import build_run_record
 from yolozu.sdft import SdftConfig, compute_sdft_loss
+
+
+def _now_utc() -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
 def load_config_file(path: str | Path) -> dict[str, Any]:
@@ -77,7 +68,7 @@ def load_config_file(path: str | Path) -> dict[str, Any]:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Minimal RTDETRPose training scaffold (CPU).")
+    parser = argparse.ArgumentParser(description="Minimal RTDETRPose training scaffold.")
     parser.add_argument(
         "--config",
         default=None,
@@ -87,99 +78,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--split", type=str, default="train2017")
     parser.add_argument("--epochs", type=int, default=1)
     parser.add_argument("--batch-size", type=int, default=2)
+    parser.add_argument(
+        "--grad-accum",
+        type=int,
+        default=1,
+        help="Gradient accumulation steps (default: 1). Optimizer steps happen every N batches.",
+    )
     parser.add_argument("--lr", type=float, default=1e-4)
-    parser.add_argument(
-        "--optimizer",
-        choices=("adamw", "sgd"),
-        default="adamw",
-        help="Optimizer to use (default: adamw).",
-    )
-    parser.add_argument(
-        "--momentum",
-        type=float,
-        default=0.9,
-        help="SGD momentum (default: 0.9).",
-    )
-    parser.add_argument(
-        "--weight-decay",
-        type=float,
-        default=0.01,
-        help="Weight decay for optimizer (default: 0.01).",
-    )
-    parser.add_argument(
-        "--nesterov",
-        action="store_true",
-        help="Use Nesterov momentum for SGD (default: False).",
-    )
-    parser.add_argument(
-        "--use-param-groups",
-        action="store_true",
-        help="Use separate param groups for backbone/head with different lr/wd (default: False).",
-    )
-    parser.add_argument(
-        "--backbone-lr-mult",
-        type=float,
-        default=1.0,
-        help="LR multiplier for backbone parameters (default: 1.0).",
-    )
-    parser.add_argument(
-        "--head-lr-mult",
-        type=float,
-        default=1.0,
-        help="LR multiplier for head parameters (default: 1.0).",
-    )
-    parser.add_argument(
-        "--backbone-wd-mult",
-        type=float,
-        default=1.0,
-        help="Weight decay multiplier for backbone parameters (default: 1.0).",
-    )
-    parser.add_argument(
-        "--head-wd-mult",
-        type=float,
-        default=1.0,
-        help="Weight decay multiplier for head parameters (default: 1.0).",
-    )
-    parser.add_argument(
-        "--scheduler",
-        choices=("none", "cos", "linear", "cosine", "onecycle", "multistep"),
-        default="none",
-        help="LR schedule after warmup (default: none). cos/cosine are equivalent.",
-    )
-    parser.add_argument(
-        "--scheduler-milestones",
-        type=str,
-        default="",
-        help="Comma-separated step indices for MultiStepLR (e.g., '1000,2000,3000').",
-    )
-    parser.add_argument(
-        "--scheduler-gamma",
-        type=float,
-        default=0.1,
-        help="Multiplicative factor for MultiStepLR (default: 0.1).",
-    )
-    parser.add_argument(
-        "--min-lr",
-        type=float,
-        default=0.0,
-        help="Minimum LR for linear/cos schedules (default: 0.0).",
-    )
-    parser.add_argument(
-        "--use-ema",
-        action="store_true",
-        help="Enable Exponential Moving Average of model weights (default: False).",
-    )
-    parser.add_argument(
-        "--ema-decay",
-        type=float,
-        default=0.999,
-        help="EMA decay factor (default: 0.999).",
-    )
-    parser.add_argument(
-        "--ema-eval",
-        action="store_true",
-        help="Use EMA weights for evaluation/export (default: False, use training weights).",
-    )
     parser.add_argument(
         "--device",
         type=str,
@@ -187,21 +92,26 @@ def build_parser() -> argparse.ArgumentParser:
         help="Torch device for training (e.g., cpu, cuda, cuda:0).",
     )
     parser.add_argument(
+        "--amp",
+        choices=("none", "fp16", "bf16"),
+        default="none",
+        help="Automatic mixed precision (cuda only): none|fp16|bf16 (default: none).",
+    )
+    parser.add_argument(
+        "--ddp",
+        action="store_true",
+        help="Enable DistributedDataParallel (single node). Use via torchrun; outputs written on rank0 only.",
+    )
+    parser.add_argument(
+        "--ddp-backend",
+        default=None,
+        help="DDP backend override (default: nccl for cuda, else gloo).",
+    )
+    parser.add_argument(
         "--clip-grad-norm",
         type=float,
         default=0.0,
         help="If >0, clip gradients to this max norm before optimizer step.",
-    )
-    parser.add_argument(
-        "--gradient-accumulation-steps",
-        type=int,
-        default=1,
-        help="Number of steps to accumulate gradients before optimizer update (default: 1, no accumulation).",
-    )
-    parser.add_argument(
-        "--use-amp",
-        action="store_true",
-        help="Enable Automatic Mixed Precision (AMP) training with torch.cuda.amp.",
     )
     parser.add_argument(
         "--lr-warmup-steps",
@@ -215,20 +125,8 @@ def build_parser() -> argparse.ArgumentParser:
         default=0.0,
         help="Initial learning rate value at step 0 for warmup.",
     )
-    parser.add_argument(
-        "--stage-off-steps",
-        type=int,
-        default=0,
-        help="If >0, train offsets-only for this many steps (K loss disabled).",
-    )
-    parser.add_argument(
-        "--stage-k-steps",
-        type=int,
-        default=0,
-        help="If >0, train K-only for this many steps after offsets stage (offset loss disabled).",
-    )
     parser.add_argument("--max-steps", type=int, default=30, help="Cap steps per epoch")
-    parser.add_argument("--log-every", type=int, default=1, help="Print every N steps")
+    parser.add_argument("--log-every", type=int, default=10, help="Print every N steps")
     parser.add_argument("--image-size", type=int, default=64)
     parser.add_argument(
         "--multiscale",
@@ -326,100 +224,9 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Load real images via record['image_path'] (requires Pillow). Default uses synthetic images.",
     )
-    parser.add_argument(
-        "--mim-mask-prob",
-        type=float,
-        default=0.0,
-        help="Probability of masking each MIM patch (default: 0.0 disables).",
-    )
-    parser.add_argument(
-        "--mim-mask-prob-start",
-        type=float,
-        default=None,
-        help="Optional start value for MIM mask prob schedule.",
-    )
-    parser.add_argument(
-        "--mim-mask-prob-end",
-        type=float,
-        default=None,
-        help="Optional end value for MIM mask prob schedule.",
-    )
-    parser.add_argument(
-        "--mim-mask-size",
-        type=int,
-        default=16,
-        help="Patch size for MIM masking (default: 16).",
-    )
-    parser.add_argument(
-        "--mim-mask-value",
-        type=float,
-        default=0.0,
-        help="Fill value for masked patches (default: 0.0).",
-    )
-    parser.add_argument(
-        "--mim-teacher",
-        action="store_true",
-        help="Enable self-distillation between masked/unmasked images.",
-    )
-    parser.add_argument(
-        "--mim-loss-weight",
-        type=float,
-        default=0.0,
-        help="Weight for MIM distillation loss (default: 0.0).",
-    )
-    parser.add_argument(
-        "--mim-loss-weight-start",
-        type=float,
-        default=None,
-        help="Optional start value for MIM loss weight schedule.",
-    )
-    parser.add_argument(
-        "--mim-loss-weight-end",
-        type=float,
-        default=None,
-        help="Optional end value for MIM loss weight schedule.",
-    )
     parser.add_argument("--num-queries", type=int, default=10)
     parser.add_argument("--hidden-dim", type=int, default=64)
     parser.add_argument("--num-classes", type=int, default=80)
-
-    # LoRA (optional)
-    parser.add_argument(
-        "--lora-r",
-        type=int,
-        default=0,
-        help="Enable LoRA by setting rank r>0 (default: 0 disables).",
-    )
-    parser.add_argument(
-        "--lora-alpha",
-        type=float,
-        default=None,
-        help="LoRA alpha scaling (default: r).",
-    )
-    parser.add_argument(
-        "--lora-dropout",
-        type=float,
-        default=0.0,
-        help="LoRA dropout on inputs (default: 0.0).",
-    )
-    parser.add_argument(
-        "--lora-target",
-        choices=("head", "all_linear"),
-        default="head",
-        help="Where to apply LoRA (default: head).",
-    )
-    parser.add_argument(
-        "--lora-freeze-base",
-        default=True,
-        action=argparse.BooleanOptionalAction,
-        help="Freeze base weights and train LoRA params only (default: true).",
-    )
-    parser.add_argument(
-        "--lora-train-bias",
-        choices=("none", "all"),
-        default="none",
-        help="If LoRA is enabled, optionally train biases too (default: none).",
-    )
     parser.add_argument(
         "--use-uncertainty",
         action="store_true",
@@ -442,22 +249,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--cost-bbox", type=float, default=5.0)
     parser.add_argument("--cost-z", type=float, default=0.0, help="Optional matching cost for depth")
     parser.add_argument(
-        "--cost-z-start-step",
-        type=int,
-        default=0,
-        help="Delay enabling cost-z until this global step (default: 0).",
-    )
-    parser.add_argument(
         "--cost-rot",
         type=float,
         default=0.0,
         help="Optional matching cost for rotation (geodesic angle)",
-    )
-    parser.add_argument(
-        "--cost-rot-start-step",
-        type=int,
-        default=0,
-        help="Delay enabling cost-rot until this global step (default: 0).",
     )
     parser.add_argument(
         "--synthetic-pose",
@@ -472,19 +267,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--load-aux",
         action="store_true",
-        help="Allow loading mask/depth arrays from paths (.json/.npy/.png) for z-from-dobj; default keeps lazy paths",
+        help="Allow loading mask/depth arrays from paths (.json/.npy) for z-from-dobj; default keeps lazy paths",
     )
     parser.add_argument(
         "--cost-t",
         type=float,
         default=0.0,
         help="Optional matching cost for translation recovered from (bbox, offsets, z, K')",
-    )
-    parser.add_argument(
-        "--cost-t-start-step",
-        type=int,
-        default=0,
-        help="Delay enabling cost-t until this global step (default: 0).",
     )
     parser.add_argument(
         "--debug-losses",
@@ -497,48 +286,9 @@ def build_parser() -> argparse.ArgumentParser:
         default="none",
         help="Multi-task loss alignment strategy (default: none).",
     )
-    parser.add_argument(
-        "--metrics-jsonl",
-        default="reports/train_metrics.jsonl",
-        help="Append per-step loss/metric report JSONL here.",
-    )
+    parser.add_argument("--metrics-jsonl", default=None, help="Append per-step loss/metric report JSONL here.")
     parser.add_argument("--metrics-json", default=None, help="Write final run summary JSON here.")
-    parser.add_argument(
-        "--metrics-csv",
-        default="reports/train_metrics.csv",
-        help="Write final run summary CSV (single row) here.",
-    )
-    parser.add_argument(
-        "--progress",
-        default=True,
-        action=argparse.BooleanOptionalAction,
-        help="Show progress bar with live loss (default: true).",
-    )
-    parser.add_argument(
-        "--tensorboard-logdir",
-        default=None,
-        help="Optional TensorBoard log directory (enables scalar logging).",
-    )
-
-    # Training-time tricks (optional)
-    parser.add_argument(
-        "--denoise-queries",
-        type=int,
-        default=0,
-        help="If >0, append denoised copies of GT targets for matching.",
-    )
-    parser.add_argument(
-        "--denoise-bbox-noise",
-        type=float,
-        default=0.01,
-        help="Stddev for bbox noise applied to denoised targets (default: 0.01).",
-    )
-    parser.add_argument(
-        "--denoise-label-noise",
-        type=float,
-        default=0.0,
-        help="Probability to randomize class labels for denoised targets (default: 0.0).",
-    )
+    parser.add_argument("--metrics-csv", default=None, help="Write final run summary CSV (single row) here.")
 
     # Continual learning / self-distillation (SDFT-inspired)
     parser.add_argument(
@@ -605,24 +355,79 @@ def build_parser() -> argparse.ArgumentParser:
 
     # Back-compat: weights-only checkpoint
     parser.add_argument("--checkpoint-out", default=None, help="Write model state_dict to this path at end.")
+
+    # Reproducible artifacts
     parser.add_argument(
-        "--export-onnx",
-        default=True,
-        action=argparse.BooleanOptionalAction,
-        help="Export ONNX after training (default: true).",
+        "--run-dir",
+        default=None,
+        help="If set, write standard artifacts into this folder (run_record.json, metrics.jsonl/json/csv, checkpoint*.pt, model.onnx).",
     )
     parser.add_argument(
         "--onnx-out",
-        default="reports/rtdetr_pose.onnx",
-        help="Output path for ONNX export (default: reports/rtdetr_pose.onnx).",
+        default=None,
+        help="Optional ONNX export output path (overrides --run-dir default).",
     )
     parser.add_argument(
-        "--onnx-opset",
-        type=int,
-        default=17,
-        help="ONNX opset version (default: 17).",
+        "--onnx-meta-out",
+        default=None,
+        help="Optional ONNX export metadata JSON path (default: <onnx-out>.meta.json).",
+    )
+    parser.add_argument("--onnx-opset", type=int, default=17, help="ONNX opset version (default: 17).")
+    parser.add_argument(
+        "--onnx-dynamic-hw",
+        action="store_true",
+        help="Export ONNX with dynamic height/width axes (batch is always dynamic).",
     )
     return parser
+
+
+def apply_run_dir_defaults(args: argparse.Namespace) -> tuple[argparse.Namespace, Path | None]:
+    run_dir = None
+    if args.run_dir:
+        run_dir = Path(str(args.run_dir))
+        run_dir.mkdir(parents=True, exist_ok=True)
+
+        def _default_path(current: str | None, name: str) -> str:
+            return current if current else str(run_dir / name)
+
+        args.metrics_jsonl = _default_path(args.metrics_jsonl, "metrics.jsonl")
+        args.metrics_json = _default_path(args.metrics_json, "metrics.json")
+        args.metrics_csv = _default_path(args.metrics_csv, "metrics.csv")
+        args.checkpoint_out = _default_path(args.checkpoint_out, "checkpoint.pt")
+        args.checkpoint_bundle_out = _default_path(args.checkpoint_bundle_out, "checkpoint_bundle.pt")
+        args.onnx_out = _default_path(args.onnx_out, "model.onnx")
+
+    return args, run_dir
+
+
+def unwrap_model(model: "torch.nn.Module") -> "torch.nn.Module":
+    if hasattr(model, "module"):
+        try:
+            return model.module
+        except Exception:
+            return model
+    return model
+
+
+def collect_torch_cuda_meta() -> dict[str, Any]:
+    if torch is None:
+        return {"available": False}
+    if not torch.cuda.is_available():
+        return {"available": False, "reason": "torch.cuda.is_available() is false"}
+    try:
+        idx = int(torch.cuda.current_device())
+    except Exception:
+        idx = 0
+    meta: dict[str, Any] = {
+        "available": True,
+        "device_index": idx,
+        "device_name": torch.cuda.get_device_name(idx),
+        "device_capability": ".".join(str(x) for x in torch.cuda.get_device_capability(idx)),
+        "total_memory_mb": int(torch.cuda.get_device_properties(idx).total_memory // (1024 * 1024)),
+        "cuda_version": getattr(torch.version, "cuda", None),
+        "cudnn_version": (torch.backends.cudnn.version() if hasattr(torch.backends, "cudnn") else None),
+    }
+    return meta
 
 
 def _rotation_matrix_from_rpy(roll_rad: float, pitch_rad: float, yaw_rad: float) -> "torch.Tensor":
@@ -649,165 +454,31 @@ def compute_warmup_lr(base_lr: float, step: int, warmup_steps: int, warmup_init:
     return float(warmup_init + (base_lr - warmup_init) * alpha)
 
 
+def plan_accumulation_windows(*, max_micro_steps: int, grad_accum: int) -> list[int]:
+    """Return accumulation window sizes for micro-step training loops.
+
+    Example: max_micro_steps=5, grad_accum=2 -> [2, 2, 1]
+    """
+
+    steps_total = int(max_micro_steps)
+    if steps_total <= 0:
+        return []
+    accum = max(1, int(grad_accum))
+
+    windows: list[int] = []
+    step = 0
+    while step < steps_total:
+        window = min(accum, steps_total - step)
+        windows.append(int(window))
+        step += int(window)
+    return windows
+
+
 def compute_linear_schedule(start: float, end: float, step: int, total_steps: int) -> float:
     if total_steps <= 1:
         return float(end)
     alpha = min(max(float(step) / float(total_steps - 1), 0.0), 1.0)
     return float(start + (end - start) * alpha)
-
-
-def compute_schedule_lr(
-    *,
-    base_lr: float,
-    min_lr: float,
-    step: int,
-    total_steps: int,
-    schedule: str,
-) -> float:
-    if schedule == "linear":
-        return compute_linear_schedule(float(base_lr), float(min_lr), int(step), int(total_steps))
-    if schedule == "cos":
-        if total_steps <= 1:
-            return float(min_lr)
-        alpha = min(max(float(step) / float(total_steps - 1), 0.0), 1.0)
-        cos_val = 0.5 * (1.0 + math.cos(math.pi * alpha))
-        return float(min_lr + (base_lr - min_lr) * cos_val)
-    return float(base_lr)
-
-
-def compute_mim_schedule(
-    *,
-    step: int,
-    total_steps: int,
-    mask_start: float | None,
-    mask_end: float | None,
-    weight_start: float | None,
-    weight_end: float | None,
-    default_mask: float,
-    default_weight: float,
-) -> tuple[float, float]:
-    if total_steps <= 0:
-        return float(default_mask), float(default_weight)
-    mask_val = float(default_mask)
-    if mask_start is not None and mask_end is not None:
-        mask_val = compute_linear_schedule(float(mask_start), float(mask_end), int(step), int(total_steps))
-    weight_val = float(default_weight)
-    if weight_start is not None and weight_end is not None:
-        weight_val = compute_linear_schedule(float(weight_start), float(weight_end), int(step), int(total_steps))
-    return mask_val, weight_val
-
-
-def compute_stage_weights(
-    base: dict[str, float],
-    *,
-    global_step: int,
-    stage_off_steps: int,
-    stage_k_steps: int,
-) -> tuple[dict[str, float], str]:
-    weights = dict(base)
-    if stage_off_steps > 0 and global_step < stage_off_steps:
-        weights["k"] = 0.0
-        return weights, "offsets"
-    if stage_k_steps > 0 and global_step < stage_off_steps + stage_k_steps:
-        weights["off"] = 0.0
-        return weights, "k"
-    return weights, "full"
-
-
-def compute_stage_costs(
-    base: dict[str, float],
-    *,
-    global_step: int,
-    cost_z_start_step: int,
-    cost_rot_start_step: int,
-    cost_t_start_step: int,
-) -> dict[str, float]:
-    costs = dict(base)
-    if global_step < int(cost_z_start_step):
-        costs["cost_z"] = 0.0
-    if global_step < int(cost_rot_start_step):
-        costs["cost_rot"] = 0.0
-    if global_step < int(cost_t_start_step):
-        costs["cost_t"] = 0.0
-    return costs
-
-
-def apply_denoise_targets(
-    targets: list[dict[str, Any]],
-    *,
-    num_classes: int,
-    denoise_count: int,
-    bbox_noise: float,
-    label_noise: float,
-    generator: "torch.Generator | None" = None,
-) -> list[dict[str, Any]]:
-    if torch is None or not targets or denoise_count <= 0:
-        return targets
-
-    out: list[dict[str, Any]] = []
-    for tgt in targets:
-        if not isinstance(tgt, dict):
-            out.append(tgt)
-            continue
-        gt_labels = tgt.get("gt_labels")
-        gt_bbox = tgt.get("gt_bbox")
-        if not isinstance(gt_labels, torch.Tensor) or not isinstance(gt_bbox, torch.Tensor):
-            out.append(tgt)
-            continue
-        if gt_labels.numel() == 0 or gt_bbox.numel() == 0:
-            out.append(tgt)
-            continue
-
-        repeats = int(denoise_count)
-        noise = torch.randn(gt_bbox.shape, device=gt_bbox.device, dtype=gt_bbox.dtype) * float(bbox_noise)
-        noisy_bbox = torch.clamp(gt_bbox + noise, 0.0, 1.0)
-        noisy_bbox = noisy_bbox.repeat((repeats, 1))
-
-        noisy_labels = gt_labels.repeat(repeats)
-        if label_noise and float(label_noise) > 0:
-            rand_mask = torch.rand(noisy_labels.shape, device=noisy_labels.device, dtype=torch.float32) < float(label_noise)
-            if bool(rand_mask.any()):
-                noisy_labels[rand_mask] = torch.randint(
-                    low=0,
-                    high=int(num_classes),
-                    size=(int(rand_mask.sum().item()),),
-                    device=noisy_labels.device,
-                    dtype=noisy_labels.dtype,
-                )
-
-        new_tgt = dict(tgt)
-        new_tgt["gt_labels"] = torch.cat([gt_labels, noisy_labels], dim=0)
-        new_tgt["gt_bbox"] = torch.cat([gt_bbox, noisy_bbox], dim=0)
-
-        for key in (
-            "gt_z",
-            "gt_z_mask",
-            "gt_R",
-            "gt_R_mask",
-            "gt_t",
-            "gt_t_mask",
-            "gt_offsets",
-            "gt_offsets_mask",
-            "gt_M_mask",
-            "gt_D_obj_mask",
-        ):
-            value = tgt.get(key)
-            if isinstance(value, torch.Tensor) and value.shape[0] == gt_labels.shape[0]:
-                rep_shape = (repeats,) + (1,) * (value.ndim - 1)
-                value_rep = value.repeat(rep_shape)
-                new_tgt[key] = torch.cat([value, value_rep], dim=0)
-
-        out.append(new_tgt)
-    return out
-
-
-def export_onnx_after_training(model: "torch.nn.Module", *, image_size: int, output_path: str | Path, opset_version: int) -> Path:
-    device = next(model.parameters()).device
-    dummy = torch.zeros((1, 3, int(image_size), int(image_size)), dtype=torch.float32, device=device)
-    output_path = Path(output_path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    export_onnx(model, dummy, output_path, opset_version=int(opset_version))
-    return output_path
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -929,9 +600,6 @@ class ManifestDataset(Dataset):
         jitter_droll,
         jitter_dpitch,
         jitter_dyaw,
-        mim_mask_prob=0.0,
-        mim_mask_size=16,
-        mim_mask_value=0.0,
     ):
         self.records = records
         self.num_queries = int(num_queries)
@@ -962,27 +630,6 @@ class ManifestDataset(Dataset):
         self.jitter_droll = float(jitter_droll)
         self.jitter_dpitch = float(jitter_dpitch)
         self.jitter_dyaw = float(jitter_dyaw)
-        self.mim_mask_prob = float(mim_mask_prob)
-        self.mim_mask_size = int(mim_mask_size)
-        self.mim_mask_value = float(mim_mask_value)
-
-    def _apply_mim_mask(self, image: "torch.Tensor", *, generator: "torch.Generator") -> tuple["torch.Tensor", float]:
-        if self.mim_mask_prob <= 0.0 or self.mim_mask_size <= 0:
-            return image, 0.0
-
-        _, h, w = image.shape
-        grid_h = max(1, int(math.ceil(float(h) / float(self.mim_mask_size))))
-        grid_w = max(1, int(math.ceil(float(w) / float(self.mim_mask_size))))
-        mask = torch.rand((grid_h, grid_w), generator=generator) < float(self.mim_mask_prob)
-        if not bool(mask.any()):
-            return image, 0.0
-
-        mask_full = mask.repeat_interleave(self.mim_mask_size, dim=0).repeat_interleave(self.mim_mask_size, dim=1)
-        mask_full = mask_full[:h, :w]
-        masked = image.clone()
-        masked[:, mask_full] = float(self.mim_mask_value)
-        ratio = float(mask_full.float().mean().item())
-        return masked, ratio
 
     def _load_rgb_image_tensor(self, image_path: Path, target_size: int) -> "torch.Tensor | None":
         if not image_path.exists():
@@ -1020,37 +667,16 @@ class ManifestDataset(Dataset):
             return value
         if not self.load_aux:
             return None
-        if isinstance(value, (str, Path)):
+        if isinstance(value, str):
             path = Path(value)
-            suffix = path.suffix.lower()
-            if suffix == ".json":
+            if path.suffix.lower() == ".json":
                 import json
 
                 try:
                     return json.loads(path.read_text())
                 except Exception:
                     return None
-            if suffix == ".png":
-                try:
-                    from PIL import Image
-                except Exception as exc:
-                    raise SystemExit(
-                        "Pillow is required for PNG masks. Install it (e.g. pip install Pillow) or use .npy/.json."
-                    ) from exc
-                try:
-                    import numpy as np
-                except Exception:
-                    np = None  # type: ignore
-                try:
-                    img = Image.open(path).convert("L")
-                except Exception:
-                    return None
-                if np is not None:
-                    return np.asarray(img)
-                width, height = img.size
-                data = list(img.getdata())
-                return [data[i * width : (i + 1) * width] for i in range(height)]
-            if suffix in (".npy", ".npz"):
+            if path.suffix.lower() in (".npy", ".npz"):
                 try:
                     import numpy as np
                 except Exception:
@@ -1065,98 +691,6 @@ class ManifestDataset(Dataset):
                     return loaded[loaded.files[0]]
                 return loaded
         return None
-
-    def _normalize_color_map(self, value):
-        if not isinstance(value, dict):
-            return None
-        out = {}
-        for key, class_id in value.items():
-            if isinstance(key, str):
-                parts = [p.strip() for p in key.replace("(", "").replace(")", "").split(",") if p.strip()]
-                if len(parts) == 3:
-                    try:
-                        rgb = tuple(int(float(p)) for p in parts)
-                        out[rgb] = int(class_id)
-                        continue
-                    except Exception:
-                        pass
-            if isinstance(key, (list, tuple)) and len(key) == 3:
-                try:
-                    rgb = tuple(int(float(p)) for p in key)
-                    out[rgb] = int(class_id)
-                except Exception:
-                    continue
-        return out or None
-
-    def _labels_from_mask(self, mask_value, *, target_size: int, record: dict) -> list[dict]:
-        if mask_value is None:
-            return []
-        mask = self._load_2d(mask_value)
-        if mask is None:
-            return []
-        try:
-            import numpy as np
-        except Exception:
-            return []
-        arr = np.asarray(mask)
-        if arr.ndim not in (2, 3):
-            return []
-        h, w = arr.shape[0], arr.shape[1]
-        if h <= 0 or w <= 0:
-            return []
-        scale_x = float(target_size) / float(w)
-        scale_y = float(target_size) / float(h)
-
-        mask_format = record.get("mask_format")
-        if mask_format is None:
-            mask_format = "color" if arr.ndim == 3 else "instance"
-        mask_format = str(mask_format)
-
-        labels = []
-        if mask_format == "color" and arr.ndim == 3:
-            color_map = self._normalize_color_map(record.get("mask_class_map"))
-            flat = arr.reshape(-1, 3)
-            unique_colors = np.unique(flat, axis=0)
-            unique_colors = [tuple(int(c) for c in color) for color in unique_colors]
-            unique_colors = [c for c in unique_colors if c != (0, 0, 0)]
-            for idx, color in enumerate(unique_colors):
-                mask_sel = (arr[:, :, 0] == color[0]) & (arr[:, :, 1] == color[1]) & (arr[:, :, 2] == color[2])
-                if not bool(mask_sel.any()):
-                    continue
-                ys, xs = np.where(mask_sel)
-                x1 = float(xs.min()) * scale_x
-                x2 = float(xs.max() + 1) * scale_x
-                y1 = float(ys.min()) * scale_y
-                y2 = float(ys.max() + 1) * scale_y
-                cx = (x1 + x2) / 2.0 / float(target_size)
-                cy = (y1 + y2) / 2.0 / float(target_size)
-                bw = (x2 - x1) / float(target_size)
-                bh = (y2 - y1) / float(target_size)
-                class_id = int(color_map.get(color, idx) if color_map else idx)
-                labels.append({"class_id": class_id, "bbox": {"cx": cx, "cy": cy, "w": bw, "h": bh}})
-            return labels
-
-        if mask_format == "instance" and arr.ndim == 2:
-            class_id = int(record.get("mask_class_id", 0))
-            unique_ids = np.unique(arr)
-            unique_ids = [int(v) for v in unique_ids if int(v) != 0]
-            for inst_id in unique_ids:
-                mask_sel = arr == inst_id
-                if not bool(mask_sel.any()):
-                    continue
-                ys, xs = np.where(mask_sel)
-                x1 = float(xs.min()) * scale_x
-                x2 = float(xs.max() + 1) * scale_x
-                y1 = float(ys.min()) * scale_y
-                y2 = float(ys.max() + 1) * scale_y
-                cx = (x1 + x2) / 2.0 / float(target_size)
-                cy = (y1 + y2) / 2.0 / float(target_size)
-                bw = (x2 - x1) / float(target_size)
-                bh = (y2 - y1) / float(target_size)
-                labels.append({"class_id": class_id, "bbox": {"cx": cx, "cy": cy, "w": bw, "h": bh}})
-            return labels
-
-        return []
 
     def __len__(self):
         return len(self.records)
@@ -1203,14 +737,7 @@ class ManifestDataset(Dataset):
         if flip:
             image = torch.flip(image, dims=(2,))
 
-        image_raw = image.clone()
-        image, mim_mask_ratio = self._apply_mim_mask(image, generator=gen)
-
         instances = record.get("labels") or []
-        if not instances:
-            mask_value = record.get("mask") or record.get("mask_path") or record.get("M")
-            if self.load_aux and mask_value is not None:
-                instances = self._labels_from_mask(mask_value, target_size=target_size, record=record)
         if self.use_matcher:
             full = extract_full_gt_targets(record, num_instances=len(instances))
             gt_labels = []
@@ -1478,7 +1005,6 @@ class ManifestDataset(Dataset):
 
             return {
                 "image": image,
-                "image_raw": image_raw,
                 "targets": {
                     "gt_labels": gt_labels_t,
                     "gt_bbox": gt_bbox_t,
@@ -1497,7 +1023,6 @@ class ManifestDataset(Dataset):
                     **({"K_gt": K_gt} if K_gt is not None else {}),
                     "image_hw": image_hw,
                 },
-                "mim_mask_ratio": mim_mask_ratio,
             }
 
         labels = torch.full((self.num_queries,), -1, dtype=torch.long)
@@ -1515,12 +1040,7 @@ class ManifestDataset(Dataset):
             bbox[qi, 2] = float(bb.get("w", 0.0))
             bbox[qi, 3] = float(bb.get("h", 0.0))
 
-        return {
-            "image": image,
-            "image_raw": image_raw,
-            "targets": {"labels": labels, "bbox": bbox},
-            "mim_mask_ratio": mim_mask_ratio,
-        }
+        return {"image": image, "targets": {"labels": labels, "bbox": bbox}}
 
 
 def _pad_field(targets, key, max_len, *, pad_value=0.0, dtype=None):
@@ -1558,13 +1078,6 @@ def _pad_field(targets, key, max_len, *, pad_value=0.0, dtype=None):
 
 def collate(batch):
     images = torch.stack([item["image"] for item in batch], dim=0)
-    image_raw = None
-    if all("image_raw" in item and isinstance(item["image_raw"], torch.Tensor) for item in batch):
-        image_raw = torch.stack([item["image_raw"] for item in batch], dim=0)
-    mim_mask_ratio = torch.tensor(
-        [float(item.get("mim_mask_ratio", 0.0)) for item in batch],
-        dtype=torch.float32,
-    )
     targets = [item["targets"] for item in batch]
     if not targets or "gt_labels" not in targets[0]:
         return images, targets
@@ -1579,10 +1092,7 @@ def collate(batch):
             "gt_count": counts,
             "gt_mask": torch.zeros((len(targets), 0), dtype=torch.bool),
         }
-        out = {"per_sample": targets, "padded": padded, "mim_mask_ratio": mim_mask_ratio}
-        if image_raw is not None:
-            out["image_raw"] = image_raw
-        return images, out
+        return images, {"per_sample": targets, "padded": padded}
 
     padded = {
         "gt_count": counts,
@@ -1609,16 +1119,28 @@ def collate(batch):
         if any(key in tgt for tgt in targets):
             padded[key] = _pad_field(targets, key, max_len, pad_value=pad_value, dtype=dtype)
 
-    out = {"per_sample": targets, "padded": padded, "mim_mask_ratio": mim_mask_ratio}
-    if image_raw is not None:
-        out["image_raw"] = image_raw
-    return images, out
+    return images, {"per_sample": targets, "padded": padded}
 
 
 def main(argv: list[str] | None = None) -> int:
     if torch is None:  # pragma: no cover
         raise SystemExit("torch is required; install requirements-test.txt")
     args = parse_args(sys.argv[1:] if argv is None else argv)
+    args, run_dir = apply_run_dir_defaults(args)
+
+    # Optional DDP (torchrun sets WORLD_SIZE/RANK/LOCAL_RANK)
+    world_size_env = int(os.environ.get("WORLD_SIZE", "1") or "1")
+    ddp_enabled = bool(args.ddp) or world_size_env > 1
+    if bool(args.ddp) and world_size_env <= 1:
+        raise SystemExit("--ddp requires torchrun (WORLD_SIZE>1). Example: torchrun --nproc_per_node=2 ... --ddp")
+    rank = int(os.environ.get("RANK", "0") or "0") if ddp_enabled else 0
+    local_rank = int(os.environ.get("LOCAL_RANK", "0") or "0") if ddp_enabled else 0
+    world_size = int(os.environ.get("WORLD_SIZE", "1") or "1") if ddp_enabled else 1
+    if ddp_enabled:
+        backend = str(args.ddp_backend or ("nccl" if torch.cuda.is_available() else "gloo"))
+        torch.distributed.init_process_group(backend=backend, init_method="env://")
+
+    is_main = rank == 0
 
     sim_profile = None
     if args.sim_jitter:
@@ -1637,11 +1159,12 @@ def main(argv: list[str] | None = None) -> int:
         argv=(sys.argv[1:] if argv is None else argv),
         args=vars(args),
         dataset_root=(args.dataset_root or None),
+        extra={
+            "timestamp_utc": _now_utc(),
+            "ddp": {"enabled": bool(ddp_enabled), "backend": (str(args.ddp_backend) if args.ddp_backend else None), "rank": rank, "local_rank": local_rank, "world_size": world_size},
+            "cuda": collect_torch_cuda_meta(),
+        },
     )
-
-    writer = None
-    if args.tensorboard_logdir and SummaryWriter is not None:
-        writer = SummaryWriter(log_dir=str(args.tensorboard_logdir))
 
     torch.manual_seed(args.seed)
 
@@ -1679,28 +1202,29 @@ def main(argv: list[str] | None = None) -> int:
             "Fetch coco128 first: bash tools/fetch_coco128.sh"
         )
 
-    stats = {
-        "mask": 0,
-        "depth": 0,
-        "pose": 0,
-        "intrinsics": 0,
-        "cad_points": 0,
-    }
-    for rec in records:
-        if rec.get("mask_path") is not None:
-            stats["mask"] += 1
-        if rec.get("depth_path") is not None:
-            stats["depth"] += 1
-        if rec.get("R_gt") is not None or rec.get("t_gt") is not None or rec.get("pose") is not None:
-            stats["pose"] += 1
-        if rec.get("K_gt") is not None or rec.get("intrinsics") is not None:
-            stats["intrinsics"] += 1
-        if rec.get("cad_points") is not None:
-            stats["cad_points"] += 1
-    print(
-        "dataset_stats "
-        + " ".join(f"{key}={value}" for key, value in sorted(stats.items()))
-    )
+    if is_main:
+        stats = {
+            "mask": 0,
+            "depth": 0,
+            "pose": 0,
+            "intrinsics": 0,
+            "cad_points": 0,
+        }
+        for rec in records:
+            if rec.get("mask_path") is not None:
+                stats["mask"] += 1
+            if rec.get("depth_path") is not None:
+                stats["depth"] += 1
+            if rec.get("R_gt") is not None or rec.get("t_gt") is not None or rec.get("pose") is not None:
+                stats["pose"] += 1
+            if rec.get("K_gt") is not None or rec.get("intrinsics") is not None:
+                stats["intrinsics"] += 1
+            if rec.get("cad_points") is not None:
+                stats["cad_points"] += 1
+        print(
+            "dataset_stats "
+            + " ".join(f"{key}={value}" for key, value in sorted(stats.items()))
+        )
 
     ds = ManifestDataset(
         records,
@@ -1732,67 +1256,42 @@ def main(argv: list[str] | None = None) -> int:
         jitter_droll=args.jitter_droll,
         jitter_dpitch=args.jitter_dpitch,
         jitter_dyaw=args.jitter_dyaw,
-        mim_mask_prob=args.mim_mask_prob,
-        mim_mask_size=args.mim_mask_size,
-        mim_mask_value=args.mim_mask_value,
     )
+    sampler = None
+    if ddp_enabled:
+        sampler = torch.utils.data.distributed.DistributedSampler(
+            ds,
+            num_replicas=int(world_size),
+            rank=int(rank),
+            shuffle=bool(args.shuffle),
+            seed=int(args.seed),
+            drop_last=False,
+        )
     loader = DataLoader(
         ds,
         batch_size=args.batch_size,
-        shuffle=bool(args.shuffle),
+        shuffle=(bool(args.shuffle) if sampler is None else False),
+        sampler=sampler,
         num_workers=0,
         collate_fn=collate,
         drop_last=False,
-        generator=(torch.Generator().manual_seed(int(args.seed)) if args.deterministic else None),
+        generator=(torch.Generator().manual_seed(int(args.seed)) if args.deterministic and sampler is None else None),
     )
 
     model_num_queries = model_cfg.num_queries if model_cfg is not None else args.num_queries
     args.num_queries = int(model_num_queries)
 
-    model = RTDETRPose(
-        num_classes=(model_cfg.num_classes if model_cfg is not None else args.num_classes),
-        hidden_dim=(model_cfg.hidden_dim if model_cfg is not None else args.hidden_dim),
-        num_queries=model_num_queries,
-        num_decoder_layers=(model_cfg.num_decoder_layers if model_cfg is not None else 2),
-        nhead=(model_cfg.nhead if model_cfg is not None else 4),
-        use_uncertainty=(model_cfg.use_uncertainty if model_cfg is not None else bool(args.use_uncertainty)),
-        stem_channels=(getattr(model_cfg, "stem_channels", None) if model_cfg is not None else None) or 32,
-        backbone_channels=(
-            tuple(getattr(model_cfg, "backbone_channels", ()))
-            if model_cfg is not None and getattr(model_cfg, "backbone_channels", None) is not None
-            else (64, 128, 256)
-        ),
-        stage_blocks=(
-            tuple(getattr(model_cfg, "stage_blocks", ()))
-            if model_cfg is not None and getattr(model_cfg, "stage_blocks", None) is not None
-            else (1, 2, 2)
-        ),
-        use_sppf=(getattr(model_cfg, "use_sppf", True) if model_cfg is not None else True),
-        num_encoder_layers=(
-            getattr(model_cfg, "num_encoder_layers", None) if model_cfg is not None else None
+    if model_cfg is not None:
+        model = build_model(model_cfg)
+    else:
+        model = RTDETRPose(
+            num_classes=args.num_classes,
+            hidden_dim=args.hidden_dim,
+            num_queries=model_num_queries,
+            num_decoder_layers=2,
+            nhead=4,
+            use_uncertainty=bool(args.use_uncertainty),
         )
-        or 1,
-        encoder_dim_feedforward=(
-            getattr(model_cfg, "encoder_dim_feedforward", None) if model_cfg is not None else None
-        ),
-        decoder_dim_feedforward=(
-            getattr(model_cfg, "decoder_dim_feedforward", None) if model_cfg is not None else None
-        ),
-        use_level_embed=(getattr(model_cfg, "use_level_embed", True) if model_cfg is not None else True),
-    )
-
-    lora_replaced = 0
-    lora_trainable_info: dict[str, int] | None = None
-    if int(getattr(args, "lora_r", 0)) > 0:
-        lora_replaced = apply_lora(
-            model,
-            r=int(args.lora_r),
-            alpha=(float(args.lora_alpha) if args.lora_alpha is not None else None),
-            dropout=float(args.lora_dropout),
-            target=str(args.lora_target),
-        )
-        if bool(args.lora_freeze_base):
-            lora_trainable_info = mark_only_lora_as_trainable(model, train_bias=str(args.lora_train_bias))
 
     if loss_cfg is not None:
         if args.task_aligner and args.task_aligner != "none":
@@ -1803,67 +1302,20 @@ def main(argv: list[str] | None = None) -> int:
         losses_fn = build_losses(loss_cfg)
     else:
         losses_fn = Losses(task_aligner=args.task_aligner)
-    base_weights = dict(losses_fn.weights)
 
     device_str = str(args.device).strip() if args.device is not None else "cpu"
     if device_str.startswith("cuda") and not torch.cuda.is_available():
-        print("warning: cuda requested but not available; falling back to cpu")
+        if is_main:
+            print("warning: cuda requested but not available; falling back to cpu")
         device_str = "cpu"
+    if ddp_enabled and device_str.startswith("cuda"):
+        if torch.cuda.is_available():
+            torch.cuda.set_device(int(local_rank))
+        device_str = f"cuda:{int(local_rank)}"
     device = torch.device(device_str)
     model.to(device)
 
-    if lora_replaced > 0:
-        trainable = count_trainable_params(model)
-        msg = (
-            f"lora enabled replaced={lora_replaced} r={int(args.lora_r)} target={args.lora_target} "
-            f"freeze_base={bool(args.lora_freeze_base)} trainable_params={trainable}"
-        )
-        if lora_trainable_info is not None:
-            msg += (
-                f" lora_params={lora_trainable_info.get('lora_params', 0)}"
-                f" bias_params={lora_trainable_info.get('bias_params', 0)}"
-            )
-        print(msg)
-
-    # Build optimizer using factory
-    optim = build_optimizer(
-        model,
-        optimizer=str(args.optimizer),
-        lr=float(args.lr),
-        weight_decay=float(args.weight_decay),
-        momentum=float(args.momentum),
-        nesterov=bool(args.nesterov),
-        use_param_groups=bool(args.use_param_groups),
-        backbone_lr_mult=float(args.backbone_lr_mult),
-        head_lr_mult=float(args.head_lr_mult),
-        backbone_wd_mult=float(args.backbone_wd_mult),
-        head_wd_mult=float(args.head_wd_mult),
-    )
-
-    # Log optimizer param groups
-    num_groups = len(optim.param_groups)
-    print(f"optimizer={args.optimizer} num_param_groups={num_groups}")
-    for i, group in enumerate(optim.param_groups):
-        group_name = group.get("name", f"group_{i}")
-        group_lr = group.get("lr", 0.0)
-        group_wd = group.get("weight_decay", 0.0)
-        num_params = sum(p.numel() for p in group["params"])
-        print(f"  {group_name}: lr={group_lr:.6f} wd={group_wd:.6f} params={num_params}")
-
-    # Initialize GradScaler for AMP if enabled
-    scaler = None
-    if args.use_amp:
-        if device_str.startswith("cuda"):
-            scaler = torch.cuda.amp.GradScaler()
-            print("amp_enabled=True device=cuda")
-        else:
-            print("amp_warning: --use-amp requires CUDA device; AMP disabled")
-
-    # Initialize EMA if enabled
-    ema = None
-    if args.use_ema:
-        ema = EMA(model, decay=float(args.ema_decay))
-        print(f"ema_enabled=True decay={args.ema_decay} eval_with_ema={args.ema_eval}")
+    optim = torch.optim.AdamW(model.parameters(), lr=args.lr)
 
     start_epoch = 0
     global_step = 0
@@ -1879,53 +1331,24 @@ def main(argv: list[str] | None = None) -> int:
                 global_step = int(meta["global_step"])
             except Exception:
                 global_step = 0
-        print(f"resumed_from={meta.get('path')} start_epoch={start_epoch} global_step={global_step}")
-
-    # Calculate total steps for scheduler
-    total_steps_est = 0
-    if args.max_steps and int(args.max_steps) > 0:
-        total_steps_est = int(args.max_steps) * int(args.epochs)
-    else:
-        total_steps_est = len(loader) * int(args.epochs)
-
-    # Build scheduler using factory
-    scheduler_type = str(args.scheduler)
-    # Map old "cos" to "cosine" for compatibility
-    if scheduler_type == "cos":
-        scheduler_type = "cosine"
-    # Handle "linear" scheduler (not directly supported by factory, use old logic)
-    use_factory_scheduler = scheduler_type not in ("linear",)
-    
-    lr_scheduler = None
-    if use_factory_scheduler:
-        # Parse milestones for MultiStepLR
-        milestones = []
-        if args.scheduler_milestones:
-            try:
-                milestones = [int(x.strip()) for x in args.scheduler_milestones.split(",") if x.strip()]
-            except Exception:
-                print(f"warning: failed to parse --scheduler-milestones '{args.scheduler_milestones}'")
-                milestones = []
-        
-        lr_scheduler = build_scheduler(
-            optim,
-            scheduler=scheduler_type,
-            total_steps=total_steps_est,
-            warmup_steps=int(args.lr_warmup_steps),
-            warmup_init_lr=float(args.lr_warmup_init),
-            min_lr=float(args.min_lr),
-            milestones=milestones,
-            gamma=float(args.scheduler_gamma),
-        )
-        if lr_scheduler is not None:
-            print(f"scheduler={scheduler_type} total_steps={total_steps_est} warmup_steps={args.lr_warmup_steps}")
+        if is_main:
+            print(f"resumed_from={meta.get('path')} start_epoch={start_epoch} global_step={global_step}")
 
     sdft_cfg = None
     teacher_model = None
     if args.self_distill_from:
-        import copy
-
-        teacher_model = copy.deepcopy(model)
+        # Build a frozen teacher with identical architecture/config.
+        if model_cfg is not None:
+            teacher_model = build_model(model_cfg)
+        else:
+            teacher_model = RTDETRPose(
+                num_classes=args.num_classes,
+                hidden_dim=args.hidden_dim,
+                num_queries=model_num_queries,
+                num_decoder_layers=2,
+                nhead=4,
+                use_uncertainty=bool(args.use_uncertainty),
+            )
         load_checkpoint_into(teacher_model, None, args.self_distill_from)
         teacher_model.to(device)
         teacher_model.eval()
@@ -1942,20 +1365,58 @@ def main(argv: list[str] | None = None) -> int:
             bbox_weight=float(args.self_distill_bbox_weight),
             other_l1_weight=float(args.self_distill_other_l1_weight),
         )
-        print(
-            "self_distill",
-            f"from={args.self_distill_from}",
-            f"keys={','.join(keys) if keys else '(none)'}",
-            f"kl={sdft_cfg.kl}",
-            f"temp={sdft_cfg.temperature}",
-            f"weight={sdft_cfg.weight}",
+        if is_main:
+            print(
+                "self_distill",
+                f"from={args.self_distill_from}",
+                f"keys={','.join(keys) if keys else '(none)'}",
+                f"kl={sdft_cfg.kl}",
+                f"temp={sdft_cfg.temperature}",
+                f"weight={sdft_cfg.weight}",
+            )
+
+    if ddp_enabled:
+        model = torch.nn.parallel.DistributedDataParallel(
+            model,
+            device_ids=[int(local_rank)] if device.type == "cuda" else None,
+            output_device=int(local_rank) if device.type == "cuda" else None,
         )
+
+    # AMP setup
+    amp_mode = str(args.amp or "none").lower()
+    scaler = None
+    if amp_mode != "none":
+        if device.type != "cuda":
+            raise SystemExit("--amp requires --device cuda")
+        if amp_mode == "fp16":
+            if hasattr(torch, "amp") and hasattr(torch.amp, "GradScaler"):
+                try:
+                    scaler = torch.amp.GradScaler("cuda")
+                except TypeError:
+                    scaler = torch.amp.GradScaler(device="cuda")
+            else:  # pragma: no cover
+                scaler = torch.cuda.amp.GradScaler()
+            if hasattr(torch, "amp") and hasattr(torch.amp, "autocast"):
+                autocast = torch.amp.autocast(device_type="cuda", dtype=torch.float16)
+            else:  # pragma: no cover
+                autocast = torch.cuda.amp.autocast(dtype=torch.float16)
+        elif amp_mode == "bf16":
+            if hasattr(torch, "amp") and hasattr(torch.amp, "autocast"):
+                autocast = torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16)
+            else:  # pragma: no cover
+                autocast = torch.cuda.amp.autocast(dtype=torch.bfloat16)
+        else:
+            raise SystemExit(f"unknown --amp mode: {args.amp}")
+    else:
+        autocast = nullcontext()
 
     model.train()
     last_loss_dict = None
     last_epoch_avg = None
-    last_stage = None
+    last_epoch_steps = 0
     for epoch in range(int(start_epoch), int(args.epochs)):
+        if sampler is not None:
+            sampler.set_epoch(int(epoch))
         if args.hflip_prob_start is not None and args.hflip_prob_end is not None:
             ds.hflip_prob = compute_linear_schedule(
                 float(args.hflip_prob_start),
@@ -1965,380 +1426,217 @@ def main(argv: list[str] | None = None) -> int:
             )
         running = 0.0
         steps = 0
-        epoch_start = time.time()
-        iterator = loader
-        if args.progress and tqdm is not None:
-            iterator = tqdm(loader, desc=f"epoch {epoch}")
-        for images, targets in iterator:
-            mim_mask_prob, mim_weight = compute_mim_schedule(
-                step=int(global_step),
-                total_steps=int(total_steps_est),
-                mask_start=args.mim_mask_prob_start,
-                mask_end=args.mim_mask_prob_end,
-                weight_start=args.mim_loss_weight_start,
-                weight_end=args.mim_loss_weight_end,
-                default_mask=args.mim_mask_prob,
-                default_weight=args.mim_loss_weight,
-            )
-            ds.mim_mask_prob = float(mim_mask_prob)
+        max_micro_steps = len(loader)
+        if args.max_steps and int(args.max_steps) > 0:
+            max_micro_steps = min(max_micro_steps, int(args.max_steps))
+
+        grad_accum = max(1, int(args.grad_accum))
+        windows = plan_accumulation_windows(max_micro_steps=int(max_micro_steps), grad_accum=int(grad_accum))
+        window_idx = 0
+        step_in_window = 0
+        window_size = windows[0] if windows else int(grad_accum)
+
+        for images, targets in loader:
+            if max_micro_steps and steps >= int(max_micro_steps):
+                break
+
+            if step_in_window == 0:
+                optim.zero_grad(set_to_none=True)
+                window_size = windows[window_idx] if window_idx < len(windows) else int(grad_accum)
+
             images = images.to(device)
-            mim_ratio = None
-            if isinstance(targets, dict) and "mim_mask_ratio" in targets:
-                try:
-                    mim_ratio = float(targets["mim_mask_ratio"].mean().detach().cpu())
-                except Exception:
-                    mim_ratio = None
 
-            # Forward pass with optional AMP autocast
-            if scaler is not None:
-                with torch.cuda.amp.autocast():
+            sync_step = step_in_window == int(window_size) - 1
+            ddp_nosync = ddp_enabled and hasattr(model, "no_sync") and not sync_step
+            sync_context = model.no_sync() if ddp_nosync else nullcontext()
+
+            with sync_context:
+                with autocast:
                     out = model(images)
-            else:
-                out = model(images)
 
-            mim_loss = None
-            if args.mim_teacher and float(mim_weight) > 0 and isinstance(targets, dict):
-                image_raw = targets.get("image_raw")
-                if isinstance(image_raw, torch.Tensor):
-                    ratio = targets.get("mim_mask_ratio")
-                    if ratio is None or bool((ratio > 0).any()):
-                        was_training = model.training
-                        if was_training:
-                            model.eval()
+                    sdft_total = None
+                    sdft_parts = None
+                    if teacher_model is not None and sdft_cfg is not None and float(sdft_cfg.weight) != 0.0:
                         with torch.no_grad():
-                            if scaler is not None:
-                                with torch.cuda.amp.autocast():
-                                    teacher_out = model(image_raw.to(device))
-                            else:
-                                teacher_out = model(image_raw.to(device))
-                        if was_training:
-                            model.train()
-                        loss_items = []
-                        if "logits" in out and "logits" in teacher_out:
-                            loss_items.append(F.mse_loss(out["logits"], teacher_out["logits"]))
-                        if "bbox" in out and "bbox" in teacher_out:
-                            loss_items.append(F.l1_loss(out["bbox"], teacher_out["bbox"]))
-                        if loss_items:
-                            mim_loss = sum(loss_items)
+                            with autocast:
+                                teacher_out = teacher_model(images)
+                        student_out_sdft = out
+                        teacher_out_sdft = teacher_out
+                        if (
+                            "bbox" in sdft_cfg.keys
+                            and isinstance(out.get("bbox"), torch.Tensor)
+                            and isinstance(teacher_out.get("bbox"), torch.Tensor)
+                        ):
+                            student_out_sdft = dict(out)
+                            teacher_out_sdft = dict(teacher_out)
+                            student_out_sdft["bbox"] = out["bbox"].sigmoid()
+                            teacher_out_sdft["bbox"] = teacher_out["bbox"].sigmoid()
+                        sdft_total, sdft_parts = compute_sdft_loss(student_out_sdft, teacher_out_sdft, sdft_cfg)
 
-            sdft_total = None
-            sdft_parts = None
-            if teacher_model is not None and sdft_cfg is not None and float(sdft_cfg.weight) != 0.0:
-                with torch.no_grad():
-                    teacher_out = teacher_model(images)
-                student_out_sdft = out
-                teacher_out_sdft = teacher_out
-                if (
-                    "bbox" in sdft_cfg.keys
-                    and isinstance(out.get("bbox"), torch.Tensor)
-                    and isinstance(teacher_out.get("bbox"), torch.Tensor)
-                ):
-                    student_out_sdft = dict(out)
-                    teacher_out_sdft = dict(teacher_out)
-                    student_out_sdft["bbox"] = out["bbox"].sigmoid()
-                    teacher_out_sdft["bbox"] = teacher_out["bbox"].sigmoid()
-                sdft_total, sdft_parts = compute_sdft_loss(student_out_sdft, teacher_out_sdft, sdft_cfg)
+                    if args.use_matcher:
+                        per_sample = targets.get("per_sample") if isinstance(targets, dict) else targets
+                        aligned = build_query_aligned_targets(
+                            out["logits"],
+                            out["bbox"],
+                            per_sample,
+                            num_queries=model_num_queries,
+                            cost_cls=args.cost_cls,
+                            cost_bbox=args.cost_bbox,
+                            log_z_pred=out.get("log_z"),
+                            rot6d_pred=out.get("rot6d"),
+                            cost_z=args.cost_z,
+                            cost_rot=args.cost_rot,
+                            offsets_pred=out.get("offsets"),
+                            k_delta=out.get("k_delta"),
+                            cost_t=args.cost_t,
+                        )
+                        out = dict(out)
+                        # For box regression we train in normalized space.
+                        out["bbox"] = aligned["bbox_norm"]
+                        targets = {
+                            "labels": aligned["labels"],
+                            "bbox": aligned["bbox"],
+                            "mask": aligned["mask"],
+                            "z_gt": aligned["z_gt"],
+                            "z_mask": aligned["z_mask"],
+                            "R_gt": aligned["R_gt"],
+                            "rot_mask": aligned["rot_mask"],
+                            "offsets": aligned["offsets"],
+                            "off_mask": aligned["off_mask"],
+                            "t_gt": aligned["t_gt"],
+                            "K_gt": aligned["K_gt"],
+                            "image_hw": aligned["image_hw"],
+                            "K_mask": aligned["K_mask"],
+                            "t_mask": aligned["t_mask"],
+                            "M_mask": aligned.get("M_mask"),
+                            "D_obj_mask": aligned.get("D_obj_mask"),
+                        }
+                    else:
+                        # legacy padded targets
+                        targets = {
+                            "labels": torch.stack([t["labels"] for t in targets], dim=0).to(device),
+                            "bbox": torch.stack([t["bbox"] for t in targets], dim=0).to(device),
+                        }
 
-            if args.use_matcher:
-                staged_costs = compute_stage_costs(
-                    {
-                        "cost_z": float(args.cost_z),
-                        "cost_rot": float(args.cost_rot),
-                        "cost_t": float(args.cost_t),
-                    },
-                    global_step=int(global_step),
-                    cost_z_start_step=int(args.cost_z_start_step),
-                    cost_rot_start_step=int(args.cost_rot_start_step),
-                    cost_t_start_step=int(args.cost_t_start_step),
-                )
-                per_sample = targets.get("per_sample") if isinstance(targets, dict) else targets
-                if (
-                    args.denoise_queries
-                    and isinstance(per_sample, list)
-                    and int(args.denoise_queries) > 0
-                ):
-                    per_sample = apply_denoise_targets(
-                        per_sample,
-                        num_classes=int(args.num_classes),
-                        denoise_count=int(args.denoise_queries),
-                        bbox_noise=float(args.denoise_bbox_noise),
-                        label_noise=float(args.denoise_label_noise),
-                    )
-                aligned = build_query_aligned_targets(
-                    out["logits"],
-                    out["bbox"],
-                    per_sample,
-                    num_queries=model_num_queries,
-                    cost_cls=args.cost_cls,
-                    cost_bbox=args.cost_bbox,
-                    log_z_pred=out.get("log_z"),
-                    rot6d_pred=out.get("rot6d"),
-                    cost_z=staged_costs["cost_z"],
-                    cost_rot=staged_costs["cost_rot"],
-                    offsets_pred=out.get("offsets"),
-                    k_delta=out.get("k_delta"),
-                    cost_t=staged_costs["cost_t"],
-                )
-                out = dict(out)
-                # For box regression we train in normalized space.
-                out["bbox"] = aligned["bbox_norm"]
-                targets = {
-                    "labels": aligned["labels"],
-                    "bbox": aligned["bbox"],
-                    "mask": aligned["mask"],
-                    "z_gt": aligned["z_gt"],
-                    "z_mask": aligned["z_mask"],
-                    "R_gt": aligned["R_gt"],
-                    "rot_mask": aligned["rot_mask"],
-                    "offsets": aligned["offsets"],
-                    "off_mask": aligned["off_mask"],
-                    "t_gt": aligned["t_gt"],
-                    "K_gt": aligned["K_gt"],
-                    "image_hw": aligned["image_hw"],
-                    "K_mask": aligned["K_mask"],
-                    "t_mask": aligned["t_mask"],
-                    "M_mask": aligned.get("M_mask"),
-                    "D_obj_mask": aligned.get("D_obj_mask"),
-                }
-            else:
-                # legacy padded targets
-                targets = {
-                    "labels": torch.stack([t["labels"] for t in targets], dim=0).to(device),
-                    "bbox": torch.stack([t["bbox"] for t in targets], dim=0).to(device),
-                }
+                    loss_dict = losses_fn(out, targets)
+                    loss = loss_dict["loss"]
+                    if sdft_total is not None and sdft_parts is not None:
+                        loss_supervised = loss
+                        loss_dict = dict(loss_dict)
+                        loss_dict["loss_supervised"] = loss_supervised
+                        loss_dict.update(sdft_parts)
+                        loss = loss_supervised + float(sdft_cfg.weight) * sdft_total
+                        loss_dict["loss"] = loss
+                    last_loss_dict = loss_dict
 
-            staged_weights, stage = compute_stage_weights(
-                base_weights,
-                global_step=int(global_step),
-                stage_off_steps=int(args.stage_off_steps),
-                stage_k_steps=int(args.stage_k_steps),
-            )
-            losses_fn.weights = staged_weights
-            if stage != last_stage:
-                print(f"stage={stage}")
-                last_stage = stage
+                    if steps == 0 and args.debug_losses and is_main:
+                        printable = {
+                            k: float(v.detach().cpu())
+                            for k, v in loss_dict.items()
+                            if hasattr(v, "detach")
+                        }
+                        print("loss_breakdown", " ".join(f"{k}={v:.6g}" for k, v in sorted(printable.items())))
 
-            loss_dict = losses_fn(out, targets)
-            loss = loss_dict["loss"]
-            if sdft_total is not None and sdft_parts is not None:
-                loss_supervised = loss
-                loss_dict = dict(loss_dict)
-                loss_dict["loss_supervised"] = loss_supervised
-                loss_dict.update(sdft_parts)
-                loss = loss_supervised + float(sdft_cfg.weight) * sdft_total
+                    loss_value = float(loss.detach().cpu())
+                    running += loss_value
+                    loss_for_backward = loss / float(window_size)
 
-            if mim_loss is not None:
-                loss = loss + float(mim_weight) * mim_loss
-                loss_dict = dict(loss_dict)
-                loss_dict["loss_mim"] = mim_loss
-
-            loss_dict["loss"] = loss
-            last_loss_dict = loss_dict
-
-            if steps == 0 and args.debug_losses:
-                printable = {
-                    k: float(v.detach().cpu())
-                    for k, v in loss_dict.items()
-                    if hasattr(v, "detach")
-                }
-                print("loss_breakdown", " ".join(f"{k}={v:.6g}" for k, v in sorted(printable.items())))
-
-            # Store unscaled loss for logging
-            loss_for_logging = loss.detach().cpu()
-
-            # Gradient accumulation: scale loss by accumulation steps
-            accum_steps = int(args.gradient_accumulation_steps)
-            if accum_steps > 1:
-                loss = loss / accum_steps
-
-            # Backward pass with optional AMP scaling
-            if scaler is not None:
-                scaler.scale(loss).backward()
-            else:
-                loss.backward()
-
-            # Perform optimizer step only at accumulation boundaries
-            # steps is 0-indexed within each epoch, so we use (steps + 1) for the check
-            grad_norm = None
-            if (steps + 1) % accum_steps == 0:
                 if scaler is not None:
-                    # Unscale gradients before clipping
-                    if args.clip_grad_norm and float(args.clip_grad_norm) > 0:
-                        scaler.unscale_(optim)
-                        grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), float(args.clip_grad_norm))
+                    scaler.scale(loss_for_backward).backward()
+                else:
+                    loss_for_backward.backward()
+
+            if sync_step:
+                if scaler is not None:
+                    scaler.unscale_(optim)
+                if args.clip_grad_norm and float(args.clip_grad_norm) > 0:
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), float(args.clip_grad_norm))
+
+                if scaler is not None:
                     scaler.step(optim)
                     scaler.update()
-                    optim.zero_grad(set_to_none=True)
                 else:
-                    if args.clip_grad_norm and float(args.clip_grad_norm) > 0:
-                        grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), float(args.clip_grad_norm))
                     optim.step()
-                    optim.zero_grad(set_to_none=True)
 
-                # Update EMA after optimizer step
-                if ema is not None:
-                    ema.update()
+                global_step += 1
+                if args.lr_warmup_steps and int(args.lr_warmup_steps) > 0:
+                    lr_now = compute_warmup_lr(
+                        float(args.lr),
+                        int(global_step),
+                        int(args.lr_warmup_steps),
+                        float(args.lr_warmup_init),
+                    )
+                    for group in optim.param_groups:
+                        group["lr"] = lr_now
 
-                # Step LR scheduler if using factory scheduler
-                if lr_scheduler is not None:
-                    lr_scheduler.step()
-
-            # Compute current LR (for logging)
-            if lr_scheduler is not None:
-                # Get LR from scheduler
-                lr_now = lr_scheduler.get_last_lr()[0] if hasattr(lr_scheduler, "get_last_lr") else optim.param_groups[0]["lr"]
-            else:
-                # Legacy schedule logic - only update at accumulation boundaries to match factory scheduler behavior
-                if (steps + 1) % accum_steps == 0:
-                    if args.lr_warmup_steps and int(args.lr_warmup_steps) > 0:
-                        # Legacy warmup logic
-                        lr_now = compute_warmup_lr(
-                            float(args.lr),
-                            int(global_step),
-                            int(args.lr_warmup_steps),
-                            float(args.lr_warmup_init),
-                        )
-                        for group in optim.param_groups:
-                            group["lr"] = lr_now
-                    else:
-                        # Legacy schedule logic (linear)
-                        lr_now = compute_schedule_lr(
-                            base_lr=float(args.lr),
-                            min_lr=float(args.min_lr),
-                            step=int(global_step),
-                            total_steps=int(total_steps_est),
-                            schedule=str(args.scheduler),
-                        )
-                        for group in optim.param_groups:
-                            group["lr"] = lr_now
-                else:
-                    # Not at accumulation boundary, just read current LR
-                    lr_now = optim.param_groups[0]["lr"]
-
-            running += float(loss_for_logging)
             steps += 1
-            global_step += 1
 
-            if steps == 1 or (args.log_every and steps % int(args.log_every) == 0):
+            if is_main and (steps == 1 or (args.log_every and steps % int(args.log_every) == 0)):
                 avg = running / steps
-                suffix = ""
-                if mim_ratio is not None:
-                    suffix = f" mim_mask_ratio={mim_ratio:.3f}"
-                suffix += f" mim_mask_prob={mim_mask_prob:.3f} mim_weight={mim_weight:.3f}"
-                if grad_norm is not None:
-                    suffix += f" grad_norm={float(grad_norm):.4f}"
-                # Log lr/wd per param group
-                if len(optim.param_groups) > 1:
-                    for i, group in enumerate(optim.param_groups):
-                        group_name = group.get("name", f"g{i}")
-                        group_lr = group.get("lr", 0.0)
-                        group_wd = group.get("weight_decay", 0.0)
-                        suffix += f" {group_name}_lr={group_lr:.6f} {group_name}_wd={group_wd:.6f}"
-                print(f"epoch={epoch} step={steps} global_step={global_step} loss={avg:.4f}{suffix}")
-                if args.progress and tqdm is not None:
-                    postfix = {"loss": f"{avg:.4f}", "stage": stage}
-                    if mim_ratio is not None:
-                        postfix["mim_ratio"] = f"{mim_ratio:.3f}"
-                    iterator.set_postfix(postfix)
-                if writer is not None:
-                    writer.add_scalar("train/loss_avg", float(avg), int(global_step))
-                    writer.add_scalar("train/lr", float(lr_now), int(global_step))
-                    if grad_norm is not None:
-                        writer.add_scalar("train/grad_norm", float(grad_norm), int(global_step))
-                    # Log per-group lr/wd
-                    for i, group in enumerate(optim.param_groups):
-                        group_name = group.get("name", f"group_{i}")
-                        writer.add_scalar(f"train/lr_{group_name}", float(group.get("lr", 0.0)), int(global_step))
-                        writer.add_scalar(f"train/wd_{group_name}", float(group.get("weight_decay", 0.0)), int(global_step))
-                    if ema is not None:
-                        writer.add_scalar("train/ema_decay", float(ema.decay), int(global_step))
-                    if mim_ratio is not None:
-                        writer.add_scalar("train/mim_mask_ratio", float(mim_ratio), int(global_step))
-                    writer.add_scalar("train/mim_mask_prob", float(mim_mask_prob), int(global_step))
-                    writer.add_scalar("train/mim_weight", float(mim_weight), int(global_step))
-                    writer.add_text("train/stage", str(stage), int(global_step))
-                    for key, val in loss_dict.items():
-                        if hasattr(val, "detach"):
-                            writer.add_scalar(f"train/{key}", float(val.detach().cpu()), int(global_step))
+                print(f"epoch={epoch} step={steps} optim_step={global_step} loss={avg:.4f}")
                 if args.metrics_jsonl:
-                    losses_out = {k: float(v.detach().cpu()) for k, v in loss_dict.items() if hasattr(v, "detach")}
-                    metrics_out = {"loss_avg": float(avg)}
-                    if grad_norm is not None:
-                        metrics_out["grad_norm"] = float(grad_norm)
-                    if mim_ratio is not None:
-                        metrics_out["mim_mask_ratio"] = float(mim_ratio)
-                    metrics_out["mim_mask_prob"] = float(mim_mask_prob)
-                    metrics_out["mim_weight"] = float(mim_weight)
-                    if ema is not None:
-                        metrics_out["ema_decay"] = float(ema.decay)
+                    losses_out = {k: float(v.detach().cpu()) for k, v in last_loss_dict.items() if hasattr(v, "detach")} if last_loss_dict is not None else {}
                     report = build_report(
                         losses=losses_out,
-                        metrics=metrics_out,
+                        metrics={"loss_avg": float(avg), "optim_step": int(global_step)},
                         meta={
                             "kind": "train_step",
                             "epoch": int(epoch),
                             "step": int(steps),
-                            "global_step": int(global_step),
-                            "stage": stage,
+                            "optim_step": int(global_step),
                         },
                     )
                     append_jsonl(args.metrics_jsonl, report)
 
-            if args.checkpoint_bundle_out and args.checkpoint_every and int(args.checkpoint_every) > 0:
+            if (
+                is_main
+                and sync_step
+                and args.checkpoint_bundle_out
+                and args.checkpoint_every
+                and int(args.checkpoint_every) > 0
+            ):
                 every = int(args.checkpoint_every)
                 if global_step % every == 0:
                     bundle_path = Path(args.checkpoint_bundle_out)
                     stepped = bundle_path.with_name(f"{bundle_path.stem}.step{global_step}{bundle_path.suffix or '.pt'}")
                     save_checkpoint_bundle(
                         stepped,
-                        model=model,
+                        model=unwrap_model(model),
                         optim=optim,
                         args=args,
                         epoch=epoch,
                         global_step=global_step,
                         last_epoch_steps=steps,
                         last_epoch_avg=(running / max(1, steps)),
-                        last_loss_dict=loss_dict,
+                        last_loss_dict=last_loss_dict,
                         run_record=run_record,
                     )
 
-            if args.max_steps and steps >= int(args.max_steps):
-                break
+            if sync_step:
+                window_idx += 1
+                step_in_window = 0
+            else:
+                step_in_window += 1
 
         avg = running / max(1, steps)
         last_epoch_avg = float(avg)
-        print(f"epoch={epoch} done steps={steps} loss={avg:.4f}")
-        if writer is not None:
-            writer.add_scalar("train/epoch_loss", float(avg), int(epoch))
-            writer.add_scalar("train/epoch_seconds", float(time.time() - epoch_start), int(epoch))
-        if args.metrics_jsonl and last_loss_dict is not None:
+        last_epoch_steps = int(steps)
+        if is_main:
+            print(f"epoch={epoch} done steps={steps} optim_step={global_step} loss={avg:.4f}")
+        if is_main and args.metrics_jsonl and last_loss_dict is not None:
             losses_out = {k: float(v.detach().cpu()) for k, v in last_loss_dict.items() if hasattr(v, "detach")}
-            metrics_out = {"loss_avg": float(avg), "steps": int(steps)}
-            if mim_ratio is not None:
-                metrics_out["mim_mask_ratio"] = float(mim_ratio)
-            metrics_out["mim_mask_prob"] = float(mim_mask_prob)
-            metrics_out["mim_weight"] = float(mim_weight)
             report = build_report(
                 losses=losses_out,
-                metrics=metrics_out,
+                metrics={"loss_avg": float(avg), "steps": int(steps)},
                 meta={"kind": "train_epoch", "epoch": int(epoch)},
             )
             append_jsonl(args.metrics_jsonl, report)
 
-    if args.metrics_json or args.metrics_csv:
+    if is_main and (args.metrics_json or args.metrics_csv):
         losses_out = {}
         if last_loss_dict is not None:
             losses_out = {k: float(v.detach().cpu()) for k, v in last_loss_dict.items() if hasattr(v, "detach")}
-        metrics_out = {
-            "epochs": int(args.epochs),
-            "max_steps": int(args.max_steps),
-            "stage_off_steps": int(args.stage_off_steps),
-            "stage_k_steps": int(args.stage_k_steps),
-            "mim_mask_prob_start": args.mim_mask_prob_start,
-            "mim_mask_prob_end": args.mim_mask_prob_end,
-            "mim_loss_weight_start": args.mim_loss_weight_start,
-            "mim_loss_weight_end": args.mim_loss_weight_end,
-        }
+        metrics_out = {"epochs": int(args.epochs), "max_steps": int(args.max_steps)}
         if last_epoch_avg is not None:
             metrics_out["loss_avg_last_epoch"] = float(last_epoch_avg)
         summary = build_report(
@@ -2351,47 +1649,62 @@ def main(argv: list[str] | None = None) -> int:
         if args.metrics_csv:
             write_csv_row(args.metrics_csv, summary)
 
-    if args.checkpoint_out:
+    if is_main and args.checkpoint_out:
         ckpt_path = Path(args.checkpoint_out)
         ckpt_path.parent.mkdir(parents=True, exist_ok=True)
-        torch.save(model.state_dict(), ckpt_path)
+        torch.save(unwrap_model(model).state_dict(), ckpt_path)
 
-    if args.checkpoint_bundle_out:
+    if is_main and args.checkpoint_bundle_out:
         save_checkpoint_bundle(
             args.checkpoint_bundle_out,
-            model=model,
+            model=unwrap_model(model),
             optim=optim,
             args=args,
             epoch=int(args.epochs) - 1,
             global_step=int(global_step),
-            last_epoch_steps=int(args.max_steps),
+            last_epoch_steps=int(last_epoch_steps),
             last_epoch_avg=last_epoch_avg,
             last_loss_dict=last_loss_dict,
             run_record=run_record,
         )
 
-    if args.export_onnx:
-        # Apply EMA weights if enabled and requested
-        if ema is not None and args.ema_eval:
-            print("Applying EMA weights for export...")
-            ema.apply_shadow()
-        
-        onnx_path = export_onnx_after_training(
-            model,
-            image_size=int(args.image_size),
-            output_path=args.onnx_out,
-            opset_version=int(args.onnx_opset),
-        )
-        print(onnx_path)
-        
-        # Restore original weights if EMA was applied
-        if ema is not None and args.ema_eval:
-            ema.restore()
-            print("Restored training weights")
+    if is_main and args.onnx_out:
+        try:
+            from rtdetr_pose.export import export_onnx
+        except Exception as exc:  # pragma: no cover
+            raise SystemExit("rtdetr_pose.export.export_onnx is required for ONNX export") from exc
 
-    if writer is not None:
-        writer.flush()
-        writer.close()
+        onnx_path = Path(str(args.onnx_out))
+        onnx_path.parent.mkdir(parents=True, exist_ok=True)
+        dummy = torch.zeros((1, 3, int(args.image_size), int(args.image_size)), dtype=torch.float32, device=device)
+        export_onnx(
+            unwrap_model(model).eval(),
+            dummy,
+            str(onnx_path),
+            opset_version=int(args.onnx_opset),
+            dynamic_hw=bool(args.onnx_dynamic_hw),
+        )
+        meta_path = Path(str(args.onnx_meta_out)) if args.onnx_meta_out else onnx_path.with_suffix(onnx_path.suffix + ".meta.json")
+        meta_path.parent.mkdir(parents=True, exist_ok=True)
+        meta = {
+            "timestamp_utc": _now_utc(),
+            "onnx": str(onnx_path),
+            "opset": int(args.onnx_opset),
+            "dynamic_hw": bool(args.onnx_dynamic_hw),
+            "dummy_input": {"shape": [1, 3, int(args.image_size), int(args.image_size)], "dtype": "float32"},
+            "run_record": run_record,
+        }
+        meta_path.write_text(json.dumps(meta, indent=2, sort_keys=True), encoding="utf-8")
+
+    if is_main and run_dir is not None:
+        (run_dir / "run_record.json").write_text(
+            json.dumps(run_record, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+
+    if ddp_enabled:
+        torch.distributed.barrier()
+        torch.distributed.destroy_process_group()
 
     return 0
 

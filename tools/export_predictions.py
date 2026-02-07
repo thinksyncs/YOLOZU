@@ -62,6 +62,42 @@ def _parse_args(argv):
         help="Optional checkpoint for rtdetr_pose adapter.",
     )
     parser.add_argument(
+        "--lora-r",
+        type=int,
+        default=0,
+        help="Enable LoRA by setting rank r>0 (default: 0 disables).",
+    )
+    parser.add_argument(
+        "--lora-alpha",
+        type=float,
+        default=None,
+        help="LoRA alpha scaling (default: r).",
+    )
+    parser.add_argument(
+        "--lora-dropout",
+        type=float,
+        default=0.0,
+        help="LoRA dropout on inputs (default: 0.0).",
+    )
+    parser.add_argument(
+        "--lora-target",
+        default="head",
+        choices=("head", "all_linear", "all_conv1x1", "all_linear_conv1x1"),
+        help="Where to apply LoRA (default: head).",
+    )
+    parser.add_argument(
+        "--lora-freeze-base",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Freeze base weights and train LoRA params only (default: false).",
+    )
+    parser.add_argument(
+        "--lora-train-bias",
+        choices=("none", "all"),
+        default="none",
+        help="If LoRA is enabled, optionally train biases too (default: none).",
+    )
+    parser.add_argument(
         "--max-images",
         type=int,
         default=None,
@@ -101,9 +137,52 @@ def _parse_args(argv):
         default="tent",
         help="TTT method (default: tent).",
     )
+    parser.add_argument(
+        "--ttt-reset",
+        choices=("stream", "sample"),
+        default="stream",
+        help="TTT reset policy: stream keeps adapted weights; sample resets per image (default: stream).",
+    )
     parser.add_argument("--ttt-steps", type=int, default=1, help="Total TTT steps to run (default: 1).")
     parser.add_argument("--ttt-batch-size", type=int, default=1, help="TTT batch size (default: 1).")
     parser.add_argument("--ttt-lr", type=float, default=1e-4, help="TTT learning rate (default: 1e-4).")
+    parser.add_argument(
+        "--ttt-stop-on-non-finite",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Stop TTT if loss/grad/update norms become non-finite (default: true).",
+    )
+    parser.add_argument(
+        "--ttt-rollback-on-stop",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Rollback last TTT step when a guard triggers (default: true).",
+    )
+    parser.add_argument("--ttt-max-grad-norm", type=float, default=None, help="Optional grad clipping norm (default: none).")
+    parser.add_argument(
+        "--ttt-max-update-norm",
+        type=float,
+        default=None,
+        help="Stop if per-step weight update L2 norm exceeds this (default: none).",
+    )
+    parser.add_argument(
+        "--ttt-max-total-update-norm",
+        type=float,
+        default=None,
+        help="Stop if total drift from initial weights exceeds this (default: none).",
+    )
+    parser.add_argument(
+        "--ttt-max-loss-ratio",
+        type=float,
+        default=None,
+        help="Stop if loss exceeds (initial_loss * ratio) (default: none).",
+    )
+    parser.add_argument(
+        "--ttt-max-loss-increase",
+        type=float,
+        default=None,
+        help="Stop if loss exceeds (initial_loss + delta) (default: none).",
+    )
     parser.add_argument(
         "--ttt-update-filter",
         choices=("all", "norm_only", "adapter_only"),
@@ -187,6 +266,9 @@ def main(argv=None):
 
     _apply_ttt_preset(args)
 
+    if args.adapter == "dummy" and int(args.lora_r) > 0:
+        raise SystemExit("--lora-* flags are only supported with --adapter rtdetr_pose")
+
     dataset_root = Path(args.dataset) if args.dataset else (repo_root / "data" / "coco128")
     manifest = build_manifest(dataset_root, split=args.split)
     records = manifest["images"]
@@ -211,28 +293,17 @@ def main(argv=None):
             image_size=image_size or (320, 320),
             score_threshold=args.score_threshold,
             max_detections=args.max_detections,
+            lora_r=int(args.lora_r),
+            lora_alpha=(float(args.lora_alpha) if args.lora_alpha is not None else None),
+            lora_dropout=float(args.lora_dropout),
+            lora_target=str(args.lora_target),
+            lora_freeze_base=bool(args.lora_freeze_base),
+            lora_train_bias=str(args.lora_train_bias),
         )
 
-    ttt_report = None
-    if args.ttt:
-        ttt_config = TTTConfig(
-            enabled=True,
-            method=str(args.ttt_method),
-            steps=int(args.ttt_steps),
-            batch_size=int(args.ttt_batch_size),
-            lr=float(args.ttt_lr),
-            update_filter=str(args.ttt_update_filter),
-            include=list(args.ttt_include) if args.ttt_include else None,
-            exclude=list(args.ttt_exclude) if args.ttt_exclude else None,
-            max_batches=int(args.ttt_max_batches),
-            seed=args.ttt_seed,
-            log_out=args.ttt_log_out,
-            mim_mask_prob=float(args.ttt_mask_prob),
-            mim_patch_size=int(args.ttt_patch_size),
-            mim_mask_value=float(args.ttt_mask_value),
-        )
+    def _ttt_or_die(_records):
         try:
-            ttt_report = run_ttt(adapter, records, config=ttt_config).to_dict()
+            return run_ttt(adapter, _records, config=ttt_config).to_dict()
         except Exception as exc:
             extra = ""
             try:
@@ -265,7 +336,88 @@ def main(argv=None):
                 extra = ""
             raise SystemExit(f"TTT failed: {exc}{extra}")
 
-    predictions = adapter.predict(records)
+    ttt_report = None
+    if args.ttt:
+        ttt_config = TTTConfig(
+            enabled=True,
+            method=str(args.ttt_method),
+            reset=str(args.ttt_reset),
+            steps=int(args.ttt_steps),
+            batch_size=int(args.ttt_batch_size),
+            lr=float(args.ttt_lr),
+            stop_on_non_finite=bool(args.ttt_stop_on_non_finite),
+            rollback_on_stop=bool(args.ttt_rollback_on_stop),
+            max_grad_norm=(float(args.ttt_max_grad_norm) if args.ttt_max_grad_norm is not None else None),
+            max_update_norm=(float(args.ttt_max_update_norm) if args.ttt_max_update_norm is not None else None),
+            max_total_update_norm=(
+                float(args.ttt_max_total_update_norm) if args.ttt_max_total_update_norm is not None else None
+            ),
+            max_loss_ratio=(float(args.ttt_max_loss_ratio) if args.ttt_max_loss_ratio is not None else None),
+            max_loss_increase=(
+                float(args.ttt_max_loss_increase) if args.ttt_max_loss_increase is not None else None
+            ),
+            update_filter=str(args.ttt_update_filter),
+            include=list(args.ttt_include) if args.ttt_include else None,
+            exclude=list(args.ttt_exclude) if args.ttt_exclude else None,
+            max_batches=int(args.ttt_max_batches),
+            seed=args.ttt_seed,
+            log_out=args.ttt_log_out,
+            mim_mask_prob=float(args.ttt_mask_prob),
+            mim_patch_size=int(args.ttt_patch_size),
+            mim_mask_value=float(args.ttt_mask_value),
+        )
+        if str(args.ttt_reset) == "sample":
+            try:
+                import torch
+            except Exception as exc:  # pragma: no cover
+                raise SystemExit(f"TTT failed: {exc}")
+            try:
+                from yolozu.tta.ttt_mim import select_parameters
+            except Exception as exc:  # pragma: no cover
+                raise SystemExit(f"TTT failed: {exc}")
+
+            model = adapter.get_model()
+            params = select_parameters(
+                model,
+                update_filter=str(ttt_config.update_filter),
+                include=ttt_config.include,
+                exclude=ttt_config.exclude,
+            )
+            if not params:
+                raise SystemExit("TTT failed: no parameters selected for TTT")
+            with torch.no_grad():
+                base_snapshot = [(p, p.detach().clone()) for p in params]
+
+            def _restore_base():
+                with torch.no_grad():
+                    for p, value in base_snapshot:
+                        p.copy_(value)
+
+            predictions = []
+            per_sample: list[dict] = []
+            max_keep = 20
+            for idx, record in enumerate(records):
+                _restore_base()
+                try:
+                    rep = _ttt_or_die([record])
+                    pred = adapter.predict([record])
+                finally:
+                    _restore_base()
+                predictions.extend(pred)
+                if idx < max_keep:
+                    per_sample.append({"index": int(idx), "image": record.get("image"), "report": rep})
+            ttt_report = {
+                "mode": "sample",
+                "samples_total": int(len(records)),
+                "samples_kept": int(len(per_sample)),
+                "samples_truncated": bool(len(records) > max_keep),
+                "per_sample": per_sample,
+            }
+        else:
+            ttt_report = _ttt_or_die(records)
+            predictions = adapter.predict(records)
+    else:
+        predictions = adapter.predict(records)
 
     tta_warnings = []
     tta_summary = None
@@ -284,6 +436,13 @@ def main(argv=None):
     output_path = repo_root / args.output
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
+    lora_report = None
+    if hasattr(adapter, "get_lora_report"):
+        try:
+            lora_report = adapter.get_lora_report()
+        except Exception:
+            lora_report = None
+
     if args.wrap:
         payload = {
             "predictions": predictions,
@@ -293,6 +452,16 @@ def main(argv=None):
                 "config": args.config,
                 "checkpoint": args.checkpoint,
                 "images": len(records),
+                "lora": {
+                    "enabled": bool(int(args.lora_r) > 0),
+                    "r": int(args.lora_r),
+                    "alpha": (float(args.lora_alpha) if args.lora_alpha is not None else None),
+                    "dropout": float(args.lora_dropout),
+                    "target": str(args.lora_target),
+                    "freeze_base": bool(args.lora_freeze_base),
+                    "train_bias": str(args.lora_train_bias),
+                    "report": lora_report,
+                },
                 "tta": {
                     "enabled": bool(args.tta),
                     "seed": args.tta_seed,
@@ -305,9 +474,21 @@ def main(argv=None):
                     "enabled": bool(args.ttt),
                     "preset": args.ttt_preset,
                     "method": str(args.ttt_method),
+                    "reset": str(args.ttt_reset),
                     "steps": int(args.ttt_steps),
                     "batch_size": int(args.ttt_batch_size),
                     "lr": float(args.ttt_lr),
+                    "stop_on_non_finite": bool(args.ttt_stop_on_non_finite),
+                    "rollback_on_stop": bool(args.ttt_rollback_on_stop),
+                    "max_grad_norm": (float(args.ttt_max_grad_norm) if args.ttt_max_grad_norm is not None else None),
+                    "max_update_norm": (float(args.ttt_max_update_norm) if args.ttt_max_update_norm is not None else None),
+                    "max_total_update_norm": (
+                        float(args.ttt_max_total_update_norm) if args.ttt_max_total_update_norm is not None else None
+                    ),
+                    "max_loss_ratio": (float(args.ttt_max_loss_ratio) if args.ttt_max_loss_ratio is not None else None),
+                    "max_loss_increase": (
+                        float(args.ttt_max_loss_increase) if args.ttt_max_loss_increase is not None else None
+                    ),
                     "update_filter": str(args.ttt_update_filter),
                     "include": list(args.ttt_include) if args.ttt_include else None,
                     "exclude": list(args.ttt_exclude) if args.ttt_exclude else None,
@@ -355,16 +536,28 @@ def main(argv=None):
         log_payload = {
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "output": str(output_path),
-            "ttt": {
-                "enabled": bool(args.ttt),
-                "method": str(args.ttt_method),
-                "steps": int(args.ttt_steps),
-                "batch_size": int(args.ttt_batch_size),
-                "lr": float(args.ttt_lr),
-                "update_filter": str(args.ttt_update_filter),
-                "include": list(args.ttt_include) if args.ttt_include else None,
-                "exclude": list(args.ttt_exclude) if args.ttt_exclude else None,
-                "max_batches": int(args.ttt_max_batches),
+                "ttt": {
+                    "enabled": bool(args.ttt),
+                    "method": str(args.ttt_method),
+                    "reset": str(args.ttt_reset),
+                    "steps": int(args.ttt_steps),
+                    "batch_size": int(args.ttt_batch_size),
+                    "lr": float(args.ttt_lr),
+                    "stop_on_non_finite": bool(args.ttt_stop_on_non_finite),
+                    "rollback_on_stop": bool(args.ttt_rollback_on_stop),
+                    "max_grad_norm": (float(args.ttt_max_grad_norm) if args.ttt_max_grad_norm is not None else None),
+                    "max_update_norm": (float(args.ttt_max_update_norm) if args.ttt_max_update_norm is not None else None),
+                    "max_total_update_norm": (
+                        float(args.ttt_max_total_update_norm) if args.ttt_max_total_update_norm is not None else None
+                    ),
+                    "max_loss_ratio": (float(args.ttt_max_loss_ratio) if args.ttt_max_loss_ratio is not None else None),
+                    "max_loss_increase": (
+                        float(args.ttt_max_loss_increase) if args.ttt_max_loss_increase is not None else None
+                    ),
+                    "update_filter": str(args.ttt_update_filter),
+                    "include": list(args.ttt_include) if args.ttt_include else None,
+                    "exclude": list(args.ttt_exclude) if args.ttt_exclude else None,
+                    "max_batches": int(args.ttt_max_batches),
                 "seed": args.ttt_seed,
                 "mim": {
                     "mask_prob": float(args.ttt_mask_prob),

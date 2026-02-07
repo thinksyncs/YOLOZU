@@ -11,6 +11,11 @@ class TTTConfig:
     # "tent" (entropy minimization) or "mim" (masked image modeling)
     method: str = "tent"
 
+    # Reset strategy for applying adaptation across inference.
+    # - "stream": adapt once and keep weights for subsequent predictions (default).
+    # - "sample": caller is expected to reset weights per-sample (see tools/export_predictions.py).
+    reset: str = "stream"
+
     # Total adaptation steps to run (steps over batches).
     steps: int = 1
 
@@ -19,6 +24,15 @@ class TTTConfig:
 
     # Optimizer learning rate (Tent or MIM).
     lr: float = 1e-4
+
+    # Safety / guards (optional).
+    stop_on_non_finite: bool = True
+    rollback_on_stop: bool = True
+    max_grad_norm: float | None = None
+    max_update_norm: float | None = None
+    max_total_update_norm: float | None = None
+    max_loss_ratio: float | None = None
+    max_loss_increase: float | None = None
 
     # Parameter selection strategy (see yolozu/tta/ttt_mim.py: select_parameters).
     update_filter: str = "all"  # all | norm_only | adapter_only

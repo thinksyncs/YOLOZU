@@ -215,6 +215,22 @@ def _default_recon_fn(output):
     return output
 
 
+def _global_grad_norm(params: Iterable["torch.Tensor"]) -> float:
+    _ensure_torch()
+    total = None
+    for p in params:
+        g = getattr(p, "grad", None)
+        if g is None:
+            continue
+        g2 = g.detach()
+        if total is None:
+            total = torch.zeros((), device=g2.device, dtype=torch.float32)
+        total = total + (g2.to(dtype=torch.float32) ** 2).sum()
+    if total is None:
+        return 0.0
+    return float(torch.sqrt(total).detach().cpu().item())
+
+
 def ttt_mim_step(
     model: "nn.Module",
     optimizer: "torch.optim.Optimizer",
@@ -226,7 +242,8 @@ def ttt_mim_step(
     recon_fn: Callable[[object], "torch.Tensor"] | None = None,
     loss_fn: Callable[["torch.Tensor", "torch.Tensor", "torch.Tensor"], "torch.Tensor"] | None = None,
     generator: "torch.Generator | None" = None,
-) -> tuple["torch.Tensor", float]:
+    max_grad_norm: float | None = None,
+) -> tuple["torch.Tensor", float, dict[str, float]]:
     _ensure_torch()
     recon_fn = recon_fn or _default_recon_fn
     if loss_fn is None:
@@ -242,9 +259,23 @@ def ttt_mim_step(
 
     optimizer.zero_grad(set_to_none=True)
     loss.backward()
+    params = [p for group in optimizer.param_groups for p in group.get("params", [])]
+    grad_norm = _global_grad_norm(params)
+    grad_norm_clipped = grad_norm
+    if max_grad_norm is not None:
+        try:
+            torch.nn.utils.clip_grad_norm_(params, float(max_grad_norm))
+        except Exception:  # pragma: no cover
+            pass
+        grad_norm_clipped = _global_grad_norm(params)
     optimizer.step()
 
-    return loss.detach(), float(mask.float().mean().item())
+    mask_ratio = float(mask.float().mean().item())
+    return (
+        loss.detach(),
+        mask_ratio,
+        {"grad_norm": float(grad_norm), "grad_norm_clipped": float(grad_norm_clipped)},
+    )
 
 
 def run_ttt_mim(
@@ -287,7 +318,7 @@ def run_ttt_mim(
     losses: list[float] = []
     mask_ratio = 0.0
     for _ in range(int(steps)):
-        loss, mask_ratio = ttt_mim_step(
+        loss, mask_ratio, _metrics = ttt_mim_step(
             model,
             optimizer,
             x,

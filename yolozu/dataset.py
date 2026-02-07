@@ -101,7 +101,10 @@ def load_yolo_dataset(images_dir, labels_dir, *, dataset_root: Path | None = Non
     images_dir = Path(images_dir)
     labels_dir = Path(labels_dir)
     dataset_root = Path(dataset_root) if dataset_root is not None else labels_dir.parent.parent
-    images = sorted(images_dir.glob("*.jpg"))
+    images: list[Path] = []
+    for ext in ("*.jpg", "*.jpeg", "*.png"):
+        images.extend(images_dir.glob(ext))
+    images = sorted(images)
     records = []
     for image_path in images:
         label_path = labels_dir / f"{image_path.stem}.txt"
