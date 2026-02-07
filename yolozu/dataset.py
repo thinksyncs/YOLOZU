@@ -4,7 +4,10 @@ from pathlib import Path
 def load_yolo_dataset(images_dir, labels_dir):
     images_dir = Path(images_dir)
     labels_dir = Path(labels_dir)
-    images = sorted(images_dir.glob("*.jpg"))
+    images = []
+    for ext in ("*.jpg", "*.jpeg", "*.png"):
+        images.extend(sorted(images_dir.glob(ext)))
+    images = sorted(images)
     records = []
     for image_path in images:
         label_path = labels_dir / f"{image_path.stem}.txt"
