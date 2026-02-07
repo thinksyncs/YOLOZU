@@ -61,6 +61,25 @@ class LoRALinear(nn.Module):
         lora_out = self.lora_up(self.lora_down(self.dropout(x))) * float(self.scaling)
         return base_out + lora_out
 
+    @property
+    def weight(self) -> "torch.Tensor":
+        _require_torch()
+        # Note: this ignores dropout; merged weights assume dropout==Identity.
+        delta = self.lora_up.weight @ self.lora_down.weight
+        return self.base.weight + (delta * float(self.scaling))
+
+    @property
+    def bias(self) -> "torch.Tensor | None":
+        return self.base.bias
+
+    @property
+    def in_features(self) -> int:
+        return int(self.base.in_features)
+
+    @property
+    def out_features(self) -> int:
+        return int(self.base.out_features)
+
 
 class LoRAConv2d1x1(nn.Module):
     def __init__(self, base: "nn.Conv2d", *, r: int, alpha: float | None, dropout: float):
@@ -92,12 +111,28 @@ class LoRAConv2d1x1(nn.Module):
         lora_out = self.lora_up(self.lora_down(self.dropout(x))) * float(self.scaling)
         return base_out + lora_out
 
+    @property
+    def weight(self) -> "torch.Tensor":
+        _require_torch()
+        # Note: this ignores dropout; merged weights assume dropout==Identity.
+        up = self.lora_up.weight.reshape(self.lora_up.out_channels, self.lora_up.in_channels)
+        down = self.lora_down.weight.reshape(self.lora_down.out_channels, self.lora_down.in_channels)
+        delta = (up @ down).reshape(self.base.weight.shape)
+        return self.base.weight + (delta * float(self.scaling))
 
-def _iter_named_children(module: "nn.Module") -> list[tuple["nn.Module", str, "nn.Module"]]:
-    out: list[tuple[nn.Module, str, nn.Module]] = []
+    @property
+    def bias(self) -> "torch.Tensor | None":
+        return self.base.bias
+
+
+def _iter_named_children(
+    module: "nn.Module", *, prefix: str = ""
+) -> list[tuple["nn.Module", str, "nn.Module", str]]:
+    out: list[tuple[nn.Module, str, nn.Module, str]] = []
     for name, child in module.named_children():
-        out.append((module, name, child))
-        out.extend(_iter_named_children(child))
+        full_name = f"{prefix}.{name}" if prefix else name
+        out.append((module, name, child, full_name))
+        out.extend(_iter_named_children(child, prefix=full_name))
     return out
 
 
@@ -131,7 +166,8 @@ def apply_lora(
             return False
         name_ok = True
         if wanted == "head":
-            name_ok = "head" in full_name
+            parts = full_name.split(".")
+            name_ok = any(part == "head" or part.endswith("_head") for part in parts)
 
         type_ok = False
         if wanted in ("head", "all_linear", "all_linear_conv1x1") and isinstance(child, nn.Linear):
@@ -142,17 +178,7 @@ def apply_lora(
         return bool(name_ok and type_ok)
 
     replacements: list[tuple[nn.Module, str, nn.Module]] = []
-    for parent, name, child in _iter_named_children(model):
-        full_name = name
-        try:
-            # Compute a stable dotted name by searching from the root.
-            for n, m in model.named_modules():
-                if m is parent:
-                    full_name = f"{n}.{name}" if n else name
-                    break
-        except Exception:
-            full_name = name
-
+    for parent, name, child, full_name in _iter_named_children(model):
         if not is_selected(full_name, child):
             continue
 
