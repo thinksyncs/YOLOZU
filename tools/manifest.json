@@ -66,6 +66,29 @@
       ]
     },
     {
+      "id": "prepare_cityscapes_seg",
+      "entrypoint": "tools/prepare_cityscapes_seg.py",
+      "runner": "python3",
+      "summary": "Prepare Cityscapes semantic segmentation layout + dataset.json manifest.",
+      "tags": ["dataset", "cityscapes", "segmentation"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "inputs": [
+        { "name": "cityscapes_root", "kind": "dir", "required": true, "flag": "--cityscapes-root" },
+        { "name": "out", "kind": "dir", "required": true, "flag": "--out" },
+        { "name": "split", "kind": "string", "required": false, "flag": "--split", "default": "train" }
+      ],
+      "outputs": [
+        { "name": "dataset_root", "kind": "dir", "description": "Prepared output root created at --out." },
+        { "name": "dataset_descriptor", "kind": "file", "description": "dataset.json manifest.", "default": "<out>/dataset.json" }
+      ],
+      "examples": [
+        {
+          "description": "Create a manifest-only dataset.json (no copying).",
+          "command": "python3 tools/prepare_cityscapes_seg.py --cityscapes-root /path/to/cityscapes --split train --out data/cityscapes_seg --mode manifest"
+        }
+      ]
+    },
+    {
       "id": "build_manifest",
       "entrypoint": "tools/build_manifest.py",
       "runner": "python3",
