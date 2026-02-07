@@ -2,6 +2,31 @@
 
 This repo stays Apache-2.0-only, so the TensorRT build and inference steps are scripted but rely on your local TensorRT installation. The goal is a reproducible engine build, plus parity validation against ONNX outputs.
 
+## Canonical export route (PyTorch → ONNX → TensorRT)
+
+For in-repo PyTorch models (notably `rtdetr_pose/`), use the wrapper tool that pins the intermediate ONNX artifact and drives `trtexec` via `tools/build_trt_engine.py`:
+
+```bash
+python3 tools/export_trt.py \
+  --config rtdetr_pose/configs/base.json \
+  --checkpoint /path/to/checkpoint.pt \
+  --image-size 320 \
+  --onnx models/rtdetr_pose.onnx \
+  --opset 17 \
+  --dynamic-hw \
+  --engine engines/rtdetr_pose_fp16.plan \
+  --precision fp16 \
+  --min-shape 1x3x320x320 \
+  --opt-shape 1x3x640x640 \
+  --max-shape 1x3x960x960
+```
+
+Artifacts:
+- ONNX: `models/rtdetr_pose.onnx` + `models/rtdetr_pose.onnx.meta.json`
+- Engine: `engines/rtdetr_pose_fp16.plan` + `engines/rtdetr_pose_fp16.plan.meta.json`
+
+Engine metadata includes best-effort `nvidia-smi` (GPU/driver/CUDA) and `trtexec --version` (TensorRT) for reproducibility.
+
 ## Runpod shortcut (recommended)
 
 If you're developing on macOS, keep GPU/TensorRT work on Runpod (or any Linux+NVIDIA machine):
