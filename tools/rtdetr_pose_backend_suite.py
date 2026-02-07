@@ -250,6 +250,12 @@ def _load_cuda_backend() -> _CudaBackend:
 
         return _CudaBackend("cuda", cudart)
     except Exception:
+        pass
+    try:
+        from cuda.bindings import runtime as cudart  # type: ignore
+
+        return _CudaBackend("cuda", cudart)
+    except Exception:
         raise RuntimeError("CUDA bindings not found (install pycuda or cuda-python)")
 
 

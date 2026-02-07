@@ -81,6 +81,14 @@ python3 tools/build_trt_engine.py \
 
 The metadata JSON captures the full `trtexec` command, git head, and engine path to make builds reproducible.
 
+If `trtexec` is not available, the builder can fall back to the TensorRT Python API:
+
+```bash
+python3 tools/build_trt_engine.py --builder python ...
+```
+
+This path requires the TensorRT Python package (e.g. `pip install nvidia-tensorrt`) and CUDA bindings (`pycuda` or `cuda-python`).
+
 ## 3) Build TensorRT engine (INT8, optional)
 
 INT8 requires a calibration cache. If your TRT workflow uses a custom calibrator, you can still use the wrapper to generate a calibration image list and pass the cache path to `trtexec`:
