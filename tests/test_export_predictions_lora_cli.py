@@ -125,6 +125,7 @@ class TestExportPredictionsLoRACLI(unittest.TestCase):
                     "--wrap",
                     "--lora-r",
                     "2",
+                    "--lora-freeze-base",
                     "--output",
                     str(out_path),
                 ],
@@ -140,6 +141,7 @@ class TestExportPredictionsLoRACLI(unittest.TestCase):
             payload = json.loads(out_path.read_text())
             meta = payload.get("meta") or {}
             self.assertTrue(meta.get("lora", {}).get("enabled"))
+            self.assertTrue(meta.get("lora", {}).get("freeze_base"))
 
             report = meta.get("lora", {}).get("report")
             self.assertIsInstance(report, dict)
@@ -153,4 +155,3 @@ class TestExportPredictionsLoRACLI(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
