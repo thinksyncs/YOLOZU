@@ -100,6 +100,13 @@ class RTDETRPoseAdapter(ModelAdapter):
         image_size=(320, 320),
         score_threshold=0.3,
         max_detections=50,
+        *,
+        lora_r: int = 0,
+        lora_alpha: float | None = None,
+        lora_dropout: float = 0.0,
+        lora_target: str = "head",
+        lora_freeze_base: bool = True,
+        lora_train_bias: str = "none",
     ):
         self.config_path = str(config_path)
         self.checkpoint_path = checkpoint_path
@@ -108,6 +115,14 @@ class RTDETRPoseAdapter(ModelAdapter):
         self.score_threshold = float(score_threshold)
         self.max_detections = int(max_detections)
         self._backend = None
+        self._lora_report: dict | None = None
+
+        self.lora_r = int(lora_r)
+        self.lora_alpha = float(lora_alpha) if lora_alpha is not None else None
+        self.lora_dropout = float(lora_dropout)
+        self.lora_target = str(lora_target)
+        self.lora_freeze_base = bool(lora_freeze_base)
+        self.lora_train_bias = str(lora_train_bias)
 
     def _ensure_backend(self):
         if self._backend is not None:
@@ -135,6 +150,38 @@ class RTDETRPoseAdapter(ModelAdapter):
         cfg = load_config(self.config_path)
         model = build_model(cfg.model).eval()
 
+        # Optional LoRA injection (useful for PEFT checkpoints and TTT adapter-only updates).
+        lora_report: dict | None = None
+        if int(self.lora_r) > 0:
+            from rtdetr_pose.lora import apply_lora, count_trainable_params, mark_only_lora_as_trainable
+
+            replaced = apply_lora(
+                model,
+                r=int(self.lora_r),
+                alpha=(float(self.lora_alpha) if self.lora_alpha is not None else None),
+                dropout=float(self.lora_dropout),
+                target=str(self.lora_target),
+            )
+
+            trainable_info = None
+            if bool(self.lora_freeze_base):
+                trainable_info = mark_only_lora_as_trainable(model, train_bias=str(self.lora_train_bias))
+
+            lora_report = {
+                "enabled": True,
+                "replaced": int(replaced),
+                "r": int(self.lora_r),
+                "alpha": (float(self.lora_alpha) if self.lora_alpha is not None else None),
+                "dropout": float(self.lora_dropout),
+                "target": str(self.lora_target),
+                "freeze_base": bool(self.lora_freeze_base),
+                "train_bias": str(self.lora_train_bias),
+                "trainable_params": int(count_trainable_params(model)),
+                "trainable_info": trainable_info,
+            }
+        else:
+            lora_report = {"enabled": False}
+
         if self.checkpoint_path:
             state = torch.load(self.checkpoint_path, map_location="cpu", weights_only=False)
             if isinstance(state, dict) and "state_dict" in state:
@@ -161,6 +208,12 @@ class RTDETRPoseAdapter(ModelAdapter):
             return x.unsqueeze(0)
 
         self._backend = {"torch": torch, "model": model, "preprocess": preprocess}
+        self._lora_report = lora_report
+
+    def get_lora_report(self) -> dict | None:
+        if self._backend is None and int(self.lora_r) > 0:
+            self._ensure_backend()
+        return self._lora_report
 
     def supports_ttt(self) -> bool:
         return True
