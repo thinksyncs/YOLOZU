@@ -454,6 +454,26 @@ def compute_warmup_lr(base_lr: float, step: int, warmup_steps: int, warmup_init:
     return float(warmup_init + (base_lr - warmup_init) * alpha)
 
 
+def plan_accumulation_windows(*, max_micro_steps: int, grad_accum: int) -> list[int]:
+    """Return accumulation window sizes for micro-step training loops.
+
+    Example: max_micro_steps=5, grad_accum=2 -> [2, 2, 1]
+    """
+
+    steps_total = int(max_micro_steps)
+    if steps_total <= 0:
+        return []
+    accum = max(1, int(grad_accum))
+
+    windows: list[int] = []
+    step = 0
+    while step < steps_total:
+        window = min(accum, steps_total - step)
+        windows.append(int(window))
+        step += int(window)
+    return windows
+
+
 def compute_linear_schedule(start: float, end: float, step: int, total_steps: int) -> float:
     if total_steps <= 1:
         return float(end)
@@ -1411,20 +1431,22 @@ def main(argv: list[str] | None = None) -> int:
             max_micro_steps = min(max_micro_steps, int(args.max_steps))
 
         grad_accum = max(1, int(args.grad_accum))
+        windows = plan_accumulation_windows(max_micro_steps=int(max_micro_steps), grad_accum=int(grad_accum))
+        window_idx = 0
+        step_in_window = 0
+        window_size = windows[0] if windows else int(grad_accum)
 
         for images, targets in loader:
             if max_micro_steps and steps >= int(max_micro_steps):
                 break
 
-            # Start of accumulation window.
-            step_in_window = int(steps) % int(grad_accum)
-            window_size = int(min(int(grad_accum), int(max_micro_steps) - int(steps))) if max_micro_steps else int(grad_accum)
             if step_in_window == 0:
                 optim.zero_grad(set_to_none=True)
+                window_size = windows[window_idx] if window_idx < len(windows) else int(grad_accum)
 
             images = images.to(device)
 
-            sync_step = step_in_window == window_size - 1
+            sync_step = step_in_window == int(window_size) - 1
             ddp_nosync = ddp_enabled and hasattr(model, "no_sync") and not sync_step
             sync_context = model.no_sync() if ddp_nosync else nullcontext()
 
@@ -1589,6 +1611,12 @@ def main(argv: list[str] | None = None) -> int:
                         last_loss_dict=last_loss_dict,
                         run_record=run_record,
                     )
+
+            if sync_step:
+                window_idx += 1
+                step_in_window = 0
+            else:
+                step_in_window += 1
 
         avg = running / max(1, steps)
         last_epoch_avg = float(avg)

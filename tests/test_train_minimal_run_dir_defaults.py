@@ -17,6 +17,12 @@ def _load_train_minimal_module():
 
 
 class TestTrainMinimalRunDirDefaults(unittest.TestCase):
+    def test_plan_accumulation_windows(self):
+        mod = _load_train_minimal_module()
+        self.assertEqual(mod.plan_accumulation_windows(max_micro_steps=4, grad_accum=2), [2, 2])
+        self.assertEqual(mod.plan_accumulation_windows(max_micro_steps=5, grad_accum=2), [2, 2, 1])
+        self.assertEqual(mod.plan_accumulation_windows(max_micro_steps=2, grad_accum=4), [2])
+
     def test_run_dir_populates_default_outputs(self):
         import tempfile
 
@@ -47,4 +53,3 @@ class TestTrainMinimalRunDirDefaults(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
