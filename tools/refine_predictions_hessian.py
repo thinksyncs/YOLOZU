@@ -26,6 +26,12 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
 
     p.add_argument("--steps", type=int, default=5, help="Max Newton steps per detection (default: 5).")
     p.add_argument("--damping", type=float, default=1e-2, help="Levenberg-Marquardt damping (default: 1e-2).")
+    p.add_argument(
+        "--fd-eps",
+        type=float,
+        default=1e-2,
+        help="Finite-difference epsilon for Hessian approximation (default: 1e-2).",
+    )
     p.add_argument("--line-search", type=int, default=3, help="Line-search attempts per step (default: 3).")
     p.add_argument("--line-search-decay", type=float, default=0.5, help="Line-search decay (default: 0.5).")
 
@@ -243,6 +249,7 @@ def _refine_offsets(
     device: str,
     steps: int,
     damping: float,
+    fd_eps: float,
     line_search: int,
     line_search_decay: float,
     w_reg: float,
@@ -284,6 +291,15 @@ def _refine_offsets(
 
     u0, v0 = bbox_center_px
     z_t = torch.tensor(float(z_target), dtype=torch.float32, device=device)
+
+    def loss_only(curr_offsets: Any) -> Any:
+        return loss_terms(curr_offsets)["loss_total"]
+
+    def grad_at(curr_offsets: Any) -> Any:
+        curr_offsets = curr_offsets.clone().detach().requires_grad_(True)
+        loss = loss_only(curr_offsets)
+        grad = torch.autograd.grad(loss, curr_offsets, create_graph=False, retain_graph=False)[0]
+        return loss.detach(), grad.detach()
 
     def loss_terms(curr_offsets: Any) -> dict[str, Any]:
         du = curr_offsets[0]
@@ -331,17 +347,25 @@ def _refine_offsets(
             stop_reason = "nan_loss"
             break
 
-        grad = torch.autograd.grad(loss, offsets, create_graph=True)[0]
+        grad = torch.autograd.grad(loss, offsets, create_graph=False, retain_graph=False)[0]
         if grad is None or grad.numel() != 2 or not torch.isfinite(grad).all():
             stop_reason = "nan_grad"
             break
 
-        h_rows = []
-        for i in range(2):
-            gi = grad[i]
-            row = torch.autograd.grad(gi, offsets, retain_graph=True)[0]
-            h_rows.append(row)
-        hess = torch.stack(h_rows, dim=0)
+        eps = float(fd_eps)
+        if not (eps > 0.0):
+            eps = 1e-2
+        e0 = torch.tensor((eps, 0.0), dtype=torch.float32, device=device)
+        e1 = torch.tensor((0.0, eps), dtype=torch.float32, device=device)
+        _loss_p0, g_p0 = grad_at(offsets.detach() + e0)
+        _loss_m0, g_m0 = grad_at(offsets.detach() - e0)
+        _loss_p1, g_p1 = grad_at(offsets.detach() + e1)
+        _loss_m1, g_m1 = grad_at(offsets.detach() - e1)
+
+        col0 = (g_p0 - g_m0) * (0.5 / eps)
+        col1 = (g_p1 - g_m1) * (0.5 / eps)
+        hess = torch.stack((col0, col1), dim=1)
+        hess = 0.5 * (hess + hess.T)
         if not torch.isfinite(hess).all():
             stop_reason = "nan_hess"
             break
@@ -405,6 +429,8 @@ def _refine_offsets(
                 "loss_after": float(best_loss),
                 "step_norm": float(step_norm.detach().cpu()),
                 "line_search_scale": float(scale),
+                "hessian": "finite_diff",
+                "fd_eps": float(eps),
                 "grad": [float(v) for v in grad.detach().cpu().tolist()],
                 "step": [float(v) for v in step.detach().cpu().tolist()],
             }
@@ -430,6 +456,8 @@ def _refine_offsets(
 
     report: dict[str, Any] = {
         "enabled": True,
+        "hessian": "finite_diff",
+        "fd_eps": float(fd_eps),
         "steps_requested": int(steps),
         "steps_run": int(steps_run),
         "stop_reason": str(stop_reason),
@@ -558,6 +586,7 @@ def _refine_entry(
                         device=str(args.device),
                         steps=int(args.steps),
                         damping=float(args.damping),
+                        fd_eps=float(args.fd_eps),
                         line_search=int(args.line_search),
                         line_search_decay=float(args.line_search_decay),
                         w_reg=float(args.w_reg),
@@ -642,6 +671,7 @@ def main(argv: list[str] | None = None) -> int:
                     "device": args.device,
                     "steps": int(args.steps),
                     "damping": float(args.damping),
+                    "fd_eps": float(args.fd_eps),
                     "line_search": int(args.line_search),
                     "line_search_decay": float(args.line_search_decay),
                     "w_reg": float(args.w_reg),
@@ -676,6 +706,7 @@ def main(argv: list[str] | None = None) -> int:
                 "device": args.device,
                 "steps": int(args.steps),
                 "damping": float(args.damping),
+                "fd_eps": float(args.fd_eps),
                 "line_search": int(args.line_search),
                 "line_search_decay": float(args.line_search_decay),
                 "w_reg": float(args.w_reg),
