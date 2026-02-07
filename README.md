@@ -39,6 +39,14 @@ Use these as lightweight landing-page/app-store/one-pager blurbs (edit freely).
 
 `toppymicroservices` is a pragmatic microservices stack for shipping AI-backed APIs reliably.
 
+---
+
+## Roadmap (priorities)
+
+- P0: Unified CLI (`torch` / `onnxruntime` / `tensorrt`) with consistent args + same output schema; always write meta (git SHA / env / GPU / seed / config hash); keep `tools/manifest.json` updated.
+- P1: `doctor` (deps/GPU/driver/onnxrt/TRT diagnostics) + `predict-images` (folder input → predictions JSON + overlays) + HTML report.
+- P2: Cache/re-run (fingerprinted runs) + sweeps (TTT / thresholds / gate weights) + production inference cores (C++/Rust) as needed.
+
 
 ---
 
