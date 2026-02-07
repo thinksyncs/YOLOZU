@@ -304,9 +304,52 @@ def _parse_common_export_args(p: argparse.ArgumentParser) -> None:
         help="Recommended TTT presets that override method/steps/lr/filter.",
     )
     p.add_argument("--ttt-method", choices=("tent", "mim"), default="tent", help="TTT method (default: tent).")
+    p.add_argument(
+        "--ttt-reset",
+        choices=("stream", "sample"),
+        default="stream",
+        help="TTT reset policy: stream keeps adapted weights; sample resets per image (default: stream).",
+    )
     p.add_argument("--ttt-steps", type=int, default=1, help="Total TTT steps to run (default: 1).")
     p.add_argument("--ttt-batch-size", type=int, default=1, help="TTT batch size (default: 1).")
     p.add_argument("--ttt-lr", type=float, default=1e-4, help="TTT learning rate (default: 1e-4).")
+    p.add_argument(
+        "--ttt-stop-on-non-finite",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Stop TTT if loss/grad/update norms become non-finite (default: true).",
+    )
+    p.add_argument(
+        "--ttt-rollback-on-stop",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Rollback last TTT step when a guard triggers (default: true).",
+    )
+    p.add_argument("--ttt-max-grad-norm", type=float, default=None, help="Optional grad clipping norm (default: none).")
+    p.add_argument(
+        "--ttt-max-update-norm",
+        type=float,
+        default=None,
+        help="Stop if per-step weight update L2 norm exceeds this (default: none).",
+    )
+    p.add_argument(
+        "--ttt-max-total-update-norm",
+        type=float,
+        default=None,
+        help="Stop if total drift from initial weights exceeds this (default: none).",
+    )
+    p.add_argument(
+        "--ttt-max-loss-ratio",
+        type=float,
+        default=None,
+        help="Stop if loss exceeds (initial_loss * ratio) (default: none).",
+    )
+    p.add_argument(
+        "--ttt-max-loss-increase",
+        type=float,
+        default=None,
+        help="Stop if loss exceeds (initial_loss + delta) (default: none).",
+    )
     p.add_argument(
         "--ttt-update-filter",
         choices=("all", "norm_only", "adapter_only"),
@@ -398,9 +441,25 @@ def _export_with_backend(
                 "enabled": ttt_enabled,
                 "preset": args.ttt_preset if ttt_enabled else None,
                 "method": str(args.ttt_method) if ttt_enabled else None,
+                "reset": str(args.ttt_reset) if ttt_enabled else None,
                 "steps": int(args.ttt_steps) if ttt_enabled else None,
                 "batch_size": int(args.ttt_batch_size) if ttt_enabled else None,
                 "lr": float(args.ttt_lr) if ttt_enabled else None,
+                "stop_on_non_finite": bool(args.ttt_stop_on_non_finite) if ttt_enabled else None,
+                "rollback_on_stop": bool(args.ttt_rollback_on_stop) if ttt_enabled else None,
+                "max_grad_norm": float(args.ttt_max_grad_norm) if ttt_enabled and args.ttt_max_grad_norm is not None else None,
+                "max_update_norm": float(args.ttt_max_update_norm) if ttt_enabled and args.ttt_max_update_norm is not None else None,
+                "max_total_update_norm": (
+                    float(args.ttt_max_total_update_norm)
+                    if ttt_enabled and args.ttt_max_total_update_norm is not None
+                    else None
+                ),
+                "max_loss_ratio": float(args.ttt_max_loss_ratio) if ttt_enabled and args.ttt_max_loss_ratio is not None else None,
+                "max_loss_increase": (
+                    float(args.ttt_max_loss_increase)
+                    if ttt_enabled and args.ttt_max_loss_increase is not None
+                    else None
+                ),
                 "update_filter": str(args.ttt_update_filter) if ttt_enabled else None,
                 "include": list(args.ttt_include) if ttt_enabled and args.ttt_include else None,
                 "exclude": list(args.ttt_exclude) if ttt_enabled and args.ttt_exclude else None,
@@ -515,9 +574,26 @@ def _export_with_backend(
             if args.ttt_preset:
                 cmd.extend(["--ttt-preset", str(args.ttt_preset)])
             cmd.extend(["--ttt-method", str(args.ttt_method)])
+            cmd.extend(["--ttt-reset", str(args.ttt_reset)])
             cmd.extend(["--ttt-steps", str(int(args.ttt_steps))])
             cmd.extend(["--ttt-batch-size", str(int(args.ttt_batch_size))])
             cmd.extend(["--ttt-lr", str(float(args.ttt_lr))])
+            cmd.append(
+                "--ttt-stop-on-non-finite" if bool(args.ttt_stop_on_non_finite) else "--no-ttt-stop-on-non-finite"
+            )
+            cmd.append(
+                "--ttt-rollback-on-stop" if bool(args.ttt_rollback_on_stop) else "--no-ttt-rollback-on-stop"
+            )
+            if args.ttt_max_grad_norm is not None:
+                cmd.extend(["--ttt-max-grad-norm", str(float(args.ttt_max_grad_norm))])
+            if args.ttt_max_update_norm is not None:
+                cmd.extend(["--ttt-max-update-norm", str(float(args.ttt_max_update_norm))])
+            if args.ttt_max_total_update_norm is not None:
+                cmd.extend(["--ttt-max-total-update-norm", str(float(args.ttt_max_total_update_norm))])
+            if args.ttt_max_loss_ratio is not None:
+                cmd.extend(["--ttt-max-loss-ratio", str(float(args.ttt_max_loss_ratio))])
+            if args.ttt_max_loss_increase is not None:
+                cmd.extend(["--ttt-max-loss-increase", str(float(args.ttt_max_loss_increase))])
             cmd.extend(["--ttt-update-filter", str(args.ttt_update_filter)])
             if args.ttt_include:
                 for inc in args.ttt_include:
