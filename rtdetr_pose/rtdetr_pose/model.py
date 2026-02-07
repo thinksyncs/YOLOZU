@@ -39,8 +39,10 @@ class SinePositionEmbedding(nn.Module):
     def forward(self, height, width, device, dtype):
         xs = torch.arange(width, device=device, dtype=dtype)
         ys = torch.arange(height, device=device, dtype=dtype)
-        grid_x = xs.repeat(height)
-        grid_y = ys.repeat_interleave(width)
+        # Avoid repeat_interleave here: it can introduce CPU tensors during ONNX tracing
+        # in some environments. Expand/reshape keeps everything on the target device.
+        grid_x = xs.unsqueeze(0).expand(height, width).reshape(-1)
+        grid_y = ys.unsqueeze(1).expand(height, width).reshape(-1)
         dim_half = self.hidden_dim // 2
         pos_y = _sincos_1d(grid_y, dim_half, device, dtype)
         pos_x = _sincos_1d(grid_x, dim_half, device, dtype)
