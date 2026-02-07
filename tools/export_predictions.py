@@ -62,6 +62,42 @@ def _parse_args(argv):
         help="Optional checkpoint for rtdetr_pose adapter.",
     )
     parser.add_argument(
+        "--lora-r",
+        type=int,
+        default=0,
+        help="Enable LoRA by setting rank r>0 (default: 0 disables).",
+    )
+    parser.add_argument(
+        "--lora-alpha",
+        type=float,
+        default=None,
+        help="LoRA alpha scaling (default: r).",
+    )
+    parser.add_argument(
+        "--lora-dropout",
+        type=float,
+        default=0.0,
+        help="LoRA dropout on inputs (default: 0.0).",
+    )
+    parser.add_argument(
+        "--lora-target",
+        default="head",
+        choices=("head", "all_linear", "all_conv1x1", "all_linear_conv1x1"),
+        help="Where to apply LoRA (default: head).",
+    )
+    parser.add_argument(
+        "--lora-freeze-base",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Freeze base weights and train LoRA params only (default: true).",
+    )
+    parser.add_argument(
+        "--lora-train-bias",
+        choices=("none", "all"),
+        default="none",
+        help="If LoRA is enabled, optionally train biases too (default: none).",
+    )
+    parser.add_argument(
         "--max-images",
         type=int,
         default=None,
@@ -187,6 +223,9 @@ def main(argv=None):
 
     _apply_ttt_preset(args)
 
+    if args.adapter == "dummy" and int(args.lora_r) > 0:
+        raise SystemExit("--lora-* flags are only supported with --adapter rtdetr_pose")
+
     dataset_root = Path(args.dataset) if args.dataset else (repo_root / "data" / "coco128")
     manifest = build_manifest(dataset_root, split=args.split)
     records = manifest["images"]
@@ -211,6 +250,12 @@ def main(argv=None):
             image_size=image_size or (320, 320),
             score_threshold=args.score_threshold,
             max_detections=args.max_detections,
+            lora_r=int(args.lora_r),
+            lora_alpha=(float(args.lora_alpha) if args.lora_alpha is not None else None),
+            lora_dropout=float(args.lora_dropout),
+            lora_target=str(args.lora_target),
+            lora_freeze_base=bool(args.lora_freeze_base),
+            lora_train_bias=str(args.lora_train_bias),
         )
 
     ttt_report = None
@@ -284,6 +329,13 @@ def main(argv=None):
     output_path = repo_root / args.output
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
+    lora_report = None
+    if hasattr(adapter, "get_lora_report"):
+        try:
+            lora_report = adapter.get_lora_report()
+        except Exception:
+            lora_report = None
+
     if args.wrap:
         payload = {
             "predictions": predictions,
@@ -293,6 +345,16 @@ def main(argv=None):
                 "config": args.config,
                 "checkpoint": args.checkpoint,
                 "images": len(records),
+                "lora": {
+                    "enabled": bool(int(args.lora_r) > 0),
+                    "r": int(args.lora_r),
+                    "alpha": (float(args.lora_alpha) if args.lora_alpha is not None else None),
+                    "dropout": float(args.lora_dropout),
+                    "target": str(args.lora_target),
+                    "freeze_base": bool(args.lora_freeze_base),
+                    "train_bias": str(args.lora_train_bias),
+                    "report": lora_report,
+                },
                 "tta": {
                     "enabled": bool(args.tta),
                     "seed": args.tta_seed,
