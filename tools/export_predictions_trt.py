@@ -6,6 +6,7 @@ import platform
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 try:
     import numpy as np  # type: ignore

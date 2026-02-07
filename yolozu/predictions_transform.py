@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import random
 from dataclasses import dataclass
-import random
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -14,78 +13,6 @@ from .gates import final_score, passes_template_gate
 class TransformResult:
     entries: list[dict[str, Any]]
     warnings: list[str]
-
-
-def apply_tta(
-    entries: Iterable[dict[str, Any]],
-    *,
-    enabled: bool = False,
-    seed: int | None = None,
-    flip_prob: float = 0.5,
-    norm_only: bool = False,
-) -> TransformResult:
-    """Apply simple post-hoc test-time augmentation (TTA) to predictions.
-
-    Currently supported:
-    - Horizontal flip in normalized bbox space: cx -> 1 - cx
-
-    When enabled, each entry gains a `tta_mask` list aligned with its detections
-    indicating which detections were modified.
-    """
-
-    warnings: list[str] = []
-    out_entries: list[dict[str, Any]] = []
-    rng = random.Random(seed)
-
-    for idx, entry in enumerate(entries):
-        if not isinstance(entry, dict):
-            continue
-        new_entry = dict(entry)
-        dets = new_entry.get("detections") or []
-        if not isinstance(dets, list):
-            warnings.append(f"predictions[{idx}]: detections must be a list")
-            dets = []
-
-        new_dets: list[dict[str, Any]] = []
-        tta_mask: list[bool] = []
-
-        for j, det in enumerate(dets):
-            if not isinstance(det, dict):
-                continue
-            new_det = dict(det)
-
-            apply = bool(enabled and (rng.random() < float(flip_prob)))
-            bbox = new_det.get("bbox")
-            if apply and isinstance(bbox, dict):
-                try:
-                    cx = float(bbox.get("cx"))
-                    cy = float(bbox.get("cy"))
-                    bw = float(bbox.get("w"))
-                    bh = float(bbox.get("h"))
-                    if norm_only and not (0.0 <= cx <= 1.0 and 0.0 <= cy <= 1.0 and 0.0 <= bw <= 1.0 and 0.0 <= bh <= 1.0):
-                        warnings.append(
-                            f"predictions[{idx}].detections[{j}]: bbox appears non-normalized; skipped TTA"
-                        )
-                        apply = False
-                    else:
-                        new_bbox = dict(bbox)
-                        new_bbox["cx"] = float(1.0 - cx)
-                        new_det["bbox"] = new_bbox
-                except Exception:
-                    warnings.append(f"predictions[{idx}].detections[{j}]: invalid bbox; skipped TTA")
-                    apply = False
-
-            if enabled:
-                tta_mask.append(bool(apply))
-            new_dets.append(new_det)
-
-        new_entry["detections"] = new_dets
-        if enabled:
-            new_entry["tta_mask"] = tta_mask
-        out_entries.append(new_entry)
-
-    return TransformResult(entries=out_entries, warnings=warnings)
-
 
 def load_classes_json(path: str | Path) -> dict[str, Any]:
     return json.loads(Path(path).read_text())

@@ -247,13 +247,6 @@ def validate_predictions_entries(entries: Iterable[dict[str, Any]], *, strict: b
     return ValidationResult(warnings=warnings)
 
 
-def validate_predictions_payload(payload: Any, *, strict: bool = False) -> ValidationResult:
-    """Validate any supported predictions JSON payload shape (wrapper/list/mapping)."""
-
-    entries = normalize_predictions_json(payload)
-    return validate_predictions_entries(entries, strict=strict)
-
-
 def load_predictions_entries(path: str | Path) -> list[dict[str, Any]]:
     path = Path(path)
     data = json.loads(path.read_text())
@@ -267,8 +260,10 @@ def load_predictions_payload(path: str | Path) -> tuple[list[dict[str, Any]], di
     return normalize_predictions_payload(data)
 
 
-def validate_predictions_payload(data: Any, *, strict: bool = False) -> ValidationResult:
-    entries, meta = normalize_predictions_payload(data)
+def validate_predictions_payload(payload: Any, *, strict: bool = False) -> ValidationResult:
+    """Validate any supported predictions JSON payload shape (wrapper/list/mapping)."""
+
+    entries, meta = normalize_predictions_payload(payload)
     if meta is not None:
         validate_wrapped_meta(meta)
     return validate_predictions_entries(entries, strict=strict)
