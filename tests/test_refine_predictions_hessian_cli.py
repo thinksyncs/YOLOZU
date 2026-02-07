@@ -1,4 +1,5 @@
 import json
+import math
 import subprocess
 import sys
 import tempfile
@@ -21,17 +22,23 @@ class TestRefinePredictionsHessianCLI(unittest.TestCase):
             root = Path(td)
             preds_path = root / "preds.json"
             out_path = root / "preds_refined.json"
+            log_path = root / "refine_log.json"
 
             preds = [
                 {
                     "image": "000001.jpg",
+                    # Inline aux maps (H=W=5) so the tool can exercise real refinement without a dataset.
+                    "depth": [[0, 1, 2, 3, 4]] * 5,
+                    "mask": [[1, 1, 1, 1, 1]] * 5,
                     "detections": [
                         {
                             "class_id": 0,
                             "score": 0.9,
-                            "log_z": 0.0,
+                            "bbox": {"cx": 0.5, "cy": 0.5, "w": 0.2, "h": 0.2},
+                            # Target a depth value to force offsets refinement along +x (depth(u)=u).
+                            "log_z": math.log(4.0),
                             "rot6d": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
-                            "offsets": [10.0, 10.0],
+                            "offsets": [0.0, 0.0],
                         }
                     ],
                 }
@@ -48,6 +55,11 @@ class TestRefinePredictionsHessianCLI(unittest.TestCase):
                     str(out_path),
                     "--refine-offsets",
                     "--wrap",
+                    "--steps",
+                    "3",
+                    "--log-output",
+                    str(log_path),
+                    "--log-steps",
                 ],
                 cwd=str(repo_root),
                 stdout=subprocess.PIPE,
@@ -62,8 +74,21 @@ class TestRefinePredictionsHessianCLI(unittest.TestCase):
             self.assertIn("predictions", payload)
             det0 = payload["predictions"][0]["detections"][0]
             self.assertIn("hessian_refinement", det0)
+            self.assertIn("offsets", det0.get("hessian_refinement", {}))
+
+            # Should nudge offsets toward +x (depth(u)=u) in a deterministic way.
+            offsets_after = det0.get("offsets")
+            self.assertIsInstance(offsets_after, list)
+            self.assertEqual(len(offsets_after), 2)
+            self.assertGreater(float(offsets_after[0]), 0.5)
+
+            report = det0["hessian_refinement"]["offsets"]
+            self.assertGreaterEqual(int(report.get("steps_run", 0)), 1)
+            self.assertIsInstance(str(report.get("stop_reason", "")), str)
+
+            log_payload = json.loads(log_path.read_text())
+            self.assertIn("images", log_payload)
 
 
 if __name__ == "__main__":
     unittest.main()
-
