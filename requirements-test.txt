@@ -7,6 +7,10 @@
 
 torch>=2.1
 
+# ONNX export + ONNXRuntime parity tests (CPU).
+onnx>=1.14
+onnxruntime>=1.17
+
 # Optional (used by tools/rtdetr_pose train_minimal when --real-images enabled)
 Pillow>=10.0
 

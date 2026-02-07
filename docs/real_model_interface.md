@@ -22,6 +22,14 @@ Baseline report (real outputs + fps):
 Export (ONNX):
 - Prefer `train_minimal.py --run-dir ...` (writes `model.onnx` + `model.onnx.meta.json`).
 - Or call `python3 -c "from rtdetr_pose.export import export_onnx; ..."` (see `rtdetr_pose/rtdetr_pose/export.py`).
+- Canonical PyTorch → ONNX → TensorRT (engine build): `python3 tools/export_trt.py ...` (see `docs/tensorrt_pipeline.md`).
+
+Backend parity + benchmark (torch vs ONNXRuntime vs TensorRT):
+- Export ONNX (and optional engine): `python3 tools/export_trt.py --skip-engine ...`
+- Run the suite: `python3 tools/rtdetr_pose_backend_suite.py --config ... --checkpoint ... --onnx ... [--engine ...] --backends torch,onnxrt,trt --output reports/rtdetr_pose_backend_suite.json`
+- Notes:
+  - ONNXRuntime path needs `onnxruntime` (CPU is fine for CI).
+  - TensorRT path needs `tensorrt` + CUDA bindings (`pycuda` or `cuda-python`) and a built engine plan.
 
 ## No-torch path (precomputed predictions)
 

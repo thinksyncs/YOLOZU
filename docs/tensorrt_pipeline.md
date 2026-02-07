@@ -27,6 +27,27 @@ Artifacts:
 
 Engine metadata includes best-effort `nvidia-smi` (GPU/driver/CUDA) and `trtexec --version` (TensorRT) for reproducibility.
 
+## RTDETRPose parity + benchmark (torch/onnxrt/trt)
+
+Once you have a checkpoint + ONNX (and optionally a TensorRT engine), you can run a single report that:
+- compares derived `score` and `bbox` stats across backends
+- benchmarks latency/FPS per backend (best-effort VRAM snapshots via `nvidia-smi`)
+
+```bash
+python3 tools/rtdetr_pose_backend_suite.py \
+  --config rtdetr_pose/configs/base.json \
+  --checkpoint /path/to/checkpoint.pt \
+  --onnx models/rtdetr_pose.onnx \
+  --engine engines/rtdetr_pose_fp16.plan \
+  --backends torch,onnxrt,trt \
+  --device cuda \
+  --image-size 320 \
+  --samples 2 \
+  --warmup 20 \
+  --iterations 200 \
+  --output reports/rtdetr_pose_backend_suite.json
+```
+
 ## Runpod shortcut (recommended)
 
 If you're developing on macOS, keep GPU/TensorRT work on Runpod (or any Linux+NVIDIA machine):

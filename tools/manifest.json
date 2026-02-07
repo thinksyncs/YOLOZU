@@ -344,6 +344,27 @@
       "docs": ["docs/onnx_export_parity.md"]
     },
     {
+      "id": "refine_predictions_hessian",
+      "entrypoint": "tools/refine_predictions_hessian.py",
+      "runner": "python3",
+      "summary": "Refine pose-related prediction fields with a safe Newton/finite-diff Hessian stepper (experimental).",
+      "tags": ["predictions", "refine", "hessian", "pose"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "requires": { "python_packages": ["torch"] },
+      "contracts": { "consumes": ["predictions_json"], "produces": ["predictions_json"] },
+      "inputs": [
+        { "name": "predictions", "kind": "file", "required": true, "flag": "--predictions" },
+        { "name": "output", "kind": "file", "required": true, "flag": "--output" }
+      ],
+      "outputs": [{ "name": "predictions_json", "kind": "file", "description": "Refined predictions JSON written to --output." }],
+      "examples": [
+        {
+          "description": "Refine offsets in-place (CPU default).",
+          "command": "python3 tools/refine_predictions_hessian.py --predictions reports/predictions.json --refine-offsets --steps 5 --output reports/predictions_refined.json --wrap"
+        }
+      ]
+    },
+    {
       "id": "export_predictions_onnxrt",
       "entrypoint": "tools/export_predictions_onnxrt.py",
       "runner": "python3",
@@ -387,6 +408,55 @@
         }
       ],
       "docs": ["docs/tensorrt_pipeline.md"]
+    },
+    {
+      "id": "export_trt",
+      "entrypoint": "tools/export_trt.py",
+      "runner": "python3",
+      "summary": "Canonical PyTorch → ONNX → TensorRT export route for in-repo rtdetr_pose models.",
+      "tags": ["export", "onnx", "tensorrt", "rtdetr_pose"],
+      "platform": {
+        "cpu_ok": true,
+        "gpu_required": false,
+        "macos_ok": true,
+        "linux_ok": true,
+        "notes": "ONNX export can run on CPU; engine build requires Linux+NVIDIA+trtexec unless --skip-engine is set."
+      },
+      "requires": { "python_packages": ["torch", "onnx"], "system": ["trtexec (optional, for engine build)"] },
+      "examples": [
+        {
+          "description": "Export ONNX and build a FP16 engine (Linux/NVIDIA).",
+          "command": "python3 tools/export_trt.py --config rtdetr_pose/configs/base.json --checkpoint /path/to/checkpoint.pt --image-size 320 --onnx models/rtdetr_pose.onnx --dynamic-hw --engine engines/rtdetr_pose_fp16.plan --precision fp16 --min-shape 1x3x320x320 --opt-shape 1x3x640x640 --max-shape 1x3x960x960"
+        }
+      ],
+      "docs": ["docs/tensorrt_pipeline.md"]
+    },
+    {
+      "id": "rtdetr_pose_backend_suite",
+      "entrypoint": "tools/rtdetr_pose_backend_suite.py",
+      "runner": "python3",
+      "summary": "Backend parity + benchmark suite for rtdetr_pose (torch vs onnxruntime vs tensorrt).",
+      "tags": ["rtdetr_pose", "parity", "benchmark"],
+      "platform": {
+        "cpu_ok": true,
+        "gpu_required": false,
+        "macos_ok": true,
+        "linux_ok": true,
+        "notes": "torch/onnxrt can run on CPU; TensorRT requires Linux+NVIDIA+tensorrt and a built engine plan."
+      },
+      "requires": { "python_packages": ["torch", "numpy"] },
+      "inputs": [
+        { "name": "config", "kind": "file", "required": true, "flag": "--config" },
+        { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/rtdetr_pose_backend_suite.json" }
+      ],
+      "outputs": [{ "name": "report_json", "kind": "file", "default": "reports/rtdetr_pose_backend_suite.json" }],
+      "examples": [
+        {
+          "description": "Torch ↔ ONNXRuntime parity + benchmark (CPU).",
+          "command": "python3 tools/rtdetr_pose_backend_suite.py --config rtdetr_pose/configs/base.json --checkpoint /path/to/checkpoint.pt --onnx models/rtdetr_pose.onnx --backends torch,onnxrt --device cpu --image-size 320 --samples 2 --warmup 20 --iterations 200 --output reports/rtdetr_pose_backend_suite.json"
+        }
+      ],
+      "docs": ["docs/real_model_interface.md", "docs/tensorrt_pipeline.md"]
     },
     {
       "id": "export_predictions_trt",
