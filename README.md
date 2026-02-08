@@ -85,6 +85,15 @@ Optional: prepare COCO instance-seg dataset with per-instance PNG masks (require
 python3 tools/prepare_coco_instance_seg.py --coco-root /path/to/coco --split val2017 --out data/coco-instance-seg
 ```
 
+Optional: convert COCO instance-seg predictions (RLE/polygons) into YOLOZU PNG masks (requires `pycocotools`):
+```bash
+python3 tools/convert_coco_instance_seg_predictions.py \
+  --predictions /path/to/coco_instance_seg_preds.json \
+  --instances-json /path/to/instances_val2017.json \
+  --output reports/instance_seg_predictions.json \
+  --masks-dir reports/instance_seg_masks
+```
+
 ## Documentation
 
 Start here: [docs/training_inference_export.md](docs/training_inference_export.md)

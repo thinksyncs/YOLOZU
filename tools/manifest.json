@@ -113,6 +113,31 @@
       ]
     },
     {
+      "id": "convert_coco_instance_seg_predictions",
+      "entrypoint": "tools/convert_coco_instance_seg_predictions.py",
+      "runner": "python3",
+      "summary": "Convert COCO instance segmentation predictions (polygons/RLE) into YOLOZU instance-seg PNG-mask contract.",
+      "tags": ["coco", "instance_segmentation", "predictions", "convert"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "contracts": { "produces": ["instance_segmentation_predictions_json"] },
+      "inputs": [
+        { "name": "predictions", "kind": "file", "required": true, "flag": "--predictions" },
+        { "name": "instances_json", "kind": "file", "required": true, "flag": "--instances-json" },
+        { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/instance_seg_predictions.json" },
+        { "name": "masks_dir", "kind": "dir", "required": false, "flag": "--masks-dir", "default": "reports/instance_seg_masks" }
+      ],
+      "outputs": [
+        { "name": "predictions_json", "kind": "file", "default": "reports/instance_seg_predictions.json" },
+        { "name": "masks_dir", "kind": "dir", "default": "reports/instance_seg_masks" }
+      ],
+      "examples": [
+        {
+          "description": "Convert COCO predictions to YOLOZU PNG masks (pycocotools required).",
+          "command": "python3 tools/convert_coco_instance_seg_predictions.py --predictions /path/to/coco_preds.json --instances-json /path/to/instances_val2017.json --output reports/instance_seg_predictions.json --masks-dir reports/instance_seg_masks"
+        }
+      ]
+    },
+    {
       "id": "prepare_cityscapes_seg",
       "entrypoint": "tools/prepare_cityscapes_seg.py",
       "runner": "python3",
