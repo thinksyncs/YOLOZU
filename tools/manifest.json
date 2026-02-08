@@ -41,7 +41,8 @@
     },
     "instance_segmentation_predictions_json": {
       "summary": "Instance segmentation predictions JSON (list of {image,instances} or {predictions:[...],meta:{...}}).",
-      "schema": "docs/schemas/instance_segmentation_predictions.schema.json"
+      "schema": "docs/schemas/instance_segmentation_predictions.schema.json",
+      "validator": "python3 tools/validate_instance_segmentation_predictions.py <path>"
     },
     "instance_seg_eval_report_json": {
       "summary": "Instance segmentation eval report payload emitted by tools/eval_instance_segmentation.py.",
@@ -246,6 +247,23 @@
         {
           "description": "Validate a segmentation predictions artifact.",
           "command": "python3 tools/validate_segmentation_predictions.py reports/seg_predictions.json"
+        }
+      ]
+    },
+    {
+      "id": "validate_instance_segmentation_predictions",
+      "entrypoint": "tools/validate_instance_segmentation_predictions.py",
+      "runner": "python3",
+      "summary": "Validate YOLOZU instance segmentation predictions JSON (per-image instances; PNG masks).",
+      "tags": ["instance_segmentation", "predictions", "validation"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "contracts": { "consumes": ["instance_segmentation_predictions_json"] },
+      "inputs": [{ "name": "predictions", "kind": "file", "required": true, "description": "Instance segmentation predictions JSON path." }],
+      "outputs": [{ "name": "stdout", "kind": "stdout", "description": "OK/WARN lines." }],
+      "examples": [
+        {
+          "description": "Validate an instance segmentation predictions artifact.",
+          "command": "python3 tools/validate_instance_segmentation_predictions.py reports/instance_seg_predictions.json"
         }
       ]
     },

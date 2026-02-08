@@ -1,5 +1,6 @@
 import argparse
 import hashlib
+import json
 import sys
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     p.add_argument("--split", default=None, help="Split under images/ and labels/ (default: auto).")
     p.add_argument("--predictions", required=True, help="Instance segmentation predictions JSON.")
     p.add_argument("--pred-root", default=None, help="Optional root to resolve relative prediction mask paths.")
+    p.add_argument("--classes", default=None, help="Optional classes.txt/classes.json for class_id→name.")
     p.add_argument("--output", default="reports/instance_seg_eval.json", help="Output JSON report path.")
     p.add_argument("--html", default=None, help="Optional HTML report path.")
     p.add_argument("--title", default="YOLOZU instance segmentation eval report", help="HTML title.")
@@ -47,6 +49,40 @@ def _class_colors(num_classes: int):
         r, g, b = colorsys.hsv_to_rgb(h, 0.70, 0.95)
         colors.append((int(r * 255), int(g * 255), int(b * 255)))
     return colors
+
+
+def _load_class_id_to_name(path: Path) -> dict[int, str]:
+    if not path.exists():
+        return {}
+    if path.suffix.lower() == ".txt":
+        lines = [ln.strip() for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()]
+        return {int(i): str(name) for i, name in enumerate(lines)}
+
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+    if isinstance(data, dict):
+        names = data.get("class_names") or data.get("names")
+        if isinstance(names, list):
+            out: dict[int, str] = {}
+            for i, name in enumerate(names):
+                if name is None:
+                    continue
+                out[int(i)] = str(name)
+            return out
+        id_to_name = data.get("id_to_name")
+        if isinstance(id_to_name, dict):
+            out: dict[int, str] = {}
+            for k, v in id_to_name.items():
+                try:
+                    out[int(k)] = str(v)
+                except Exception:
+                    continue
+            return out
+
+    return {}
 
 
 def _overlay_instances(image_rgb, instances: list[dict[str, Any]], *, colors, alpha: float, allow_rgb_masks: bool):
@@ -158,16 +194,17 @@ def _write_html(*, html_path: Path, title: str, report: dict[str, Any], overlays
         f"<p class='meta'>map50_95: {metrics.get('map50_95')}</p>",
         "<h2>Per-class AP</h2>",
         "<table>",
-        "<tr><th>class_id</th><th>ap@0.50</th><th>mean_ap</th></tr>",
+        "<tr><th>class_id</th><th>name</th><th>ap@0.50</th><th>mean_ap</th></tr>",
     ]
 
     for c in classes:
         if not isinstance(c, dict):
             continue
         cid = c.get("id")
+        name = c.get("name")
         ap50 = c.get("ap@0.50")
         mean_ap = c.get("map50_95")
-        lines.append(f"<tr><td>{cid}</td><td>{ap50}</td><td>{mean_ap}</td></tr>")
+        lines.append(f"<tr><td>{cid}</td><td>{name}</td><td>{ap50}</td><td>{mean_ap}</td></tr>")
 
     lines.extend(["</table>"])
 
@@ -209,6 +246,14 @@ def main(argv: list[str] | None = None) -> None:
     if not pred_root.is_absolute():
         pred_root = repo_root / pred_root
 
+    class_names: dict[int, str] = {}
+    classes_path: Path | None = None
+    if args.classes:
+        classes_path = Path(args.classes)
+        if not classes_path.is_absolute():
+            classes_path = repo_root / classes_path
+        class_names = _load_class_id_to_name(classes_path)
+
     output_path = Path(args.output)
     if not output_path.is_absolute():
         output_path = repo_root / output_path
@@ -232,9 +277,11 @@ def main(argv: list[str] | None = None) -> None:
     for cid in sorted(result.per_class.keys()):
         ap_map = result.per_class.get(int(cid), {}) or {}
         vals = [float(v) for v in ap_map.values() if isinstance(v, (int, float))]
+        name = class_names.get(int(cid))
         per_class_rows.append(
             {
                 "id": int(cid),
+                "name": str(name) if name is not None else None,
                 **ap_map,
                 "map50": float(ap_map.get("ap@0.50", 0.0)) if ap_map else 0.0,
                 "map50_95": float(sum(vals) / float(len(vals))) if vals else 0.0,
@@ -254,6 +301,7 @@ def main(argv: list[str] | None = None) -> None:
             "split": str(manifest.get("split")),
             "predictions": str(pred_json_path),
             "pred_root": str(pred_root),
+            "classes": str(classes_path) if classes_path is not None else None,
             "output_json": str(output_path),
             "images_evaluated": int(len(records)),
             "min_score": float(args.min_score),
@@ -305,7 +353,10 @@ def main(argv: list[str] | None = None) -> None:
                     pred_index[base] = pred_index[image]
 
             # Render first N images that have either GT or preds.
-            colors = _class_colors(max(1, int(result.counts.get("classes", 1))))
+            max_class_id = 0
+            if result.per_class:
+                max_class_id = max(int(k) for k in result.per_class.keys())
+            colors = _class_colors(max(1, int(max_class_id) + 1))
             for idx, rec in enumerate(records):
                 if len(overlays_index) >= int(args.max_overlays):
                     break

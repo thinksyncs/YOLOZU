@@ -39,6 +39,42 @@ It focuses on:
 - Instance seg: `tools/eval_instance_segmentation.py` (mask mAP from per-instance binary PNG masks + optional HTML overlays).
 - Training scaffold: minimal RT-DETR pose trainer with metrics output, ONNX export, and optional SDFT-style self-distillation.
 
+## Instance segmentation (PNG masks)
+
+YOLOZU evaluates instance segmentation using **per-instance binary PNG masks** (no RLE/polygons required).
+
+Predictions JSON (minimal):
+```json
+[
+  {
+    "image": "000001.png",
+    "instances": [
+      { "class_id": 0, "score": 0.9, "mask": "masks/000001_inst0.png" }
+    ]
+  }
+]
+```
+
+Validate an artifact:
+```bash
+python3 tools/validate_instance_segmentation_predictions.py reports/instance_seg_predictions.json
+```
+
+Run the synthetic demo and render overlays/HTML:
+```bash
+python3 tools/eval_instance_segmentation.py \
+  --dataset examples/instance_seg_demo/dataset \
+  --split val2017 \
+  --predictions examples/instance_seg_demo/predictions/instance_seg_predictions.json \
+  --pred-root examples/instance_seg_demo/predictions \
+  --classes examples/instance_seg_demo/classes.txt \
+  --html reports/instance_seg_demo_eval.html \
+  --overlays-dir reports/instance_seg_demo_overlays \
+  --max-overlays 10
+```
+
+![Instance segmentation demo overlay](docs/assets/instance_seg_demo_overlay.png)
+
 ## Documentation
 
 Start here: [docs/training_inference_export.md](docs/training_inference_export.md)
