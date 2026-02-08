@@ -50,7 +50,7 @@ TensorRT is not installed via pip; use an NVIDIA/TensorRT base image and add Pyt
 Build (example):
 
 ```bash
-docker build -f deploy/runpod/Dockerfile -t yolozu-runpod .
+docker build -f deploy/runpod/Dockerfile -t yolozu:2026-02-08-trt .
 ```
 
 Run (example):
@@ -59,8 +59,19 @@ Run (example):
 docker run --gpus all -it --rm \
   -v "$PWD:/workspace/YOLOZU" \
   -v "/data:/data" \
-  yolozu-runpod
+  yolozu:2026-02-08-trt
 ```
 
 Then run the pipeline command above inside the container.
 
+## Compliance artifacts (doctor + dependency licenses)
+
+Inside the container, you can emit reproducibility/compliance artifacts:
+
+```bash
+bash deploy/runpod/run_compliance.sh
+```
+
+This writes:
+- `reports/doctor.json`
+- `reports/dependency_licenses.json`
