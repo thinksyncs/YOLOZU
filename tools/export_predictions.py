@@ -89,8 +89,8 @@ def _parse_args(argv):
     parser.add_argument(
         "--lora-freeze-base",
         action=argparse.BooleanOptionalAction,
-        default=False,
-        help="Freeze base weights and train LoRA params only (default: false).",
+        default=True,
+        help="Freeze base weights and train LoRA params only (default: true).",
     )
     parser.add_argument(
         "--lora-train-bias",
@@ -237,6 +237,9 @@ def main(argv=None):
     args = _parse_args(sys.argv[1:] if argv is None else argv)
 
     apply_ttt_preset_args(args)
+
+    if args.adapter == "dummy" and int(args.lora_r) > 0:
+        raise SystemExit("--lora-* flags are only supported with --adapter rtdetr_pose")
 
     if args.adapter == "dummy" and int(args.lora_r) > 0:
         raise SystemExit("--lora-* flags are only supported with --adapter rtdetr_pose")

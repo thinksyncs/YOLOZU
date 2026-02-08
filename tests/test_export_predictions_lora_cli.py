@@ -9,7 +9,6 @@ try:
     import torch  # type: ignore
 except Exception:  # pragma: no cover
     torch = None  # type: ignore
-
 repo_root = Path(__file__).resolve().parents[1]
 
 
