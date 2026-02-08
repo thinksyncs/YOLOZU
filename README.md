@@ -85,6 +85,10 @@ python3 tools/yolozu.py eval-instance-seg --dataset examples/instance_seg_demo/d
 
 ![Instance segmentation demo overlay](docs/assets/instance_seg_demo_overlay.png)
 
+Example: score threshold effect (`--min-score`, OFF vs ON) using a noisy synthetic predictions file:
+
+![Instance segmentation --min-score ON/OFF comparison](docs/assets/instance_seg_min_score_compare.png)
+
 Optional: prepare COCO instance-seg dataset with per-instance PNG masks (requires `pycocotools`):
 ```bash
 python3 tools/prepare_coco_instance_seg.py --coco-root /path/to/coco --split val2017 --out data/coco-instance-seg
