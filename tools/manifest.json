@@ -758,6 +758,34 @@
       "docs": ["docs/real_model_interface.md", "docs/tensorrt_pipeline.md"]
     },
     {
+      "id": "run_rtdetr_pose_backend_suite",
+      "entrypoint": "tools/run_rtdetr_pose_backend_suite.py",
+      "runner": "python3",
+      "summary": "End-to-end runner for rtdetr_pose: export (PyTorch→ONNX→TRT) + backend parity/benchmark suite.",
+      "tags": ["rtdetr_pose", "tensorrt", "parity", "benchmark", "runpod"],
+      "platform": {
+        "cpu_ok": true,
+        "gpu_required": false,
+        "macos_ok": true,
+        "linux_ok": true,
+        "notes": "Dry-run works anywhere; full export+TRT engine build requires Linux+NVIDIA+tensorrt and trtexec."
+      },
+      "requires": { "python_packages": ["torch", "numpy"] },
+      "inputs": [
+        { "name": "config", "kind": "file", "required": false, "flag": "--config", "default": "rtdetr_pose/configs/base.json" },
+        { "name": "checkpoint", "kind": "file", "required": false, "flag": "--checkpoint" },
+        { "name": "run_dir", "kind": "file", "required": false, "flag": "--run-dir" }
+      ],
+      "outputs": [{ "name": "suite_report", "kind": "file", "default": "runs/rtdetr_pose_backend_suite/<timestamp>/backend_suite.json" }],
+      "examples": [
+        {
+          "description": "Run export_trt + backend suite (GPU).",
+          "command": "python3 tools/run_rtdetr_pose_backend_suite.py --config rtdetr_pose/configs/base.json --checkpoint /path/to/checkpoint.pt --device cuda --precision fp16 --dynamic-hw --export-image-size 320 --suite-image-size 640"
+        }
+      ],
+      "docs": ["docs/tensorrt_pipeline.md"]
+    },
+    {
       "id": "export_predictions_trt",
       "entrypoint": "tools/export_predictions_trt.py",
       "runner": "python3",

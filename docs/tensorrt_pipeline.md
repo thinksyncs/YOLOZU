@@ -53,6 +53,20 @@ python3 tools/rtdetr_pose_backend_suite.py \
 If you're developing on macOS, keep GPU/TensorRT work on Runpod (or any Linux+NVIDIA machine):
 - Docs + Docker skeleton: `deploy/runpod/README.md`
 - One-command runner: `python3 tools/run_trt_pipeline.py ...`
+- End-to-end `rtdetr_pose` export + parity + benchmark: `python3 tools/run_rtdetr_pose_backend_suite.py ...`
+
+Example (writes a self-contained run folder under `runs/`):
+
+```bash
+python3 tools/run_rtdetr_pose_backend_suite.py \
+  --config rtdetr_pose/configs/base.json \
+  --checkpoint /path/to/checkpoint.pt \
+  --device cuda \
+  --precision fp16 \
+  --dynamic-hw \
+  --export-image-size 320 \
+  --suite-image-size 640
+```
 
 ## 1) Export ONNX (end2end/no-NMS)
 

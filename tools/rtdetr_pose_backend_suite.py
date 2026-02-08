@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import platform
+import re
 import subprocess
 import sys
 import time
@@ -12,7 +14,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
-import numpy as np
+try:
+    import numpy as np  # type: ignore
+except Exception:  # pragma: no cover
+    np = None  # type: ignore
 
 repo_root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(repo_root))
@@ -24,6 +29,13 @@ from yolozu.run_record import build_run_record
 
 def _now_utc() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+def _sha256(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
 
 def _resolve(path_str: str | None) -> Path | None:
@@ -44,6 +56,82 @@ def _run_capture(cmd: list[str]) -> str | None:
         return out.decode("utf-8", errors="replace").strip()
     except Exception:
         return None
+
+def _parse_cuda_version(nvidia_smi_text: str) -> str | None:
+    m = re.search(r"CUDA Version:\\s*([0-9]+\\.[0-9]+)", str(nvidia_smi_text))
+    return None if not m else m.group(1)
+
+
+def _nvidia_smi_info() -> dict[str, Any] | None:
+    raw = _run_capture(["nvidia-smi"])
+    if not raw:
+        return None
+
+    info: dict[str, Any] = {"raw": raw, "cuda_version": _parse_cuda_version(raw)}
+    query = _run_capture(
+        [
+            "nvidia-smi",
+            "--query-gpu=name,uuid,compute_cap,driver_version",
+            "--format=csv,noheader,nounits",
+        ]
+    )
+    gpus: list[dict[str, Any]] = []
+    if query:
+        for line in query.splitlines():
+            parts = [p.strip() for p in line.split(",")]
+            if len(parts) < 4:
+                continue
+            gpus.append(
+                {
+                    "name": parts[0],
+                    "uuid": parts[1],
+                    "compute_cap": parts[2],
+                    "driver_version": parts[3],
+                }
+            )
+    info["gpus"] = gpus
+    return info
+
+
+def _trtexec_version(trtexec: str) -> str | None:
+    return _run_capture([str(trtexec), "--version"])
+
+
+def _tensorrt_py_version() -> str | None:
+    try:
+        import tensorrt  # type: ignore
+    except Exception:
+        return None
+    v = getattr(tensorrt, "__version__", None)
+    return None if v is None else str(v)
+
+
+def _onnxruntime_info() -> dict[str, Any] | None:
+    try:
+        import onnxruntime as ort  # type: ignore
+    except Exception:
+        return None
+    info: dict[str, Any] = {"version": str(getattr(ort, "__version__", "")) or None}
+    try:
+        info["available_providers"] = list(ort.get_available_providers())
+    except Exception:
+        info["available_providers"] = None
+    return info
+
+
+def _json_file_record(path: Path | None, *, embed: bool) -> dict[str, Any] | None:
+    if path is None:
+        return None
+    rec: dict[str, Any] = {"path": str(path), "exists": bool(path.exists())}
+    if not path.exists():
+        return rec
+    rec["sha256"] = _sha256(path)
+    if embed:
+        try:
+            rec["data"] = json.loads(path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            rec["embed_error"] = str(exc)
+    return rec
 
 
 def _nvidia_smi_memory() -> dict[str, Any] | None:
@@ -151,6 +239,10 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     p.add_argument("--onnx", default=None, help="ONNX model path (required for onnxrt).")
     p.add_argument("--engine", default=None, help="TensorRT engine plan path (required for trt).")
     p.add_argument("--input-name", default="images", help="Input tensor name/binding (default: images).")
+    p.add_argument("--onnx-meta", default=None, help="Optional ONNX export meta JSON path to record (and optionally embed).")
+    p.add_argument("--engine-meta", default=None, help="Optional engine build meta JSON path to record (and optionally embed).")
+    p.add_argument("--embed-meta", action="store_true", help="Embed meta JSON files into the report (default: paths only).")
+    p.add_argument("--trtexec", default="trtexec", help="Path to trtexec for version reporting (default: trtexec).")
 
     p.add_argument("--backends", default="torch,onnxrt,trt", help="Comma-separated backends (default: torch,onnxrt,trt).")
     p.add_argument("--reference", default="torch", choices=("torch",), help="Reference backend for parity (default: torch).")
@@ -506,6 +598,8 @@ def main(argv: list[str] | None = None) -> int:
 
     onnx_path = _resolve(str(args.onnx)) if args.onnx else None
     engine_path = _resolve(str(args.engine)) if args.engine else None
+    onnx_meta_path = _resolve(str(args.onnx_meta)) if args.onnx_meta else None
+    engine_meta_path = _resolve(str(args.engine_meta)) if args.engine_meta else None
 
     run_record = build_run_record(repo_root=repo_root, argv=sys.argv, args=vars(args))
 
@@ -516,10 +610,26 @@ def main(argv: list[str] | None = None) -> int:
             "platform": {"system": platform.system(), "release": platform.release(), "machine": platform.machine()},
             "cwd": os.getcwd(),
             "argv": sys.argv,
+            "env": {
+                "PYTHONHASHSEED": os.environ.get("PYTHONHASHSEED"),
+                "CUDA_VISIBLE_DEVICES": os.environ.get("CUDA_VISIBLE_DEVICES"),
+                "NVIDIA_VISIBLE_DEVICES": os.environ.get("NVIDIA_VISIBLE_DEVICES"),
+            },
             "config": str(config_path),
             "checkpoint": None if checkpoint_path is None else str(checkpoint_path),
             "onnx": None if onnx_path is None else str(onnx_path),
             "engine": None if engine_path is None else str(engine_path),
+            "onnx_meta": _json_file_record(onnx_meta_path, embed=bool(args.embed_meta)),
+            "engine_meta": _json_file_record(engine_meta_path, embed=bool(args.embed_meta)),
+            "system": {
+                "nvidia": _nvidia_smi_info(),
+                "tensorrt": {
+                    "trtexec": str(args.trtexec),
+                    "trtexec_version": _trtexec_version(str(args.trtexec)),
+                    "tensorrt_py": _tensorrt_py_version(),
+                },
+                "onnxruntime": _onnxruntime_info(),
+            },
             "input_name": str(args.input_name),
             "image_size": int(args.image_size),
             "batch": int(args.batch),
@@ -536,6 +646,9 @@ def main(argv: list[str] | None = None) -> int:
         out_path.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
         print(out_path)
         return 0
+
+    if np is None:  # pragma: no cover
+        raise SystemExit("numpy is required for rtdetr_pose_backend_suite (pip install numpy)")
 
     # Input generator (same for all backends).
     rng = np.random.default_rng(int(args.seed))
