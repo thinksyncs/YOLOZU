@@ -15,6 +15,10 @@ This folder contains a minimal PyTorch/TensorRT-oriented scaffolding for the RT-
   - `python3 tools/train_minimal.py --device cuda --amp fp16 --grad-accum 2 --run-dir runs/train_minimal_demo --epochs 1 --max-steps 30`
   - Outputs include `runs/train_minimal_demo/model.onnx` (+ `model.onnx.meta.json`) and checkpoints/metrics.
 - Continual FT (SDFT-inspired): add a frozen teacher checkpoint via `--self-distill-from <ckpt>` (defaults: keys=logits,bbox; logits uses reverse-KL).
+- Continual learning runner (multi-task sequential FT + replay buffer):
+  - `python3 tools/train_continual.py --config ../configs/continual/rtdetr_pose_domain_inc_example.yaml`
+- Optional LoRA (parameter-efficient FT / CL):
+  - `python3 tools/train_minimal.py --lora-r 8 --lora-freeze-base --lora-target head ...`
 
 Optional full-GT consumption (mask/depth)
 - Derive `z` (and `t` if `K_gt` exists) from per-instance `D_obj` at bbox center: `python3 tools/train_minimal.py --use-matcher --z-from-dobj`

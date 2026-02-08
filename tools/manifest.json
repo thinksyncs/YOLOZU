@@ -695,6 +695,59 @@
       "outputs": [{ "name": "stdout", "kind": "stdout", "description": "OK or failure reason." }],
       "examples": [{ "description": "Run policy checks.", "command": "python3 tools/check_license_policy.py" }],
       "docs": ["docs/license_policy.md"]
+    },
+    {
+      "id": "rtdetr_pose_train_continual",
+      "entrypoint": "rtdetr_pose/tools/train_continual.py",
+      "runner": "python3",
+      "summary": "Continual fine-tuning runner for rtdetr_pose (replay + self-distill, optional LoRA).",
+      "tags": ["rtdetr_pose", "continual", "train", "replay", "distill", "lora"],
+      "platform": {
+        "cpu_ok": true,
+        "gpu_required": false,
+        "macos_ok": true,
+        "linux_ok": true,
+        "notes": "CPU works for smoke runs; GPU is recommended for real training."
+      },
+      "requires": { "python_packages": ["torch", "PyYAML"] },
+      "inputs": [
+        { "name": "config", "kind": "file", "required": true, "flag": "--config" },
+        { "name": "run_dir", "kind": "dir", "required": false, "flag": "--run-dir" },
+        { "name": "replay_size", "kind": "number", "required": false, "flag": "--replay-size" }
+      ],
+      "outputs": [{ "name": "run_json", "kind": "file", "description": "continual_run.json under the run dir." }],
+      "examples": [
+        {
+          "description": "Domain-incremental continual fine-tuning (example config).",
+          "command": "python3 rtdetr_pose/tools/train_continual.py --config configs/continual/rtdetr_pose_domain_inc_example.yaml"
+        }
+      ],
+      "docs": ["docs/continual_learning.md", "rtdetr_pose/README.md"]
+    },
+    {
+      "id": "eval_continual",
+      "entrypoint": "tools/eval_continual.py",
+      "runner": "python3",
+      "summary": "Evaluate a continual learning run (simple mAP + forgetting metrics) and write JSON+HTML.",
+      "tags": ["continual", "eval", "report"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "requires": { "python_packages": ["torch", "Pillow"] },
+      "inputs": [
+        { "name": "run_json", "kind": "file", "required": true, "flag": "--run-json" },
+        { "name": "output", "kind": "file", "required": false, "flag": "--output" },
+        { "name": "html", "kind": "file", "required": false, "flag": "--html" }
+      ],
+      "outputs": [
+        { "name": "eval_json", "kind": "file", "description": "<run_dir>/continual_eval.json by default." },
+        { "name": "eval_html", "kind": "file", "description": "<run_dir>/continual_eval.html by default." }
+      ],
+      "examples": [
+        {
+          "description": "Evaluate and summarize forgetting.",
+          "command": "python3 tools/eval_continual.py --run-json runs/continual/<run>/continual_run.json --device cpu --max-images 50"
+        }
+      ],
+      "docs": ["docs/continual_learning.md"]
     }
   ]
 }

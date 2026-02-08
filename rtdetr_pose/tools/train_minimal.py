@@ -76,6 +76,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--dataset-root", type=str, default="", help="Path to data/coco128")
     parser.add_argument("--split", type=str, default="train2017")
+    parser.add_argument(
+        "--records-json",
+        default=None,
+        help="Optional JSON file containing a list of training records (overrides dataset-root/split scan).",
+    )
+    parser.add_argument(
+        "--extra-records-json",
+        default=None,
+        help="Optional JSON file containing extra records to append to the scanned dataset records.",
+    )
     parser.add_argument("--epochs", type=int, default=1)
     parser.add_argument("--batch-size", type=int, default=2)
     parser.add_argument(
@@ -112,6 +122,17 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=0.0,
         help="If >0, clip gradients to this max norm before optimizer step.",
+    )
+    parser.add_argument(
+        "--log-grad-norm",
+        action="store_true",
+        help="Log gradient norm into metrics.jsonl (computed on optimizer steps only).",
+    )
+    parser.add_argument(
+        "--stop-on-non-finite-loss",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Stop training when the loss becomes non-finite (default: true).",
     )
     parser.add_argument(
         "--lr-warmup-steps",
@@ -231,6 +252,42 @@ def build_parser() -> argparse.ArgumentParser:
         "--use-uncertainty",
         action="store_true",
         help="Enable uncertainty heads (log_sigma_z/log_sigma_rot) for task alignment.",
+    )
+    parser.add_argument(
+        "--lora-r",
+        type=int,
+        default=0,
+        help="Enable LoRA by setting rank r>0 (default: 0 disables).",
+    )
+    parser.add_argument(
+        "--lora-alpha",
+        type=float,
+        default=None,
+        help="LoRA alpha scaling (default: r).",
+    )
+    parser.add_argument(
+        "--lora-dropout",
+        type=float,
+        default=0.0,
+        help="LoRA dropout on inputs (default: 0.0).",
+    )
+    parser.add_argument(
+        "--lora-target",
+        default="head",
+        choices=("head", "all_linear", "all_conv1x1", "all_linear_conv1x1"),
+        help="Where to apply LoRA (default: head).",
+    )
+    parser.add_argument(
+        "--lora-freeze-base",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Freeze base weights and train LoRA params only (default: true).",
+    )
+    parser.add_argument(
+        "--lora-train-bias",
+        choices=("none", "all"),
+        default="none",
+        help="If LoRA is enabled, optionally train biases too (default: none).",
     )
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument(
@@ -499,6 +556,29 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         parser.set_defaults(**defaults)
 
     return parser.parse_args(argv)
+
+
+def compute_grad_norm(parameters) -> "torch.Tensor":
+    """Compute global L2 grad norm over parameters (no clipping)."""
+    if torch is None:  # pragma: no cover
+        raise RuntimeError("torch is required for compute_grad_norm")
+    norms = []
+    for p in parameters:
+        g = getattr(p, "grad", None)
+        if g is None:
+            continue
+        if getattr(g, "is_sparse", False):
+            try:
+                g = g.coalesce().values()
+            except Exception:
+                continue
+        try:
+            norms.append(g.detach().norm(2))
+        except Exception:
+            continue
+    if not norms:
+        return torch.zeros((), dtype=torch.float32)
+    return torch.norm(torch.stack(norms), 2)
 
 
 def load_checkpoint_into(model: "torch.nn.Module", optim: "torch.optim.Optimizer | None", path: str | Path) -> dict[str, Any]:
@@ -1194,8 +1274,36 @@ def main(argv: list[str] | None = None) -> int:
         args.num_queries = int(model_cfg.num_queries)
         args.num_classes = int(model_cfg.num_classes)
 
-    manifest = build_manifest(dataset_root, split=args.split)
-    records = manifest.get("images") or []
+    records = None
+    if args.records_json:
+        records_path = Path(str(args.records_json))
+        if not records_path.is_absolute():
+            records_path = repo_root.parent / records_path
+        if not records_path.exists():
+            raise SystemExit(f"records json not found: {records_path}")
+        loaded = json.loads(records_path.read_text(encoding="utf-8"))
+        if isinstance(loaded, dict) and "images" in loaded:
+            loaded = loaded.get("images")
+        if not isinstance(loaded, list):
+            raise SystemExit(f"records json must be a list or {{images:[...]}}: {records_path}")
+        records = [r for r in loaded if isinstance(r, dict)]
+    else:
+        manifest = build_manifest(dataset_root, split=args.split)
+        records = manifest.get("images") or []
+    if args.extra_records_json:
+        extra_path = Path(str(args.extra_records_json))
+        if not extra_path.is_absolute():
+            extra_path = repo_root.parent / extra_path
+        if not extra_path.exists():
+            raise SystemExit(f"extra records json not found: {extra_path}")
+        loaded = json.loads(extra_path.read_text(encoding="utf-8"))
+        if isinstance(loaded, dict) and "images" in loaded:
+            loaded = loaded.get("images")
+        if not isinstance(loaded, list):
+            raise SystemExit(f"extra records json must be a list or {{images:[...]}}: {extra_path}")
+        extra = [r for r in loaded if isinstance(r, dict)]
+        if extra:
+            records = list(records) + extra
     if not records:
         raise SystemExit(
             f"No records found under {dataset_root}. "
@@ -1315,6 +1423,27 @@ def main(argv: list[str] | None = None) -> int:
     device = torch.device(device_str)
     model.to(device)
 
+    if int(args.lora_r) > 0:
+        from rtdetr_pose.lora import apply_lora, count_trainable_params, mark_only_lora_as_trainable
+
+        replaced = apply_lora(
+            unwrap_model(model),
+            r=int(args.lora_r),
+            alpha=(float(args.lora_alpha) if args.lora_alpha is not None else None),
+            dropout=float(args.lora_dropout),
+            target=str(args.lora_target),
+        )
+        trainable_info = None
+        if bool(args.lora_freeze_base):
+            trainable_info = mark_only_lora_as_trainable(unwrap_model(model), train_bias=str(args.lora_train_bias))
+        if is_main:
+            print(
+                "lora",
+                f"enabled=True replaced={int(replaced)} r={int(args.lora_r)} alpha={args.lora_alpha}",
+                f"dropout={float(args.lora_dropout)} target={args.lora_target} freeze_base={bool(args.lora_freeze_base)}",
+                f"trainable_params={int(count_trainable_params(unwrap_model(model)))} trainable_info={trainable_info}",
+            )
+
     optim = torch.optim.AdamW(model.parameters(), lr=args.lr)
 
     start_epoch = 0
@@ -1414,6 +1543,7 @@ def main(argv: list[str] | None = None) -> int:
     last_loss_dict = None
     last_epoch_avg = None
     last_epoch_steps = 0
+    last_grad_norm = None
     for epoch in range(int(start_epoch), int(args.epochs)):
         if sampler is not None:
             sampler.set_epoch(int(epoch))
@@ -1529,6 +1659,14 @@ def main(argv: list[str] | None = None) -> int:
                         loss_dict["loss"] = loss
                     last_loss_dict = loss_dict
 
+                    if bool(args.stop_on_non_finite_loss):
+                        if not bool(torch.isfinite(loss).all()):
+                            try:
+                                loss_scalar = float(loss.detach().cpu())
+                            except Exception:
+                                loss_scalar = None
+                            raise SystemExit(f"non-finite loss at epoch={epoch} step={steps + 1}: {loss_scalar}")
+
                     if steps == 0 and args.debug_losses and is_main:
                         printable = {
                             k: float(v.detach().cpu())
@@ -1549,8 +1687,16 @@ def main(argv: list[str] | None = None) -> int:
             if sync_step:
                 if scaler is not None:
                     scaler.unscale_(optim)
+                grad_norm = None
                 if args.clip_grad_norm and float(args.clip_grad_norm) > 0:
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), float(args.clip_grad_norm))
+                    grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), float(args.clip_grad_norm))
+                elif bool(args.log_grad_norm):
+                    grad_norm = compute_grad_norm(model.parameters())
+                if grad_norm is not None:
+                    try:
+                        last_grad_norm = float(grad_norm.detach().cpu())
+                    except Exception:
+                        last_grad_norm = None
 
                 if scaler is not None:
                     scaler.step(optim)
@@ -1576,9 +1722,19 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"epoch={epoch} step={steps} optim_step={global_step} loss={avg:.4f}")
                 if args.metrics_jsonl:
                     losses_out = {k: float(v.detach().cpu()) for k, v in last_loss_dict.items() if hasattr(v, "detach")} if last_loss_dict is not None else {}
+                    lr_now = None
+                    try:
+                        lr_now = float(optim.param_groups[0].get("lr"))
+                    except Exception:
+                        lr_now = None
+                    metrics = {"loss_avg": float(avg), "optim_step": int(global_step)}
+                    if last_grad_norm is not None:
+                        metrics["grad_norm"] = float(last_grad_norm)
+                    if lr_now is not None:
+                        metrics["lr"] = float(lr_now)
                     report = build_report(
                         losses=losses_out,
-                        metrics={"loss_avg": float(avg), "optim_step": int(global_step)},
+                        metrics=metrics,
                         meta={
                             "kind": "train_step",
                             "epoch": int(epoch),
