@@ -18,6 +18,81 @@ from yolozu.tta.integration import run_ttt
 
 @unittest.skipIf(torch is None, "torch not installed")
 class TestTTTIntegration(unittest.TestCase):
+    def test_run_ttt_tent_rollback_restores_norm_buffers(self):
+        class Model(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.bn = nn.BatchNorm1d(4)
+                self.fc = nn.Linear(4, 3)
+
+            def forward(self, x):
+                x = self.bn(x)
+                return self.fc(x)
+
+        class Adapter(ModelAdapter):
+            def __init__(self, model):
+                self._model = model
+
+            def predict(self, records):
+                return [{"image": r["image"], "detections": []} for r in records]
+
+            def supports_ttt(self) -> bool:
+                return True
+
+            def get_model(self):
+                return self._model
+
+            def build_loader(self, records, *, batch_size: int = 1):
+                yield torch.randn(2, 4)
+
+        torch.manual_seed(0)
+        base_model = Model()
+        base_state = {k: v.detach().clone() for k, v in base_model.state_dict().items()}
+
+        adapter_rollback = Adapter(Model())
+        adapter_rollback.get_model().load_state_dict(base_state, strict=True)
+        bn0 = adapter_rollback.get_model().bn
+        base_buffers = {
+            "running_mean": bn0.running_mean.detach().clone(),
+            "running_var": bn0.running_var.detach().clone(),
+            "num_batches_tracked": bn0.num_batches_tracked.detach().clone(),
+        }
+        run_ttt(
+            adapter_rollback,
+            [{"image": "a.jpg"}],
+            config=TTTConfig(
+                enabled=True,
+                method="tent",
+                steps=1,
+                lr=1e-3,
+                update_filter="norm_only",
+                rollback_on_stop=True,
+                max_loss_ratio=0.9,
+            ),
+        )
+        bn1 = adapter_rollback.get_model().bn
+        self.assertTrue(torch.allclose(bn1.running_mean, base_buffers["running_mean"]))
+        self.assertTrue(torch.allclose(bn1.running_var, base_buffers["running_var"]))
+        self.assertTrue(torch.equal(bn1.num_batches_tracked, base_buffers["num_batches_tracked"]))
+
+        adapter_no_rollback = Adapter(Model())
+        adapter_no_rollback.get_model().load_state_dict(base_state, strict=True)
+        run_ttt(
+            adapter_no_rollback,
+            [{"image": "a.jpg"}],
+            config=TTTConfig(
+                enabled=True,
+                method="tent",
+                steps=1,
+                lr=1e-3,
+                update_filter="norm_only",
+                rollback_on_stop=False,
+                max_loss_ratio=0.9,
+            ),
+        )
+        bn2 = adapter_no_rollback.get_model().bn
+        self.assertFalse(torch.equal(bn2.num_batches_tracked, base_buffers["num_batches_tracked"]))
+
     def test_run_ttt_tent(self):
         class Adapter(ModelAdapter):
             def __init__(self):

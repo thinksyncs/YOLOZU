@@ -359,11 +359,21 @@ def main(argv=None):
                 raise SystemExit("TTT failed: no parameters selected for TTT")
             with torch.no_grad():
                 base_snapshot = [(p, p.detach().clone()) for p in params]
+                base_buffers = []
+                for name, buffer in model.named_buffers():
+                    if buffer is None:
+                        continue
+                    name = str(name)
+                    if not name.endswith(("running_mean", "running_var", "num_batches_tracked")):
+                        continue
+                    base_buffers.append((buffer, buffer.detach().clone()))
 
             def _restore_base():
                 with torch.no_grad():
                     for p, value in base_snapshot:
                         p.copy_(value)
+                    for buffer, value in base_buffers:
+                        buffer.copy_(value)
 
             predictions = []
             per_sample: list[dict] = []

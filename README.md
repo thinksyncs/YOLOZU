@@ -21,7 +21,7 @@ It focuses on:
 - **Backend-agnostic evaluation**: run inference in PyTorch / ONNXRuntime / TensorRT / C++ / Rust → export the same `predictions.json` → compare apples-to-apples.
 - **Unified CLI**: `python3 tools/yolozu.py` wraps backends with consistent args, caching (`--cache`), and always writes run metadata (git SHA / env / GPU / config hash).
 - **Parity + benchmarks**: backend diff stats (torch vs onnxrt vs trt) and fixed-protocol latency/FPS reports.
-- **Safe test-time adaptation hooks**: TTA (prediction-space) + TTT (Tent / MIM) with guard rails (non-finite/loss/update-norm stops, reset policies).
+- **Safe test-time training (Tent)**: norm-only updates with guard rails (non-finite/loss/update-norm stops + rollback) and reset policies.
 - **AI-friendly repo surface**: stable schemas + `tools/manifest.json` for tool discovery / automation.
 
 ## Feature highlights (what you can do)

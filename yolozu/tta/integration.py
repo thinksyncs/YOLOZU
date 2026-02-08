@@ -111,6 +111,35 @@ def _restore_params(snapshot: Iterable[tuple["torch.Tensor", "torch.Tensor"]]) -
             p.copy_(value)
 
 
+def _snapshot_norm_buffers(model: Any) -> list[tuple["torch.Tensor", "torch.Tensor"]]:
+    _ensure_torch()
+    snap: list[tuple[torch.Tensor, torch.Tensor]] = []
+    try:
+        named_buffers = model.named_buffers()
+    except Exception:
+        return snap
+
+    with torch.no_grad():
+        for name, buffer in named_buffers:
+            if buffer is None:
+                continue
+            name = str(name)
+            if not name.endswith(("running_mean", "running_var", "num_batches_tracked")):
+                continue
+            try:
+                snap.append((buffer, buffer.detach().clone()))
+            except Exception:  # pragma: no cover
+                continue
+    return snap
+
+
+def _restore_buffers(snapshot: Iterable[tuple["torch.Tensor", "torch.Tensor"]]) -> None:
+    _ensure_torch()
+    with torch.no_grad():
+        for buffer, value in snapshot:
+            buffer.copy_(value)
+
+
 def _global_l2_update_norm(snapshot: Iterable[tuple["torch.Tensor", "torch.Tensor"]]) -> float:
     _ensure_torch()
     total = None
@@ -206,6 +235,7 @@ def run_ttt(adapter: Any, records: list[dict[str, Any]], *, config: TTTConfig) -
             for step_idx in range(steps):
                 batch = batches[step_idx % len(batches)]
                 pre_snapshot = _snapshot_params(params)
+                pre_buffer_snapshot = _snapshot_norm_buffers(model) if bool(config.rollback_on_stop) else []
                 metrics = runner.adapt_step(batch)
                 loss_value = float(metrics.get("loss_entropy", 0.0))
                 if initial_loss is None:
@@ -272,6 +302,7 @@ def run_ttt(adapter: Any, records: list[dict[str, Any]], *, config: TTTConfig) -
                         warnings.append(f"non_finite_fields:{','.join(non_finite_fields)}")
                     if bool(config.rollback_on_stop):
                         _restore_params(pre_snapshot)
+                        _restore_buffers(pre_buffer_snapshot)
                     step_metrics.append(step_entry)
                     break
 
@@ -294,6 +325,7 @@ def run_ttt(adapter: Any, records: list[dict[str, Any]], *, config: TTTConfig) -
             for step_idx in range(steps):
                 x = batches[step_idx % len(batches)]
                 pre_snapshot = _snapshot_params(params)
+                pre_buffer_snapshot = _snapshot_norm_buffers(model) if bool(config.rollback_on_stop) else []
                 loss, _mask_ratio, extra = ttt_mim_step(
                     model,
                     optimizer,
@@ -370,6 +402,7 @@ def run_ttt(adapter: Any, records: list[dict[str, Any]], *, config: TTTConfig) -
                         warnings.append(f"non_finite_fields:{','.join(non_finite_fields)}")
                     if bool(config.rollback_on_stop):
                         _restore_params(pre_snapshot)
+                        _restore_buffers(pre_buffer_snapshot)
                     step_metrics.append(step_entry)
                     break
 

@@ -34,7 +34,7 @@ Presets:
 - keep adapted weights for all subsequent images
 
 `--ttt-reset sample`:
-- restore base weights per image
+- restore base state per image (selected parameters + normalization running stats)
 - run TTT on that single image (or its batch) then predict
 - slower, but comparisons are cleaner (no cross-image state)
 
@@ -130,4 +130,3 @@ For credible plots:
 - use the same subset (`subset.json` hash pinned)
 - run multiple seeds (for TTT stochasticity and training variance)
 - report mean±std and runtime cost (TTT adds latency)
-
