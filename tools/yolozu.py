@@ -995,6 +995,53 @@ def _predict_images(args: argparse.Namespace) -> int:
     return 0
 
 
+def _eval_instance_seg(args: argparse.Namespace) -> int:
+    cmd = [
+        sys.executable,
+        "tools/eval_instance_segmentation.py",
+        "--dataset",
+        str(args.dataset),
+        "--predictions",
+        str(args.predictions),
+        "--output",
+        str(args.output),
+        "--min-score",
+        str(float(args.min_score)),
+        "--diag-iou",
+        str(float(args.diag_iou)),
+        "--per-image-limit",
+        str(int(args.per_image_limit)),
+    ]
+
+    if args.split is not None:
+        cmd.extend(["--split", str(args.split)])
+    if args.pred_root is not None:
+        cmd.extend(["--pred-root", str(args.pred_root)])
+    if args.classes is not None:
+        cmd.extend(["--classes", str(args.classes)])
+    if args.html is not None:
+        cmd.extend(["--html", str(args.html)])
+    if args.title is not None:
+        cmd.extend(["--title", str(args.title)])
+    if args.overlays_dir is not None:
+        cmd.extend(["--overlays-dir", str(args.overlays_dir)])
+
+    cmd.extend(["--max-overlays", str(int(args.max_overlays))])
+    cmd.extend(["--overlay-sort", str(args.overlay_sort)])
+    cmd.extend(["--overlay-max-size", str(int(args.overlay_max_size))])
+    cmd.extend(["--overlay-alpha", str(float(args.overlay_alpha))])
+
+    if args.max_images is not None:
+        cmd.extend(["--max-images", str(int(args.max_images))])
+    if args.allow_rgb_masks:
+        cmd.append("--allow-rgb-masks")
+
+    out = _subprocess_or_die(cmd)
+    if out:
+        print(out, end="" if out.endswith("\n") else "\n")
+    return 0
+
+
 def _parse_args(argv: list[str]) -> argparse.Namespace:
     p = argparse.ArgumentParser(prog="yolozu", description="YOLOZU unified CLI (P0/P1/P2 building blocks).")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -1022,6 +1069,36 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     p_pi.add_argument("--html", default="reports/predict_images.html", help="Optional HTML report output path.")
     p_pi.add_argument("--title", default="YOLOZU predict-images report", help="HTML title.")
     p_pi.set_defaults(_fn=_predict_images)
+
+    p_is = sub.add_parser("eval-instance-seg", help="Evaluate instance segmentation predictions (PNG masks) and write a report.")
+    p_is.add_argument("--dataset", required=True, help="YOLO-format dataset root (images/ + labels/).")
+    p_is.add_argument("--split", default=None, help="Split under images/ and labels/ (default: auto).")
+    p_is.add_argument("--predictions", required=True, help="Instance segmentation predictions JSON.")
+    p_is.add_argument("--pred-root", default=None, help="Optional root to resolve relative prediction mask paths.")
+    p_is.add_argument("--classes", default=None, help="Optional classes.txt/classes.json for class_id→name.")
+    p_is.add_argument("--output", default="reports/instance_seg_eval.json", help="Output JSON report path.")
+    p_is.add_argument("--html", default=None, help="Optional HTML report path.")
+    p_is.add_argument("--title", default="YOLOZU instance segmentation eval report", help="HTML title.")
+    p_is.add_argument("--overlays-dir", default=None, help="Optional directory to write overlay images for HTML.")
+    p_is.add_argument("--max-overlays", type=int, default=0, help="Max overlays to render (default: 0).")
+    p_is.add_argument(
+        "--overlay-sort",
+        choices=("worst", "best", "first"),
+        default="worst",
+        help="How to select overlay samples (default: worst).",
+    )
+    p_is.add_argument("--overlay-max-size", type=int, default=768, help="Max size (max(H,W)) for overlay images (default: 768).")
+    p_is.add_argument("--overlay-alpha", type=float, default=0.5, help="Mask overlay alpha (default: 0.5).")
+    p_is.add_argument("--min-score", type=float, default=0.0, help="Minimum score threshold for predictions (default: 0.0).")
+    p_is.add_argument("--max-images", type=int, default=None, help="Optional cap for number of images to evaluate.")
+    p_is.add_argument("--diag-iou", type=float, default=0.5, help="IoU threshold used for per-image diagnostics/overlay selection (default: 0.5).")
+    p_is.add_argument("--per-image-limit", type=int, default=100, help="How many per-image rows to store in the report/meta and HTML (default: 100).")
+    p_is.add_argument(
+        "--allow-rgb-masks",
+        action="store_true",
+        help="Allow 3-channel masks (uses channel 0; intended for grayscale stored as RGB).",
+    )
+    p_is.set_defaults(_fn=_eval_instance_seg)
 
     return p.parse_args(argv)
 

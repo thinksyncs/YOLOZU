@@ -78,6 +78,11 @@ python3 tools/eval_instance_segmentation.py \
   --max-overlays 10
 ```
 
+Same via the unified CLI:
+```bash
+python3 tools/yolozu.py eval-instance-seg --dataset examples/instance_seg_demo/dataset --split val2017 --predictions examples/instance_seg_demo/predictions/instance_seg_predictions.json --pred-root examples/instance_seg_demo/predictions --classes examples/instance_seg_demo/classes.txt --html reports/instance_seg_demo_eval.html --overlays-dir reports/instance_seg_demo_overlays --max-overlays 10
+```
+
 ![Instance segmentation demo overlay](docs/assets/instance_seg_demo_overlay.png)
 
 Optional: prepare COCO instance-seg dataset with per-instance PNG masks (requires `pycocotools`):

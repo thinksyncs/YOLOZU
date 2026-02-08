@@ -1,5 +1,6 @@
 import json
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -226,7 +227,72 @@ class TestYOLOZUCLI(unittest.TestCase):
             overlays = list(overlays_dir.glob("*.png"))
             self.assertTrue(overlays, "expected at least one overlay image")
 
+    def test_eval_instance_seg_demo_writes_html_and_overlays(self):
+        repo_root = Path(__file__).resolve().parents[1]
+        script = repo_root / "tools" / "yolozu.py"
+
+        try:
+            import numpy as _  # noqa: F401
+            from PIL import Image  # noqa: F401
+        except ImportError as exc:  # pragma: no cover
+            self.skipTest(f"deps not available: {exc}")
+
+        dataset_root = repo_root / "examples" / "instance_seg_demo" / "dataset"
+        preds_path = repo_root / "examples" / "instance_seg_demo" / "predictions" / "instance_seg_predictions.json"
+        pred_root = repo_root / "examples" / "instance_seg_demo" / "predictions"
+        classes_path = repo_root / "examples" / "instance_seg_demo" / "classes.txt"
+        if not (dataset_root.is_dir() and preds_path.is_file()):
+            self.skipTest("instance_seg_demo missing")
+
+        with tempfile.TemporaryDirectory(dir=str(repo_root)) as td:
+            root = Path(td)
+            out_json = root / "instance_seg_eval.json"
+            out_html = root / "instance_seg_eval.html"
+            overlays_dir = root / "overlays"
+
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(script),
+                    "eval-instance-seg",
+                    "--dataset",
+                    str(dataset_root.relative_to(repo_root)),
+                    "--split",
+                    "val2017",
+                    "--predictions",
+                    str(preds_path.relative_to(repo_root)),
+                    "--pred-root",
+                    str(pred_root.relative_to(repo_root)),
+                    "--classes",
+                    str(classes_path.relative_to(repo_root)),
+                    "--output",
+                    str(out_json.relative_to(repo_root)),
+                    "--html",
+                    str(out_html.relative_to(repo_root)),
+                    "--overlays-dir",
+                    str(overlays_dir.relative_to(repo_root)),
+                    "--max-overlays",
+                    "1",
+                ],
+                cwd=str(repo_root),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+                text=True,
+            )
+            if proc.returncode != 0:
+                self.fail(f"yolozu eval-instance-seg failed:\n{proc.stdout}\n{proc.stderr}")
+
+            self.assertTrue(out_json.is_file())
+            report = json.loads(out_json.read_text(encoding="utf-8"))
+            metrics = report.get("metrics") or {}
+            self.assertAlmostEqual(float(metrics.get("map50")), 1.0, places=6)
+
+            self.assertTrue(out_html.is_file())
+            self.assertTrue(overlays_dir.is_dir())
+            overlays = list(overlays_dir.glob("*.png"))
+            self.assertTrue(overlays, "expected at least one overlay image")
+
 
 if __name__ == "__main__":
     unittest.main()
-
