@@ -30,6 +30,11 @@ For most day-to-day flows, start with:
 - Manifest schema: `docs/schemas/tools_manifest.schema.json`
 - Validator: `python3 tools/validate_tool_manifest.py`
 
+## Policy helpers
+
+- License policy check: `python3 tools/check_license_policy.py`
+- Dependency license report (best-effort): `python3 tools/report_dependency_licenses.py --output reports/dependency_licenses.json`
+
 The manifest is intended for:
 - AI agents that need to discover available CLI entrypoints + their I/O contracts
 - humans who want a quick map of “what command do I run to do X?”

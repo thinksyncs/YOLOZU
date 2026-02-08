@@ -893,6 +893,25 @@
       "docs": ["docs/license_policy.md"]
     },
     {
+      "id": "report_dependency_licenses",
+      "entrypoint": "tools/report_dependency_licenses.py",
+      "runner": "python3",
+      "summary": "Generate a best-effort dependency license report from installed Python packages (not legal advice).",
+      "tags": ["policy", "license"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "inputs": [
+        { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/dependency_licenses.json" }
+      ],
+      "outputs": [{ "name": "dependency_licenses_json", "kind": "file", "default": "reports/dependency_licenses.json" }],
+      "examples": [
+        {
+          "description": "Write a dependency license report for the current environment.",
+          "command": "python3 tools/report_dependency_licenses.py --output reports/dependency_licenses.json"
+        }
+      ],
+      "docs": ["docs/license_policy.md"]
+    },
+    {
       "id": "rtdetr_pose_train_continual",
       "entrypoint": "rtdetr_pose/tools/train_continual.py",
       "runner": "python3",
