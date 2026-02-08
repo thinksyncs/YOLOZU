@@ -241,9 +241,6 @@ def main(argv=None):
     if args.adapter == "dummy" and int(args.lora_r) > 0:
         raise SystemExit("--lora-* flags are only supported with --adapter rtdetr_pose")
 
-    if args.adapter == "dummy" and int(args.lora_r) > 0:
-        raise SystemExit("--lora-* flags are only supported with --adapter rtdetr_pose")
-
     dataset_root = Path(args.dataset) if args.dataset else (repo_root / "data" / "coco128")
     manifest = build_manifest(dataset_root, split=args.split)
     records = manifest["images"]
