@@ -85,12 +85,6 @@ python3 tools/yolozu.py eval-instance-seg --dataset examples/instance_seg_demo/d
 
 ![Instance segmentation demo overlay](docs/assets/instance_seg_demo_overlay.png)
 
-Demo plots (derived from the evaluator; synthetic dataset):
-- `--min-score` sweep: precision/recall tradeoff (`examples/instance_seg_demo/predictions/instance_seg_predictions_noisy.json`)
-- `--allow-rgb-masks` effect: compatibility for grayscale masks stored as RGB (`examples/instance_seg_demo/predictions/instance_seg_predictions_rgbmask.json`)
-
-![Instance segmentation demo plots](docs/assets/instance_seg_demo_plots.png)
-
 Optional: prepare COCO instance-seg dataset with per-instance PNG masks (requires `pycocotools`):
 ```bash
 python3 tools/prepare_coco_instance_seg.py --coco-root /path/to/coco --split val2017 --out data/coco-instance-seg
