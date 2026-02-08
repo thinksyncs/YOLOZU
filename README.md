@@ -60,6 +60,11 @@ Validate an artifact:
 python3 tools/validate_instance_segmentation_predictions.py reports/instance_seg_predictions.json
 ```
 
+Eval outputs:
+- mask mAP (`map50`, `map50_95`)
+- per-class AP table
+- per-image diagnostics (TP/FP/FN, mean IoU) and overlay selection (`--overlay-sort {worst,best,first}`; default: `worst`)
+
 Run the synthetic demo and render overlays/HTML:
 ```bash
 python3 tools/eval_instance_segmentation.py \
@@ -74,6 +79,11 @@ python3 tools/eval_instance_segmentation.py \
 ```
 
 ![Instance segmentation demo overlay](docs/assets/instance_seg_demo_overlay.png)
+
+Optional: prepare COCO instance-seg dataset with per-instance PNG masks (requires `pycocotools`):
+```bash
+python3 tools/prepare_coco_instance_seg.py --coco-root /path/to/coco --split val2017 --out data/coco-instance-seg
+```
 
 ## Documentation
 

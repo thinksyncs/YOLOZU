@@ -105,15 +105,20 @@ def _ap_for_class(
     *,
     preds: list[dict[str, Any]],
     gt_by_image: dict[str, dict[int, list[dict[str, Any]]]],
+    images: list[str],
     class_id: int,
     iou_thresh: float,
 ) -> float:
     gt_count = 0
     gt_used: dict[str, list[bool]] = {}
-    for image, class_map in gt_by_image.items():
-        boxes = class_map.get(class_id, [])
-        gt_used[image] = [False] * len(boxes)
+    for image in images:
+        boxes = gt_by_image.get(str(image), {}).get(class_id, [])
+        used = [False] * len(boxes)
+        gt_used[str(image)] = used
         gt_count += len(boxes)
+        base = str(image).split("/")[-1]
+        if base and base not in gt_used:
+            gt_used[base] = used
 
     if gt_count == 0:
         return 0.0
@@ -169,6 +174,7 @@ def evaluate_map(
     gt_by_image, gt_classes = _group_ground_truth(records)
     preds, pred_classes = _group_predictions(predictions_entries)
     classes = sorted(gt_classes.union(pred_classes))
+    images = [str(r.get("image", "")) for r in records if str(r.get("image", ""))]
 
     thresholds = list(iou_thresholds)
     if not thresholds:
@@ -177,7 +183,7 @@ def evaluate_map(
     per_class: dict[int, dict[str, float]] = {cid: {} for cid in classes}
     for thresh in thresholds:
         for cid in classes:
-            ap = _ap_for_class(preds=preds, gt_by_image=gt_by_image, class_id=cid, iou_thresh=float(thresh))
+            ap = _ap_for_class(preds=preds, gt_by_image=gt_by_image, images=images, class_id=cid, iou_thresh=float(thresh))
             per_class[cid][f"ap@{thresh:.2f}"] = ap
 
     map50 = 0.0

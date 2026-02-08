@@ -1,5 +1,6 @@
 import json
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -26,7 +27,7 @@ class TestValidateInstanceSegmentationPredictionsTool(unittest.TestCase):
             )
 
             proc = subprocess.run(
-                ["python3", str(script), str(wrapper_path.relative_to(repo_root))],
+                [sys.executable, str(script), str(wrapper_path.relative_to(repo_root))],
                 cwd=str(repo_root),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -48,7 +49,7 @@ class TestValidateInstanceSegmentationPredictionsTool(unittest.TestCase):
                 encoding="utf-8",
             )
             proc2 = subprocess.run(
-                ["python3", str(script), str(mapping_path.relative_to(repo_root))],
+                [sys.executable, str(script), str(mapping_path.relative_to(repo_root))],
                 cwd=str(repo_root),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -62,4 +63,3 @@ class TestValidateInstanceSegmentationPredictionsTool(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

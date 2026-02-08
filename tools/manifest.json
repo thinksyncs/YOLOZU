@@ -90,6 +90,29 @@
       ]
     },
     {
+      "id": "prepare_coco_instance_seg",
+      "entrypoint": "tools/prepare_coco_instance_seg.py",
+      "runner": "python3",
+      "summary": "Convert official COCO instances JSON into YOLO-format labels + per-instance PNG masks + sidecar metadata for instance-seg eval.",
+      "tags": ["dataset", "coco", "instance_segmentation"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "inputs": [
+        { "name": "coco_root", "kind": "dir", "required": true, "flag": "--coco-root" },
+        { "name": "out", "kind": "dir", "required": true, "flag": "--out" },
+        { "name": "split", "kind": "string", "required": false, "flag": "--split", "default": "val2017" }
+      ],
+      "outputs": [
+        { "name": "dataset_root", "kind": "dir", "description": "YOLO-format dataset root created at --out." },
+        { "name": "dataset_descriptor", "kind": "file", "description": "Convenience dataset.json.", "default": "<out>/dataset.json" }
+      ],
+      "examples": [
+        {
+          "description": "Prepare val2017 labels+masks (pycocotools required).",
+          "command": "python3 tools/prepare_coco_instance_seg.py --coco-root /path/to/coco --split val2017 --out data/coco-instance-seg"
+        }
+      ]
+    },
+    {
       "id": "prepare_cityscapes_seg",
       "entrypoint": "tools/prepare_cityscapes_seg.py",
       "runner": "python3",

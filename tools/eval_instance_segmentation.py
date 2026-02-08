@@ -27,11 +27,19 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     p.add_argument("--title", default="YOLOZU instance segmentation eval report", help="HTML title.")
     p.add_argument("--overlays-dir", default=None, help="Optional directory to write overlay images for HTML.")
     p.add_argument("--max-overlays", type=int, default=0, help="Max overlays to render (default: 0).")
+    p.add_argument(
+        "--overlay-sort",
+        choices=("worst", "best", "first"),
+        default="worst",
+        help="How to select overlay samples (default: worst).",
+    )
     p.add_argument("--overlay-max-size", type=int, default=768, help="Max size (max(H,W)) for overlay images (default: 768).")
     p.add_argument("--overlay-alpha", type=float, default=0.5, help="Mask overlay alpha (default: 0.5).")
 
     p.add_argument("--min-score", type=float, default=0.0, help="Minimum score threshold for predictions (default: 0.0).")
     p.add_argument("--max-images", type=int, default=None, help="Optional cap for number of images to evaluate.")
+    p.add_argument("--diag-iou", type=float, default=0.5, help="IoU threshold used for per-image diagnostics/overlay selection (default: 0.5).")
+    p.add_argument("--per-image-limit", type=int, default=100, help="How many per-image rows to store in report/meta and HTML (default: 100).")
     p.add_argument(
         "--allow-rgb-masks",
         action="store_true",
@@ -159,6 +167,9 @@ def _write_html(*, html_path: Path, title: str, report: dict[str, Any], overlays
     classes = metrics.get("classes")
     if not isinstance(classes, list):
         classes = []
+    per_image = meta.get("per_image_top")
+    if not isinstance(per_image, list):
+        per_image = []
 
     def rel(p: str) -> str:
         try:
@@ -190,6 +201,9 @@ def _write_html(*, html_path: Path, title: str, report: dict[str, Any], overlays
         f"<p class='meta'>predictions: {meta.get('predictions')}</p>",
         f"<p class='meta'>output_json: {rel(str(meta.get('output_json', '')))}</p>",
         f"<p class='meta'>images_evaluated: {meta.get('images_evaluated')}</p>",
+        f"<p class='meta'>min_score: {meta.get('min_score')}</p>",
+        f"<p class='meta'>diag_iou: {meta.get('diag_iou')}</p>",
+        f"<p class='meta'>overlay_sort: {meta.get('overlay_sort')}</p>",
         f"<p class='meta'>map50: {metrics.get('map50')}</p>",
         f"<p class='meta'>map50_95: {metrics.get('map50_95')}</p>",
         "<h2>Per-class AP</h2>",
@@ -208,6 +222,34 @@ def _write_html(*, html_path: Path, title: str, report: dict[str, Any], overlays
 
     lines.extend(["</table>"])
 
+    if per_image:
+        lines.append("<h2>Per-image diagnostics (top)</h2>")
+        lines.append("<table>")
+        lines.append(
+            "<tr>"
+            "<th>image</th><th>gt</th><th>pred</th><th>tp</th><th>fp</th><th>fn</th>"
+            "<th>precision</th><th>recall</th><th>mean_iou</th><th>error_rate</th>"
+            "</tr>"
+        )
+        for it in per_image:
+            if not isinstance(it, dict):
+                continue
+            lines.append(
+                "<tr>"
+                f"<td>{it.get('image')}</td>"
+                f"<td>{it.get('gt_instances')}</td>"
+                f"<td>{it.get('pred_instances')}</td>"
+                f"<td>{it.get('tp')}</td>"
+                f"<td>{it.get('fp')}</td>"
+                f"<td>{it.get('fn')}</td>"
+                f"<td>{it.get('precision')}</td>"
+                f"<td>{it.get('recall')}</td>"
+                f"<td>{it.get('mean_iou')}</td>"
+                f"<td>{it.get('error_rate')}</td>"
+                "</tr>"
+            )
+        lines.append("</table>")
+
     if overlays:
         lines.append("<h2>Overlays</h2>")
         lines.append("<div class='grid'>")
@@ -222,6 +264,8 @@ def _write_html(*, html_path: Path, title: str, report: dict[str, Any], overlays
                     "<div class='card'>",
                     f"  <img src='{rel(overlay_path)}' />",
                     f"  <div class='meta'>image: {it.get('image')}</div>",
+                    f"  <div class='meta'>badness: {it.get('badness')} tp/fp/fn: {it.get('tp')}/{it.get('fp')}/{it.get('fn')}</div>",
+                    f"  <div class='meta'>mean_iou: {it.get('mean_iou')}</div>",
                     "</div>",
                 ]
             )
@@ -271,6 +315,8 @@ def main(argv: list[str] | None = None) -> None:
         min_score=float(args.min_score),
         pred_root=pred_root,
         allow_rgb_masks=bool(args.allow_rgb_masks),
+        return_per_image=True,
+        diagnostics_iou=float(args.diag_iou),
     )
 
     per_class_rows: list[dict[str, Any]] = []
@@ -305,11 +351,25 @@ def main(argv: list[str] | None = None) -> None:
             "output_json": str(output_path),
             "images_evaluated": int(len(records)),
             "min_score": float(args.min_score),
+            "diag_iou": float(args.diag_iou),
+            "per_image_limit": int(args.per_image_limit),
+            "overlay_sort": str(args.overlay_sort),
             "allow_rgb_masks": bool(args.allow_rgb_masks),
             "predictions_meta": pred_meta,
             "warnings": list(result.warnings),
+            "per_image_top": [],
         },
     )
+
+    per_image = list(result.per_image or [])
+    per_image.sort(
+        key=lambda d: (
+            -int(d.get("badness", 0)),
+            -float(d.get("error_rate", 0.0)),
+            float(d.get("mean_iou") if d.get("mean_iou") is not None else 0.0),
+        )
+    )
+    report["meta"]["per_image_top"] = per_image[: max(0, int(args.per_image_limit))]
     write_json(output_path, report)
     print(output_path)
 
@@ -357,7 +417,29 @@ def main(argv: list[str] | None = None) -> None:
             if result.per_class:
                 max_class_id = max(int(k) for k in result.per_class.keys())
             colors = _class_colors(max(1, int(max_class_id) + 1))
-            for idx, rec in enumerate(records):
+
+            diag_by_path: dict[str, dict[str, Any]] = {}
+            for d in (result.per_image or []):
+                if isinstance(d, dict) and isinstance(d.get("image_path"), str):
+                    diag_by_path[str(d["image_path"])] = d
+
+            ordered_records = list(records)
+            if args.overlay_sort in ("worst", "best"):
+                reverse = bool(args.overlay_sort == "worst")
+
+                def _sort_key(rec: dict[str, Any]):
+                    key = str(rec.get("image", ""))
+                    diag = diag_by_path.get(key, {})
+                    badness = int(diag.get("badness", 0))
+                    error_rate = float(diag.get("error_rate", 0.0))
+                    mean_iou = float(diag.get("mean_iou") if diag.get("mean_iou") is not None else 0.0)
+                    if reverse:
+                        return (-badness, -error_rate, mean_iou)
+                    return (badness, error_rate, -mean_iou)
+
+                ordered_records.sort(key=_sort_key)
+
+            for idx, rec in enumerate(ordered_records):
                 if len(overlays_index) >= int(args.max_overlays):
                     break
                 image_path = rec.get("image")
@@ -432,7 +514,18 @@ def main(argv: list[str] | None = None) -> None:
                 except Exception:
                     continue
 
-                overlays_index.append({"image": image_path.split("/")[-1], "overlay": str(out_path)})
+                diag = diag_by_path.get(image_path)
+                overlays_index.append(
+                    {
+                        "image": image_path.split("/")[-1],
+                        "overlay": str(out_path),
+                        "badness": int(diag.get("badness", 0)) if isinstance(diag, dict) else None,
+                        "tp": int(diag.get("tp", 0)) if isinstance(diag, dict) else None,
+                        "fp": int(diag.get("fp", 0)) if isinstance(diag, dict) else None,
+                        "fn": int(diag.get("fn", 0)) if isinstance(diag, dict) else None,
+                        "mean_iou": float(diag.get("mean_iou")) if isinstance(diag, dict) and diag.get("mean_iou") is not None else None,
+                    }
+                )
 
         html_path = Path(args.html)
         if not html_path.is_absolute():

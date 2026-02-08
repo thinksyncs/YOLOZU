@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -109,6 +109,7 @@ class InstanceMapResult:
     per_class: dict[int, dict[str, float]]
     counts: dict[str, int]
     warnings: list[str]
+    per_image: list[dict[str, Any]] = field(default_factory=list)
 
 
 def _compute_ap(recalls: list[float], precisions: list[float]) -> float:
@@ -293,6 +294,8 @@ def evaluate_instance_map(
     min_score: float = 0.0,
     pred_root: Path | None = None,
     allow_rgb_masks: bool = False,
+    return_per_image: bool = False,
+    diagnostics_iou: float = 0.5,
 ) -> InstanceMapResult:
     """Evaluate instance segmentation with a COCO-like AP computation over binary PNG masks.
 
@@ -384,10 +387,17 @@ def evaluate_instance_map(
     def _ap_for_class(*, class_id: int, thresh: float) -> float:
         gt_used: dict[str, list[bool]] = {}
         gt_count = 0
-        for image_key, class_map in gt_by_image.items():
-            masks = class_map.get(int(class_id), [])
-            gt_used[image_key] = [False] * len(masks)
+        for record in records:
+            image_key = str(record.get("image", ""))
+            if not image_key:
+                continue
+            masks = gt_by_image.get(image_key, {}).get(int(class_id), [])
+            used = [False] * len(masks)
+            gt_used[image_key] = used
             gt_count += len(masks)
+            base = image_key.split("/")[-1]
+            if base and base not in gt_used:
+                gt_used[base] = used
         if gt_count == 0:
             return 0.0
 
@@ -457,10 +467,110 @@ def evaluate_instance_map(
             sum(per_class[cid].values()) / float(len(thresholds)) for cid in classes
         ) / float(len(classes))
 
+    per_image: list[dict[str, Any]] = []
+    if return_per_image:
+        pred_by_image: dict[str, list[dict[str, Any]]] = {}
+        for p in pred_flat:
+            key = str(p.get("image", ""))
+            if not key:
+                continue
+            pred_by_image.setdefault(key, []).append(p)
+
+        diag_thresh = float(diagnostics_iou)
+        for record in records:
+            image_path = str(record.get("image", ""))
+            if not image_path:
+                continue
+            base = image_path.split("/")[-1]
+
+            # Collect predictions for either full path key or basename key.
+            preds: list[dict[str, Any]] = []
+            seen: set[tuple[str, int, float]] = set()
+            for key in (image_path, base):
+                for it in pred_by_image.get(str(key), []) or []:
+                    try:
+                        sig = (str(it.get("mask", "")), int(it.get("class_id", 0)), float(it.get("score", 0.0)))
+                    except Exception:
+                        sig = (str(it.get("mask", "")), 0, 0.0)
+                    if sig in seen:
+                        continue
+                    seen.add(sig)
+                    preds.append(it)
+
+            # GT map for this record (already loaded).
+            gt_map = gt_by_image.get(image_path, {}) or gt_by_image.get(base, {}) or {}
+
+            gt_total = sum(len(v) for v in gt_map.values())
+            pred_total = int(len(preds))
+
+            # Match per-class independently (greedy by score, like AP@IoU).
+            tp = 0
+            fp = 0
+            ious: list[float] = []
+
+            class_ids = sorted(set(int(k) for k in gt_map.keys()).union(int(p.get("class_id", 0)) for p in preds))
+            for cid in class_ids:
+                gt_masks = list(gt_map.get(int(cid), []) or [])
+                used = [False] * len(gt_masks)
+                cls_preds = [p for p in preds if int(p.get("class_id", 0)) == int(cid)]
+                cls_preds.sort(key=lambda p: float(p.get("score", 0.0)), reverse=True)
+                for pred in cls_preds:
+                    try:
+                        pm = _load_pred_mask(pred.get("mask"))
+                    except Exception:
+                        fp += 1
+                        continue
+                    best_iou = 0.0
+                    best_idx = -1
+                    for idx, gm in enumerate(gt_masks):
+                        if idx < len(used) and used[idx]:
+                            continue
+                        try:
+                            iou = mask_iou(pm, gm)
+                        except Exception:
+                            continue
+                        if iou > best_iou:
+                            best_iou = iou
+                            best_idx = idx
+                    if best_iou >= diag_thresh and best_idx >= 0 and best_idx < len(used) and not used[best_idx]:
+                        used[best_idx] = True
+                        tp += 1
+                        ious.append(float(best_iou))
+                    else:
+                        fp += 1
+
+            fn = int(max(0, int(gt_total) - int(tp)))
+
+            denom = float(gt_total) if int(gt_total) > 0 else float(max(1, pred_total))
+            mean_iou = (sum(ious) / float(len(ious))) if ious else None
+            precision = float(tp) / float(max(1, tp + fp)) if (tp + fp) > 0 else None
+            recall = float(tp) / float(max(1, tp + fn)) if (tp + fn) > 0 else None
+            badness = int(fp + fn)
+            error_rate = float(badness) / float(denom)
+
+            per_image.append(
+                {
+                    "image": base,
+                    "image_path": image_path,
+                    "gt_instances": int(gt_total),
+                    "pred_instances": int(pred_total),
+                    "tp": int(tp),
+                    "fp": int(fp),
+                    "fn": int(fn),
+                    "precision": float(precision) if precision is not None else None,
+                    "recall": float(recall) if recall is not None else None,
+                    "mean_iou": float(mean_iou) if mean_iou is not None else None,
+                    "badness": int(badness),
+                    "error_rate": float(error_rate),
+                    "iou_thresh": float(diag_thresh),
+                }
+            )
+
     return InstanceMapResult(
         map50=float(map50),
         map50_95=float(map50_95),
         per_class=per_class,
+        per_image=per_image,
         counts={
             "images": int(len(records)),
             "gt_instances": int(gt_instances_total),
@@ -469,4 +579,3 @@ def evaluate_instance_map(
         },
         warnings=warnings,
     )
-
