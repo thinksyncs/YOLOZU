@@ -14,6 +14,9 @@ from pathlib import Path
 from typing import Any, Iterable
 
 repo_root = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(repo_root))
+
+from yolozu.tta.presets import apply_ttt_preset_args  # noqa: E402
 
 DEFAULT_PREDICTIONS_PATH = "reports/predictions.json"
 
@@ -301,7 +304,7 @@ def _parse_common_export_args(p: argparse.ArgumentParser) -> None:
         "--ttt-preset",
         choices=("safe", "adapter_only", "mim_safe"),
         default=None,
-        help="Recommended TTT presets that override method/steps/lr/filter.",
+        help="Recommended TTT presets that override core knobs and fill safety guards unless explicitly set.",
     )
     p.add_argument("--ttt-method", choices=("tent", "mim"), default="tent", help="TTT method (default: tent).")
     p.add_argument(
@@ -408,6 +411,8 @@ def _export_with_backend(
         lora_enabled = bool(backend == "torch" and int(args.lora_r) > 0)
         tta_enabled = bool(args.tta)
         ttt_enabled = bool(args.ttt)
+        if ttt_enabled and args.ttt_preset:
+            apply_ttt_preset_args(args)
         config_fp = {
             "backend": backend,
             "dataset": str(dataset_fp),

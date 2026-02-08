@@ -259,6 +259,7 @@ If you run real inference elsewhere (PyTorch/TensorRT/etc.), you can evaluate th
     - Tent: `python3 tools/export_predictions.py --adapter rtdetr_pose --ttt --ttt-method tent --ttt-steps 5 --ttt-lr 1e-4 --wrap --output reports/predictions_ttt_tent.json`
     - MIM: `python3 tools/export_predictions.py --adapter rtdetr_pose --ttt --ttt-method mim --ttt-steps 5 --ttt-mask-prob 0.6 --ttt-patch-size 16 --wrap --output reports/predictions_ttt_mim.json`
     - Optional log: add `--ttt-log-out reports/ttt_log.json`
+    - Recommended protocol + safe presets: [docs/ttt_protocol.md](docs/ttt_protocol.md)
 - Validate the JSON:
   - `python3 tools/validate_predictions.py reports/predictions.json`
 - Consume predictions locally:

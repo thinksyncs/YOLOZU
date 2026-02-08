@@ -67,6 +67,32 @@
       ]
     },
     {
+      "id": "make_subset_dataset",
+      "entrypoint": "tools/make_subset_dataset.py",
+      "runner": "python3",
+      "summary": "Create a deterministic subset YOLO dataset (symlink/copy images+labels) for reproducible eval/ablation runs.",
+      "tags": ["dataset"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "inputs": [
+        { "name": "dataset", "kind": "dir", "required": true, "flag": "--dataset" },
+        { "name": "split", "kind": "string", "required": false, "flag": "--split", "default": null },
+        { "name": "n", "kind": "number", "required": false, "flag": "--n", "default": 50 },
+        { "name": "seed", "kind": "number", "required": false, "flag": "--seed", "default": 0 },
+        { "name": "out", "kind": "dir", "required": false, "flag": "--out", "default": "reports/subset_dataset" }
+      ],
+      "outputs": [
+        { "name": "dataset_root", "kind": "dir", "description": "Subset dataset root created at --out." },
+        { "name": "subset_json", "kind": "file", "description": "Subset metadata (image list + sha).", "default": "<out>/subset.json" },
+        { "name": "subset_images_txt", "kind": "file", "description": "Frozen image list.", "default": "<out>/subset_images.txt" }
+      ],
+      "examples": [
+        {
+          "description": "Create a frozen 50-image subset for ablations.",
+          "command": "python3 tools/make_subset_dataset.py --dataset data/coco128 --split train2017 --n 50 --seed 0 --out reports/coco128_50"
+        }
+      ]
+    },
+    {
       "id": "prepare_coco_yolo",
       "entrypoint": "tools/prepare_coco_yolo.py",
       "runner": "python3",

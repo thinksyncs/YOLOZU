@@ -12,6 +12,7 @@ from yolozu.dataset import build_manifest
 from yolozu.predictions_transform import apply_tta
 from yolozu.tta.config import TTTConfig
 from yolozu.tta.integration import run_ttt
+from yolozu.tta.presets import apply_ttt_preset_args
 
 
 def _parse_args(argv):
@@ -129,7 +130,7 @@ def _parse_args(argv):
         "--ttt-preset",
         choices=("safe", "adapter_only", "mim_safe"),
         default=None,
-        help="Recommended TTT presets that override method/steps/lr/filter. Choices: safe, adapter_only, mim_safe.",
+        help="Recommended TTT presets that override core knobs (method/steps/lr/filter/max_batches) and fill safety guards unless explicitly set.",
     )
     parser.add_argument(
         "--ttt-method",
@@ -215,35 +216,6 @@ def _parse_args(argv):
     return parser.parse_args(argv)
 
 
-def _apply_ttt_preset(args):
-    preset = getattr(args, "ttt_preset", None)
-    if not preset:
-        return
-    if preset == "safe":
-        args.ttt_method = "tent"
-        args.ttt_steps = 1
-        args.ttt_batch_size = 1
-        args.ttt_lr = 1e-4
-        args.ttt_update_filter = "norm_only"
-        args.ttt_max_batches = 1
-    elif preset == "adapter_only":
-        args.ttt_method = "tent"
-        args.ttt_steps = 1
-        args.ttt_batch_size = 1
-        args.ttt_lr = 1e-4
-        args.ttt_update_filter = "adapter_only"
-        args.ttt_max_batches = 1
-    elif preset == "mim_safe":
-        args.ttt_method = "mim"
-        args.ttt_steps = 1
-        args.ttt_batch_size = 1
-        args.ttt_lr = 1e-4
-        args.ttt_update_filter = "adapter_only"
-        args.ttt_max_batches = 1
-    else:
-        raise SystemExit(f"unknown preset: {preset}")
-
-
 def _summarize_tta(predictions, *, warnings):
     total = 0
     applied = 0
@@ -264,7 +236,7 @@ def _summarize_tta(predictions, *, warnings):
 def main(argv=None):
     args = _parse_args(sys.argv[1:] if argv is None else argv)
 
-    _apply_ttt_preset(args)
+    apply_ttt_preset_args(args)
 
     if args.adapter == "dummy" and int(args.lora_r) > 0:
         raise SystemExit("--lora-* flags are only supported with --adapter rtdetr_pose")

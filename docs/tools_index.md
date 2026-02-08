@@ -12,6 +12,10 @@ For most day-to-day flows, start with:
 - `python3 tools/yolozu.py eval-instance-seg --dataset /path/to/yolo --predictions /path/to/instance_seg_predictions.json ...`
 - `python3 tools/yolozu.py sweep --config docs/hpo_sweep_example.json ...`
 
+## Dataset helpers
+
+- `python3 tools/make_subset_dataset.py --dataset /path/to/yolo --n 500 --seed 0 --out reports/subset_dataset`
+
 ## Machine-readable tool registry
 
 - Tool manifest: `tools/manifest.json`
