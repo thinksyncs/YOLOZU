@@ -418,7 +418,7 @@
       "id": "eval_keypoints",
       "entrypoint": "tools/eval_keypoints.py",
       "runner": "python3",
-      "summary": "Evaluate keypoint predictions using PCK (bbox-normalized distance) with optional HTML/overlays.",
+      "summary": "Evaluate keypoint predictions using PCK (bbox-normalized distance) with optional COCO OKS mAP, HTML, and overlays.",
       "tags": ["eval", "keypoints", "pose"],
       "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
       "contracts": { "consumes": ["predictions_json"], "produces": ["metrics_report_json"] },
@@ -432,6 +432,10 @@
         {
           "description": "Evaluate keypoint predictions and write a JSON report.",
           "command": "python3 tools/eval_keypoints.py --dataset data/coco128 --predictions reports/predictions.json --output reports/keypoints_eval.json"
+        },
+        {
+          "description": "Evaluate keypoints with COCO OKS mAP (requires pycocotools).",
+          "command": "python3 tools/eval_keypoints.py --dataset data/coco128 --predictions reports/predictions.json --oks --output reports/keypoints_eval_oks.json"
         }
       ]
     },
@@ -613,6 +617,27 @@
         {
           "description": "Parity check without reading image files (fixed image size).",
           "command": "python3 tools/check_predictions_parity.py --reference reports/pred_ref.json --candidate reports/pred_cand.json --image-size 640 --iou-thresh 0.99 --score-atol 1e-4 --bbox-atol 1e-4"
+        }
+      ],
+      "docs": ["docs/onnx_export_parity.md"]
+    },
+    {
+      "id": "check_keypoints_parity",
+      "entrypoint": "tools/check_keypoints_parity.py",
+      "runner": "python3",
+      "summary": "Compare two keypoints prediction JSONs and report mismatches (IoU/tolerance-based).",
+      "tags": ["predictions", "parity", "keypoints", "pose"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "contracts": { "consumes": ["predictions_json"] },
+      "inputs": [
+        { "name": "reference", "kind": "file", "required": true, "flag": "--reference" },
+        { "name": "candidate", "kind": "file", "required": true, "flag": "--candidate" }
+      ],
+      "outputs": [{ "name": "stdout", "kind": "stdout", "description": "Mismatch report (JSON/text) and exit status." }],
+      "examples": [
+        {
+          "description": "Parity check for keypoints in normalized coords.",
+          "command": "python3 tools/check_keypoints_parity.py --reference reports/pred_ref.json --candidate reports/pred_cand.json --iou-thresh 0.99 --kp-atol 1e-4 --score-atol 1e-4 --bbox-atol 1e-4"
         }
       ],
       "docs": ["docs/onnx_export_parity.md"]
@@ -823,6 +848,27 @@
         }
       ],
       "docs": ["docs/benchmark_latency.md"]
+    },
+    {
+      "id": "benchmark_keypoints_eval",
+      "entrypoint": "tools/benchmark_keypoints_eval.py",
+      "runner": "python3",
+      "summary": "Benchmark keypoints evaluation runtime (PCK + optional OKS mAP) and write a stable JSON report.",
+      "tags": ["benchmark", "keypoints", "pose", "eval"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "contracts": { "consumes": ["predictions_json"], "produces": ["metrics_report_json"] },
+      "inputs": [
+        { "name": "dataset", "kind": "dir", "required": true, "flag": "--dataset" },
+        { "name": "predictions", "kind": "file", "required": true, "flag": "--predictions" },
+        { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/benchmark_keypoints_eval.json" }
+      ],
+      "outputs": [{ "name": "report_json", "kind": "file", "default": "reports/benchmark_keypoints_eval.json" }],
+      "examples": [
+        {
+          "description": "Quick PCK eval benchmark on a small slice.",
+          "command": "python3 tools/benchmark_keypoints_eval.py --dataset data/coco128 --predictions reports/predictions.json --max-images 50 --warmup 1 --iterations 5 --output reports/benchmark_keypoints_eval.json"
+        }
+      ]
     },
     {
       "id": "run_scenarios",

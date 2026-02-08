@@ -1058,6 +1058,17 @@ def _eval_keypoints(args: argparse.Namespace) -> int:
         cmd.extend(["--overlays-dir", str(args.overlays_dir)])
     if bool(args.kp_line):
         cmd.append("--kp-line")
+    if bool(getattr(args, "oks", False)):
+        cmd.append("--oks")
+    oks_sigmas = getattr(args, "oks_sigmas", None)
+    if oks_sigmas:
+        cmd.extend(["--oks-sigmas", str(oks_sigmas)])
+    oks_sigmas_file = getattr(args, "oks_sigmas_file", None)
+    if oks_sigmas_file:
+        cmd.extend(["--oks-sigmas-file", str(oks_sigmas_file)])
+    oks_max_dets = getattr(args, "oks_max_dets", None)
+    if oks_max_dets is not None:
+        cmd.extend(["--oks-max-dets", str(int(oks_max_dets))])
 
     out = _subprocess_or_die(cmd)
     if out:
@@ -1140,7 +1151,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     p_pi.add_argument("--title", default="YOLOZU predict-images report", help="HTML title.")
     p_pi.set_defaults(_fn=_predict_images)
 
-    p_kp = sub.add_parser("eval-keypoints", help="Evaluate keypoint predictions (PCK) and write a report.")
+    p_kp = sub.add_parser("eval-keypoints", help="Evaluate keypoint predictions (PCK + optional OKS mAP) and write a report.")
     p_kp.add_argument("--dataset", required=True, help="YOLO-format dataset root (images/ + labels/).")
     p_kp.add_argument("--split", default=None, help="Split under images/ and labels/ (default: auto).")
     p_kp.add_argument("--predictions", required=True, help="Predictions JSON (detections may include keypoints).")
@@ -1163,6 +1174,10 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     p_kp.add_argument("--overlay-max-size", type=int, default=768, help="Max size (max(H,W)) for overlay images (default: 768).")
     p_kp.add_argument("--kp-radius", type=int, default=3, help="Keypoint marker radius (default: 3).")
     p_kp.add_argument("--kp-line", action="store_true", help="Draw gt→pred keypoint error lines.")
+    p_kp.add_argument("--oks", action="store_true", help="Also compute COCO OKS mAP (requires pycocotools).")
+    p_kp.add_argument("--oks-sigmas", default=None, help="OKS sigmas: 'coco17' or comma-separated floats (len=K).")
+    p_kp.add_argument("--oks-sigmas-file", default=None, help="JSON file containing list[float] sigmas (len=K).")
+    p_kp.add_argument("--oks-max-dets", type=int, default=20, help="COCOeval maxDets for keypoints (default: 20).")
     p_kp.set_defaults(_fn=_eval_keypoints)
 
     p_is = sub.add_parser("eval-instance-seg", help="Evaluate instance segmentation predictions (PNG masks) and write a report.")

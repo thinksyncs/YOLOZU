@@ -19,7 +19,10 @@ For most day-to-day flows, start with:
 
 ## Evaluation helpers
 
-- Keypoints (PCK): `python3 tools/eval_keypoints.py --dataset /path/to/yolo --predictions reports/predictions.json --output reports/keypoints_eval.json`
+- Keypoints (PCK + optional OKS mAP): `python3 tools/eval_keypoints.py --dataset /path/to/yolo --predictions reports/predictions.json --output reports/keypoints_eval.json`
+  - Add `--oks` to compute COCO OKS mAP (requires `pycocotools`).
+- Keypoints parity (backend output diffs): `python3 tools/check_keypoints_parity.py --reference reports/pred_ref.json --candidate reports/pred_cand.json --iou-thresh 0.99 --kp-atol 1e-4`
+- Keypoints eval benchmark: `python3 tools/benchmark_keypoints_eval.py --dataset /path/to/yolo --predictions reports/predictions.json --max-images 50 --warmup 1 --iterations 5 --output reports/benchmark_keypoints_eval.json`
 
 ## Machine-readable tool registry
 

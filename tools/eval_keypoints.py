@@ -8,11 +8,17 @@ from typing import Any
 repo_root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(repo_root))
 
+from yolozu.coco_keypoints_eval import (  # noqa: E402
+    COCO17_KPT_OKS_SIGMAS,
+    build_coco_keypoints_ground_truth,
+    evaluate_coco_oks_map,
+    predictions_to_coco_keypoints,
+)
 from yolozu.dataset import build_manifest  # noqa: E402
 from yolozu.keypoints import keypoints_to_pixels, normalize_keypoints  # noqa: E402
 from yolozu.keypoints_eval import evaluate_keypoints_pck, match_keypoints_detections  # noqa: E402
 from yolozu.metrics_report import build_report, write_json  # noqa: E402
-from yolozu.predictions import load_predictions_index  # noqa: E402
+from yolozu.predictions import load_predictions_entries, load_predictions_index  # noqa: E402
 
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
@@ -27,6 +33,15 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     p.add_argument("--min-score", type=float, default=0.0, help="Minimum score threshold for predictions (default: 0.0).")
     p.add_argument("--max-images", type=int, default=None, help="Optional cap for number of images to evaluate.")
     p.add_argument("--per-image-limit", type=int, default=100, help="How many per-image rows to store in report/HTML (default: 100).")
+
+    p.add_argument("--oks", action="store_true", help="Also compute COCO OKS mAP (requires pycocotools).")
+    p.add_argument(
+        "--oks-sigmas",
+        default=None,
+        help="OKS sigmas: 'coco17' or comma-separated floats (len=K). Default: coco17 when K==17.",
+    )
+    p.add_argument("--oks-sigmas-file", default=None, help="JSON file containing list[float] sigmas (len=K).")
+    p.add_argument("--oks-max-dets", type=int, default=20, help="COCOeval maxDets for keypoints (default: 20).")
 
     p.add_argument("--html", default=None, help="Optional HTML report path.")
     p.add_argument("--title", default="YOLOZU keypoints eval report", help="HTML title.")
@@ -53,6 +68,38 @@ def _resolve(value: str) -> Path:
     if p.is_absolute():
         return p
     return repo_root / p
+
+
+def _parse_oks_sigmas(value: str) -> list[float]:
+    raw = value.strip().lower()
+    if raw in ("coco", "coco17", "coco-17"):
+        return list(COCO17_KPT_OKS_SIGMAS)
+    parts = [p.strip() for p in value.replace(" ", ",").split(",") if p.strip()]
+    return [float(p) for p in parts]
+
+
+def _resolve_oks_sigmas(args: argparse.Namespace, *, keypoints_count: int) -> list[float] | None:
+    if not bool(args.oks):
+        return None
+
+    if args.oks_sigmas_file:
+        path = _resolve(str(args.oks_sigmas_file))
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(payload, list):
+            raise ValueError("--oks-sigmas-file must contain a JSON list")
+        sigmas = [float(v) for v in payload]
+    elif args.oks_sigmas:
+        sigmas = _parse_oks_sigmas(str(args.oks_sigmas))
+    else:
+        sigmas = list(COCO17_KPT_OKS_SIGMAS) if int(keypoints_count) == 17 else None
+
+    if sigmas is None:
+        raise ValueError(
+            f"OKS requires sigmas for K={keypoints_count}. Pass --oks-sigmas or --oks-sigmas-file (or use K=17)."
+        )
+    if len(sigmas) != int(keypoints_count):
+        raise ValueError(f"OKS sigmas length mismatch: expected {keypoints_count}, got {len(sigmas)}")
+    return sigmas
 
 
 def _write_html(
@@ -298,6 +345,34 @@ def main(argv: list[str] | None = None) -> None:
         per_image_limit=eval_limit,
     )
 
+    oks_stats: list[Any] | None = None
+    oks_sigmas: list[float] | None = None
+    if bool(args.oks):
+        gt, coco_index = build_coco_keypoints_ground_truth(records, keypoints_format="xy_norm")
+        if int(coco_index.keypoints_count) <= 0:
+            result.setdefault("warnings", []).append("oks_no_gt_keypoints")
+        else:
+            oks_sigmas = _resolve_oks_sigmas(args, keypoints_count=int(coco_index.keypoints_count))
+            image_sizes = {img["id"]: (int(img["width"]), int(img["height"])) for img in gt.get("images", []) or []}
+            preds_entries = load_predictions_entries(_resolve(args.predictions))
+            dt = predictions_to_coco_keypoints(
+                preds_entries,
+                coco_index=coco_index,
+                image_sizes=image_sizes,
+                keypoints_format="xy_norm",
+                min_score=float(args.min_score),
+            )
+            oks = evaluate_coco_oks_map(
+                gt,
+                dt,
+                sigmas=oks_sigmas,
+                max_dets=int(args.oks_max_dets),
+            )
+            oks_stats = oks.get("stats") if isinstance(oks, dict) else None
+            oks_metrics = oks.get("metrics") if isinstance(oks, dict) else None
+            if isinstance(oks_metrics, dict):
+                result.setdefault("metrics", {}).update(oks_metrics)
+
     per_image = result.get("per_image") if isinstance(result, dict) else None
     per_image = per_image if isinstance(per_image, list) else []
     total_per_image = int(len(per_image))
@@ -316,6 +391,13 @@ def main(argv: list[str] | None = None) -> None:
             "split": str(split_effective),
             "predictions": str(args.predictions),
             "warnings": result.get("warnings", []) if isinstance(result, dict) else [],
+            "oks": {
+                "enabled": bool(args.oks),
+                "keypoints_count": int(coco_index.keypoints_count) if bool(args.oks) else None,
+                "sigmas": oks_sigmas,
+                "max_dets": int(args.oks_max_dets),
+                "stats": oks_stats,
+            },
             "per_keypoint": result.get("per_keypoint"),
             "per_class": result.get("per_class"),
             "per_image": result.get("per_image"),
