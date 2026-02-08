@@ -89,6 +89,10 @@ Example: score threshold effect (`--min-score`, OFF vs ON) using a noisy synthet
 
 ![Instance segmentation --min-score ON/OFF comparison](docs/assets/instance_seg_min_score_compare.png)
 
+Example: RGB masks compatibility (`--allow-rgb-masks`, OFF vs ON) using a demo predictions file with one mask stored as RGB:
+
+![Instance segmentation --allow-rgb-masks ON/OFF comparison](docs/assets/instance_seg_allow_rgb_compare.png)
+
 Optional: prepare COCO instance-seg dataset with per-instance PNG masks (requires `pycocotools`):
 ```bash
 python3 tools/prepare_coco_instance_seg.py --coco-root /path/to/coco --split val2017 --out data/coco-instance-seg
