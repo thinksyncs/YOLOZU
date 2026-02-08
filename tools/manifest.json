@@ -38,6 +38,15 @@
       "summary": "Segmentation eval report payload emitted by tools/eval_segmentation.py.",
       "schema": "docs/schemas/seg_eval_report.schema.json",
       "producer": "python3 tools/eval_segmentation.py"
+    },
+    "instance_segmentation_predictions_json": {
+      "summary": "Instance segmentation predictions JSON (list of {image,instances} or {predictions:[...],meta:{...}}).",
+      "schema": "docs/schemas/instance_segmentation_predictions.schema.json"
+    },
+    "instance_seg_eval_report_json": {
+      "summary": "Instance segmentation eval report payload emitted by tools/eval_instance_segmentation.py.",
+      "schema": "docs/schemas/instance_seg_eval_report.schema.json",
+      "producer": "python3 tools/eval_instance_segmentation.py"
     }
   },
   "tools": [
@@ -282,6 +291,30 @@
         {
           "description": "Evaluate segmentation predictions and write a JSON report.",
           "command": "python3 tools/eval_segmentation.py --dataset-json data/cityscapes_seg/dataset.json --predictions reports/seg_predictions.json --output reports/seg_eval.json"
+        }
+      ]
+    },
+    {
+      "id": "eval_instance_segmentation",
+      "entrypoint": "tools/eval_instance_segmentation.py",
+      "runner": "python3",
+      "summary": "Evaluate instance segmentation predictions (mask mAP) from binary PNG masks with optional HTML/overlays.",
+      "tags": ["eval", "instance_segmentation", "segmentation"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "contracts": {
+        "consumes": ["instance_segmentation_predictions_json"],
+        "produces": ["instance_seg_eval_report_json"]
+      },
+      "inputs": [
+        { "name": "dataset", "kind": "dir", "required": true, "flag": "--dataset" },
+        { "name": "predictions", "kind": "file", "required": true, "flag": "--predictions" },
+        { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/instance_seg_eval.json" }
+      ],
+      "outputs": [{ "name": "instance_seg_eval_json", "kind": "file", "default": "reports/instance_seg_eval.json" }],
+      "examples": [
+        {
+          "description": "Evaluate instance segmentation predictions and write a JSON report.",
+          "command": "python3 tools/eval_instance_segmentation.py --dataset data/coco-yolo --predictions reports/instance_seg_predictions.json --output reports/instance_seg_eval.json"
         }
       ]
     },

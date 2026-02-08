@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "YOLOZU Instance Segmentation Eval Report",
+  "description": "Report payload emitted by tools/eval_instance_segmentation.py.",
+  "type": "object",
+  "required": ["schema_version", "timestamp", "losses", "metrics", "meta"],
+  "properties": {
+    "schema_version": { "type": "integer", "minimum": 1 },
+    "timestamp": { "type": "string" },
+    "losses": { "type": "object", "additionalProperties": true },
+    "metrics": {
+      "type": "object",
+      "required": ["map50", "map50_95", "classes"],
+      "properties": {
+        "map50": { "type": ["number", "null"] },
+        "map50_95": { "type": ["number", "null"] },
+        "classes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/class_metrics" }
+        },
+        "counts": { "type": "object", "additionalProperties": true }
+      },
+      "additionalProperties": true
+    },
+    "meta": { "type": "object", "additionalProperties": true }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "class_metrics": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": true
+    }
+  }
+}
+

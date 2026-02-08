@@ -6,6 +6,7 @@ YOLOZU is an Apache-2.0-only, **contract-first evaluation + tooling harness** fo
 - real-time monocular RGB **detection**
 - monocular **depth + 6DoF pose** heads (RT-DETR-based scaffold)
 - **semantic segmentation** utilities (dataset prep + mIoU evaluation)
+- **instance segmentation** utilities (PNG-mask contract + mask mAP evaluation)
 
 Recommended deployment path (canonical): PyTorch → ONNX → TensorRT (TRT).
 
@@ -35,6 +36,7 @@ It focuses on:
 - Hessian solver: per-detection iterative refinement of regression outputs (depth, rotation, offsets) using Gauss-Newton optimization.
 - Evaluation: COCO mAP conversion/eval and scenario suite reporting.
 - Semantic seg: dataset prep helpers + `tools/eval_segmentation.py` (mIoU/per-class IoU/ignore_index + optional HTML overlays).
+- Instance seg: `tools/eval_instance_segmentation.py` (mask mAP from per-instance binary PNG masks + optional HTML overlays).
 - Training scaffold: minimal RT-DETR pose trainer with metrics output, ONNX export, and optional SDFT-style self-distillation.
 
 ## Documentation

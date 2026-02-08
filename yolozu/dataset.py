@@ -84,6 +84,17 @@ def _load_sidecar_metadata(meta_path: Path, root: Path) -> dict[str, Any]:
     # Optional paths (kept as paths/inline values).
     mask_value = _first_key(data, ("mask_path", "M_path", "M", "mask"))
     depth_value = _first_key(data, ("depth_path", "D_obj_path", "D_obj", "depth"))
+    # Optional mask metadata (instance/semantic segmentation helpers).
+    if "mask_format" in data:
+        out["mask_format"] = data.get("mask_format")
+    if "mask_instances" in data:
+        out["mask_instances"] = data.get("mask_instances")
+    if "mask_classes" in data:
+        out["mask_classes"] = data.get("mask_classes")
+    if "mask_class_id" in data:
+        out["mask_class_id"] = data.get("mask_class_id")
+    if "mask_class_map" in data:
+        out["mask_class_map"] = data.get("mask_class_map")
     if mask_value is not None:
         resolved = _resolve_optional_path(mask_value, root)
         out["mask_path"] = resolved
