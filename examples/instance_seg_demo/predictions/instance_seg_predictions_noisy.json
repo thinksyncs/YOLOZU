@@ -26,6 +26,16 @@
           "class_id": 2,
           "mask": "masks/demo_000_fp.png",
           "score": 0.1
+        },
+        {
+          "class_id": 2,
+          "mask": "masks/demo_000_fp_mid.png",
+          "score": 0.35
+        },
+        {
+          "class_id": 2,
+          "mask": "masks/demo_000_fp_high.png",
+          "score": 0.72
         }
       ]
     },
