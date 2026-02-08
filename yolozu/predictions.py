@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
+from .keypoints import normalize_keypoints
+
 
 @dataclass(frozen=True)
 class ValidationResult:
@@ -76,6 +78,10 @@ def _validate_detection(det: Any, *, strict: bool, where: str) -> list[str]:
         if strict:
             if not isinstance(kd, list) or len(kd) != 4 or not all(_is_number(v) for v in kd):
                 raise ValueError(f"{where}: detection.k_delta must be list[4] of numbers")
+
+    if "keypoints" in det:
+        if strict:
+            normalize_keypoints(det["keypoints"], where=f"{where}.keypoints")
 
     return warnings
 

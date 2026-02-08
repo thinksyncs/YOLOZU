@@ -35,6 +35,7 @@ It focuses on:
   - TTT: pre-prediction test-time training (Tent or MIM) via `--ttt` (adapter + torch required).
 - Hessian solver: per-detection iterative refinement of regression outputs (depth, rotation, offsets) using Gauss-Newton optimization.
 - Evaluation: COCO mAP conversion/eval and scenario suite reporting.
+- Keypoints: YOLO pose-style keypoints in labels/predictions + PCK evaluation (`tools/eval_keypoints.py`).
 - Semantic seg: dataset prep helpers + `tools/eval_segmentation.py` (mIoU/per-class IoU/ignore_index + optional HTML overlays).
 - Instance seg: `tools/eval_instance_segmentation.py` (mask mAP from per-instance binary PNG masks + optional HTML overlays).
 - Training scaffold: minimal RT-DETR pose trainer with metrics output, ONNX export, and optional SDFT-style self-distillation.

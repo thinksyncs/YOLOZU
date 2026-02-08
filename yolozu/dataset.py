@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from .keypoints import normalize_keypoints
+
 
 def _first_key(data: dict[str, Any], keys: tuple[str, ...]) -> Any:
     for key in keys:
@@ -127,19 +129,31 @@ def load_yolo_dataset(images_dir, labels_dir, *, dataset_root: Path | None = Non
                 if not stripped:
                     continue
                 parts = stripped.split()
-                if len(parts) != 5:
+                if len(parts) < 5:
                     raise ValueError(f"invalid label line: {line}")
                 class_id = int(float(parts[0]))
-                coords = [float(value) for value in parts[1:]]
-                labels.append(
-                    {
-                        "class_id": class_id,
-                        "cx": coords[0],
-                        "cy": coords[1],
-                        "w": coords[2],
-                        "h": coords[3],
-                    }
-                )
+                coords = [float(value) for value in parts[1:5]]
+                label: dict[str, Any] = {
+                    "class_id": class_id,
+                    "cx": coords[0],
+                    "cy": coords[1],
+                    "w": coords[2],
+                    "h": coords[3],
+                }
+
+                # Optional: YOLO pose-style keypoints appended to the label line.
+                # Supported:
+                #   - 5 + 2*K: x1 y1 x2 y2 ...
+                #   - 5 + 3*K: x1 y1 v1 x2 y2 v2 ...
+                extra = parts[5:]
+                if extra:
+                    try:
+                        extra_f = [float(v) for v in extra]
+                    except Exception as exc:
+                        raise ValueError(f"invalid label keypoints: {line}") from exc
+                    label["keypoints"] = normalize_keypoints(extra_f, where="label.keypoints")
+
+                labels.append(label)
         record = {"image": str(image_path), "labels": labels}
         record.update(_load_sidecar_metadata(meta_path, dataset_root))
         records.append(record)

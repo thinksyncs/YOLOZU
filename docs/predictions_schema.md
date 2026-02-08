@@ -71,6 +71,9 @@ Required:
 Optional:
 - `bbox_abs`: absolute bbox if present
 - `mask`, `mask_path`, `depth`, `depth_path`, `rot6d`, `R`, `t_xyz`, `k_delta`, `k_prime`...
+- `keypoints`: optional 2D keypoints per detection (YOLO pose-style)
+  - Recommended: flat list `[x1,y1,v1,x2,y2,v2,...]` in normalized coords (v: visibility 0/1/2)
+  - Also accepted by some tools: list of objects `[{x,y,v?}, ...]`
 
 ## BBox format
 - Default in eval tools is `cxcywh_norm` (normalized to [0,1]).

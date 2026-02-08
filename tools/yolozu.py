@@ -850,6 +850,25 @@ def _render_overlays(
             y2 = (cy + bh / 2.0) * h
             draw.rectangle([x1, y1, x2, y2], outline=(255, 0, 0), width=2)
 
+            kps_raw = det.get("keypoints")
+            if kps_raw is not None:
+                try:
+                    from yolozu.keypoints import keypoints_to_pixels, normalize_keypoints
+
+                    kps = normalize_keypoints(kps_raw, where="detection.keypoints")
+                    pts = keypoints_to_pixels(kps, width=int(w), height=int(h))
+                    r = 3
+                    for px, py, v in pts:
+                        if v is not None:
+                            try:
+                                if float(v) <= 0.0:
+                                    continue
+                            except Exception:
+                                pass
+                        draw.ellipse([px - r, py - r, px + r, py + r], outline=(0, 0, 255), width=2)
+                except Exception:
+                    pass
+
         out_name = f"{written:06d}_{Path(image_path).name}"
         out_path = overlays_dir / out_name
         img.save(out_path)
@@ -1000,6 +1019,52 @@ def _predict_images(args: argparse.Namespace) -> int:
     return 0
 
 
+def _eval_keypoints(args: argparse.Namespace) -> int:
+    cmd = [
+        sys.executable,
+        "tools/eval_keypoints.py",
+        "--dataset",
+        str(args.dataset),
+        "--predictions",
+        str(args.predictions),
+        "--output",
+        str(args.output),
+        "--iou-threshold",
+        str(float(args.iou_threshold)),
+        "--pck-threshold",
+        str(float(args.pck_threshold)),
+        "--min-score",
+        str(float(args.min_score)),
+        "--per-image-limit",
+        str(int(args.per_image_limit)),
+        "--max-overlays",
+        str(int(args.max_overlays)),
+        "--overlay-sort",
+        str(args.overlay_sort),
+        "--overlay-max-size",
+        str(int(args.overlay_max_size)),
+        "--kp-radius",
+        str(int(args.kp_radius)),
+    ]
+    if args.split is not None:
+        cmd.extend(["--split", str(args.split)])
+    if args.max_images is not None:
+        cmd.extend(["--max-images", str(int(args.max_images))])
+    if args.html is not None:
+        cmd.extend(["--html", str(args.html)])
+    if args.title is not None:
+        cmd.extend(["--title", str(args.title)])
+    if args.overlays_dir is not None:
+        cmd.extend(["--overlays-dir", str(args.overlays_dir)])
+    if bool(args.kp_line):
+        cmd.append("--kp-line")
+
+    out = _subprocess_or_die(cmd)
+    if out:
+        print(out, end="" if out.endswith("\n") else "\n")
+    return 0
+
+
 def _eval_instance_seg(args: argparse.Namespace) -> int:
     cmd = [
         sys.executable,
@@ -1074,6 +1139,31 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     p_pi.add_argument("--html", default="reports/predict_images.html", help="Optional HTML report output path.")
     p_pi.add_argument("--title", default="YOLOZU predict-images report", help="HTML title.")
     p_pi.set_defaults(_fn=_predict_images)
+
+    p_kp = sub.add_parser("eval-keypoints", help="Evaluate keypoint predictions (PCK) and write a report.")
+    p_kp.add_argument("--dataset", required=True, help="YOLO-format dataset root (images/ + labels/).")
+    p_kp.add_argument("--split", default=None, help="Split under images/ and labels/ (default: auto).")
+    p_kp.add_argument("--predictions", required=True, help="Predictions JSON (detections may include keypoints).")
+    p_kp.add_argument("--output", default="reports/keypoints_eval.json", help="Output JSON report path.")
+    p_kp.add_argument("--iou-threshold", type=float, default=0.5, help="IoU threshold for matching (default: 0.5).")
+    p_kp.add_argument("--pck-threshold", type=float, default=0.1, help="PCK threshold (default: 0.1).")
+    p_kp.add_argument("--min-score", type=float, default=0.0, help="Minimum score threshold (default: 0.0).")
+    p_kp.add_argument("--max-images", type=int, default=None, help="Optional cap for number of images to evaluate.")
+    p_kp.add_argument("--per-image-limit", type=int, default=100, help="Per-image rows stored in report/HTML (default: 100).")
+    p_kp.add_argument("--html", default=None, help="Optional HTML report path.")
+    p_kp.add_argument("--title", default="YOLOZU keypoints eval report", help="HTML title.")
+    p_kp.add_argument("--overlays-dir", default=None, help="Optional directory to write overlay images for HTML.")
+    p_kp.add_argument("--max-overlays", type=int, default=0, help="Max overlays to render (default: 0).")
+    p_kp.add_argument(
+        "--overlay-sort",
+        choices=("worst", "best", "first"),
+        default="worst",
+        help="How to select overlay samples (default: worst).",
+    )
+    p_kp.add_argument("--overlay-max-size", type=int, default=768, help="Max size (max(H,W)) for overlay images (default: 768).")
+    p_kp.add_argument("--kp-radius", type=int, default=3, help="Keypoint marker radius (default: 3).")
+    p_kp.add_argument("--kp-line", action="store_true", help="Draw gt→pred keypoint error lines.")
+    p_kp.set_defaults(_fn=_eval_keypoints)
 
     p_is = sub.add_parser("eval-instance-seg", help="Evaluate instance segmentation predictions (PNG masks) and write a report.")
     p_is.add_argument("--dataset", required=True, help="YOLO-format dataset root (images/ + labels/).")

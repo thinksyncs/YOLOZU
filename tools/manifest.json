@@ -415,6 +415,27 @@
       ]
     },
     {
+      "id": "eval_keypoints",
+      "entrypoint": "tools/eval_keypoints.py",
+      "runner": "python3",
+      "summary": "Evaluate keypoint predictions using PCK (bbox-normalized distance) with optional HTML/overlays.",
+      "tags": ["eval", "keypoints", "pose"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "contracts": { "consumes": ["predictions_json"], "produces": ["metrics_report_json"] },
+      "inputs": [
+        { "name": "dataset", "kind": "dir", "required": true, "flag": "--dataset" },
+        { "name": "predictions", "kind": "file", "required": true, "flag": "--predictions" },
+        { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/keypoints_eval.json" }
+      ],
+      "outputs": [{ "name": "keypoints_eval_json", "kind": "file", "default": "reports/keypoints_eval.json" }],
+      "examples": [
+        {
+          "description": "Evaluate keypoint predictions and write a JSON report.",
+          "command": "python3 tools/eval_keypoints.py --dataset data/coco128 --predictions reports/predictions.json --output reports/keypoints_eval.json"
+        }
+      ]
+    },
+    {
       "id": "eval_coco",
       "entrypoint": "tools/eval_coco.py",
       "runner": "python3",
