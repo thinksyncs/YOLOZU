@@ -108,7 +108,7 @@ python3 tools/yolozu.py sweep --config docs/sweep_threshold_example.json --resum
 **Command breakdown**:
 1. Export predictions with varying thresholds
 2. Evaluate each with COCO mAP (`eval_coco.py`)
-3. Extract `metrics.map50`, `metrics.map50_95`, `metrics.ar100` from the metrics JSON (note: `eval_coco.py` nests these under `metrics.*` and uses `ar100` not `mar_100`)
+3. Extract `metrics.map50`, `metrics.map50_95`, `metrics.ar100` from the metrics JSON (note: `eval_coco.py` outputs `metrics.ar100`, not `mar_100`)
 
 **Outputs**:
 - `reports/sweep_threshold.jsonl`
