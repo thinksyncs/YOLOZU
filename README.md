@@ -255,10 +255,10 @@ If you run real inference elsewhere (PyTorch/TensorRT/etc.), you can evaluate th
   - `python3 tools/export_predictions.py --adapter rtdetr_pose --checkpoint /path/to.ckpt --max-images 50 --wrap --output reports/predictions.json`
   - TTA (post-transform): `python3 tools/export_predictions.py --adapter rtdetr_pose --tta --tta-seed 0 --tta-flip-prob 0.5 --wrap --output reports/predictions_tta.json`
   - TTT (pre-prediction test-time training; updates model weights in-memory):
-    - Tent: `python3 tools/export_predictions.py --adapter rtdetr_pose --ttt --ttt-method tent --ttt-steps 5 --ttt-lr 1e-4 --wrap --output reports/predictions_ttt_tent.json`
-    - MIM: `python3 tools/export_predictions.py --adapter rtdetr_pose --ttt --ttt-method mim --ttt-steps 5 --ttt-mask-prob 0.6 --ttt-patch-size 16 --wrap --output reports/predictions_ttt_mim.json`
+    - Tent (safe preset + guard rails): `python3 tools/export_predictions.py --adapter rtdetr_pose --ttt --ttt-preset safe --ttt-reset sample --wrap --output reports/predictions_ttt_safe.json`
+    - MIM (safe preset + guard rails): `python3 tools/export_predictions.py --adapter rtdetr_pose --ttt --ttt-preset mim_safe --ttt-reset sample --wrap --output reports/predictions_ttt_mim_safe.json`
     - Optional log: add `--ttt-log-out reports/ttt_log.json`
-    - Recommended protocol + safe presets: [docs/ttt_protocol.md](docs/ttt_protocol.md)
+    - Recommended protocol: [docs/ttt_protocol.md](docs/ttt_protocol.md)
 - Validate the JSON:
   - `python3 tools/validate_predictions.py reports/predictions.json`
 - Consume predictions locally:

@@ -32,6 +32,7 @@ PRESETS: dict[str, TTTPreset] = {
         update_filter="norm_only",
         max_batches=1,
         max_grad_norm=1.0,
+        max_update_norm=1.0,
         max_total_update_norm=1.0,
         max_loss_ratio=3.0,
     ),
@@ -43,6 +44,7 @@ PRESETS: dict[str, TTTPreset] = {
         update_filter="adapter_only",
         max_batches=1,
         max_grad_norm=5.0,
+        max_update_norm=5.0,
         max_total_update_norm=5.0,
         max_loss_ratio=3.0,
     ),
@@ -54,34 +56,43 @@ PRESETS: dict[str, TTTPreset] = {
         update_filter="adapter_only",
         max_batches=1,
         max_grad_norm=5.0,
+        max_update_norm=5.0,
         max_total_update_norm=5.0,
         max_loss_ratio=3.0,
     ),
 }
 
 
-def apply_ttt_preset_args(args: Any) -> None:
-    """Apply a preset to an argparse Namespace in-place.
+def _choose_default_preset_id(args: Any) -> str:
+    method = str(getattr(args, "ttt_method", "tent") or "tent").lower()
+    update_filter = str(getattr(args, "ttt_update_filter", "all") or "all").lower()
+    if method == "mim":
+        return "mim_safe"
+    if update_filter == "adapter_only":
+        return "adapter_only"
+    return "safe"
 
-    Presets override the core algorithm knobs (method/steps/lr/filter/max_batches).
-    Safety knobs are only filled in when the user did not specify them.
-    """
 
-    preset_id = getattr(args, "ttt_preset", None)
-    if not preset_id:
-        return
-    preset = PRESETS.get(str(preset_id))
-    if preset is None:
-        raise ValueError(f"unknown preset: {preset_id}")
+def _ttt_core_is_defaultish(args: Any) -> bool:
+    try:
+        steps = int(getattr(args, "ttt_steps", 1))
+        batch_size = int(getattr(args, "ttt_batch_size", 1))
+        lr = float(getattr(args, "ttt_lr", 1e-4))
+        update_filter = str(getattr(args, "ttt_update_filter", "all"))
+        max_batches = int(getattr(args, "ttt_max_batches", 1))
+    except Exception:
+        return False
 
-    args.ttt_method = str(preset.method)
-    args.ttt_steps = int(preset.steps)
-    args.ttt_batch_size = int(preset.batch_size)
-    args.ttt_lr = float(preset.lr)
-    args.ttt_update_filter = str(preset.update_filter)
-    args.ttt_max_batches = int(preset.max_batches)
+    return (
+        steps == 1
+        and batch_size == 1
+        and abs(lr - 1e-4) <= 1e-12
+        and update_filter == "all"
+        and max_batches == 1
+    )
 
-    # Safety defaults (do not clobber explicit flags).
+
+def _fill_ttt_safety_defaults(args: Any, *, preset: TTTPreset) -> None:
     if getattr(args, "ttt_max_grad_norm", None) is None and preset.max_grad_norm is not None:
         args.ttt_max_grad_norm = float(preset.max_grad_norm)
     if getattr(args, "ttt_max_update_norm", None) is None and preset.max_update_norm is not None:
@@ -95,3 +106,47 @@ def apply_ttt_preset_args(args: Any) -> None:
         elif preset.max_loss_increase is not None:
             args.ttt_max_loss_increase = float(preset.max_loss_increase)
 
+
+def apply_ttt_preset_args(args: Any) -> None:
+    """Apply a preset (or safe defaults) to an argparse Namespace in-place.
+
+    - If `--ttt-preset` is provided, override core knobs and fill safety guards.
+    - If `--ttt` is enabled without a preset:
+      - When core knobs are left at defaults, auto-apply a conservative preset.
+      - Otherwise, keep core knobs but fill safety guards when unset.
+    """
+
+    preset_id = getattr(args, "ttt_preset", None)
+
+    if preset_id:
+        preset = PRESETS.get(str(preset_id))
+        if preset is None:
+            raise ValueError(f"unknown preset: {preset_id}")
+
+        args.ttt_method = str(preset.method)
+        args.ttt_steps = int(preset.steps)
+        args.ttt_batch_size = int(preset.batch_size)
+        args.ttt_lr = float(preset.lr)
+        args.ttt_update_filter = str(preset.update_filter)
+        args.ttt_max_batches = int(preset.max_batches)
+        _fill_ttt_safety_defaults(args, preset=preset)
+        return
+
+    if not bool(getattr(args, "ttt", False)):
+        return
+
+    default_id = _choose_default_preset_id(args)
+    preset = PRESETS[default_id]
+
+    if _ttt_core_is_defaultish(args):
+        args.ttt_preset = str(default_id)
+        args.ttt_method = str(preset.method)
+        args.ttt_steps = int(preset.steps)
+        args.ttt_batch_size = int(preset.batch_size)
+        args.ttt_lr = float(preset.lr)
+        args.ttt_update_filter = str(preset.update_filter)
+        args.ttt_max_batches = int(preset.max_batches)
+        _fill_ttt_safety_defaults(args, preset=preset)
+        return
+
+    _fill_ttt_safety_defaults(args, preset=preset)

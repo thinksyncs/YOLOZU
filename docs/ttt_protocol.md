@@ -27,6 +27,14 @@ Presets:
 - override core knobs (`method/steps/lr/update_filter/max_batches`)
 - fill conservative safety guards unless you explicitly set them (`--ttt-max-...`)
 
+Guard defaults (when unset):
+- `safe`: `max_grad_norm=1.0`, `max_update_norm=1.0`, `max_total_update_norm=1.0`, `max_loss_ratio=3.0`
+- `adapter_only` / `mim_safe`: `max_grad_norm=5.0`, `max_update_norm=5.0`, `max_total_update_norm=5.0`, `max_loss_ratio=3.0`
+
+If you pass `--ttt` without `--ttt-preset` and leave the core knobs at defaults, the CLI auto-applies a conservative preset:
+- Tent → `safe`
+- MIM (`--ttt-method mim`) → `mim_safe`
+
 ## Reset policy (stream vs sample)
 
 `--ttt-reset stream` (default):

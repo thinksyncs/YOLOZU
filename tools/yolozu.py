@@ -411,7 +411,7 @@ def _export_with_backend(
         lora_enabled = bool(backend == "torch" and int(args.lora_r) > 0)
         tta_enabled = bool(args.tta)
         ttt_enabled = bool(args.ttt)
-        if ttt_enabled and args.ttt_preset:
+        if ttt_enabled:
             apply_ttt_preset_args(args)
         config_fp = {
             "backend": backend,
