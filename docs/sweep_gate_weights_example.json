@@ -14,7 +14,7 @@
       "metrics.tuning.best.det",
       "metrics.tuning.best.tmp",
       "metrics.tuning.best.unc",
-      "metrics.tuning.best.score"
+      "metrics.tuning.best.map50_95"
     ]
   },
   "result_jsonl": "reports/sweep_gate_weights.jsonl",
