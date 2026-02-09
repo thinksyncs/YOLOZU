@@ -11,10 +11,14 @@ All sweeps use the `hpo_sweep.py` harness (or the `yolozu.py sweep` wrapper).
 
 The sweep harness executes parameterized commands, collects metrics, and writes CSV/Markdown tables.
 Each sweep config is a JSON file with:
-- `base_cmd`: command template with `{param}` placeholders
+- `base_cmd`: command template with `{param}` placeholders for swept params and `$ENV_VAR` for fixed settings
 - `param_grid`: dictionary of parameter names → list of values
+- `env`: environment variables for fixed settings (dataset path, checkpoint, etc.)
 - `metrics.path`: where to find the output metrics JSON
 - `metrics.keys`: which metrics to extract (optional; if empty, stores entire JSON)
+
+**Note**: Fixed settings (dataset, checkpoint, device) should be set as environment variables in the `env` section,
+while swept parameters use `{param}` placeholders in `base_cmd`.
 
 ## 1. TTT Parameter Sweep
 
@@ -42,7 +46,11 @@ python3 tools/make_subset_dataset.py \
   --seed 0 \
   --out reports/coco128_50
 
-# Edit sweep_ttt_example.json to point to your checkpoint and dataset
+# Edit sweep_ttt_example.json to update env vars for your setup:
+# - DATASET: path to dataset
+# - CHECKPOINT: path to checkpoint
+# - DEVICE: cuda:0 or cpu
+
 # Then run the sweep
 python3 tools/yolozu.py sweep --config docs/sweep_ttt_example.json --resume
 

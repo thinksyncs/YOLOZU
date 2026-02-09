@@ -1,5 +1,5 @@
 {
-  "base_cmd": "python3 tools/yolozu.py export --backend torch --dataset {dataset} --split {split} --checkpoint {checkpoint} --device {device} --max-images {max_images} --ttt --ttt-method {ttt_method} --ttt-steps {ttt_steps} --ttt-lr {ttt_lr} --ttt-reset {ttt_reset} --wrap --output {run_dir}/predictions.json",
+  "base_cmd": "python3 tools/yolozu.py export --backend torch --dataset $DATASET --split $SPLIT --checkpoint $CHECKPOINT --device $DEVICE --max-images $MAX_IMAGES --ttt --ttt-method {ttt_method} --ttt-steps {ttt_steps} --ttt-lr {ttt_lr} --ttt-reset {ttt_reset} --wrap --output {run_dir}/predictions.json",
   "param_grid": {
     "ttt_method": ["tent", "mim"],
     "ttt_steps": [1, 3, 5, 10],
@@ -17,10 +17,10 @@
   "result_md": "reports/sweep_ttt.md",
   "shell": true,
   "env": {
-    "dataset": "data/coco128",
-    "split": "train2017",
-    "checkpoint": "runs/rtdetr_pose/checkpoint.pt",
-    "device": "cuda:0",
-    "max_images": "50"
+    "DATASET": "data/coco128",
+    "SPLIT": "train2017",
+    "CHECKPOINT": "runs/rtdetr_pose/checkpoint.pt",
+    "DEVICE": "cuda:0",
+    "MAX_IMAGES": "50"
   }
 }
