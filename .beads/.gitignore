@@ -13,6 +13,9 @@ bd.sock
 sync-state.json
 last-touched
 
+# Internal staging (sync-branch mode)
+.beads/
+
 # Local version tracking (prevents upgrade notification spam after git ops)
 .local_version
 
