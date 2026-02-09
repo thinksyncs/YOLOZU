@@ -115,7 +115,7 @@ Start here: [docs/training_inference_export.md](docs/training_inference_export.m
 
 - P0 (done): Unified CLI (`torch` / `onnxruntime` / `tensorrt`) with consistent args + same output schema; always write meta (git SHA / env / GPU / seed / config hash); keep `tools/manifest.json` updated.
 - P1 (done): `doctor` (deps/GPU/driver/onnxrt/TRT diagnostics) + `predict-images` (folder input → predictions JSON + overlays) + HTML report.
-- P2 (partial): cache/re-run (fingerprinted runs) + sweeps (wrapper exists; expand sweeps for TTT/threshold/gate weights) + production inference cores (C++/Rust) as needed.
+- P2 (done): cache/re-run (fingerprinted runs) + sweeps (expanded for TTT/threshold/gate weights) + production inference cores (C++ template ready, Rust spec documented).
 
 ## Pros / Cons (project-level)
 
@@ -301,6 +301,7 @@ Reference recipe for external training runs (augment, multiscale, schedule, EMA)
 
 Run a configurable sweep and emit CSV/MD tables:
 - `docs/hpo_sweep.md`
+- `docs/sweep_examples.md` (TTT/threshold/gate weight sweep examples)
 
 ## Latency/FPS benchmark harness
 
@@ -316,6 +317,12 @@ Fuse detection/template/uncertainty signals into a single score and tune weights
 
 Reproducible engine build + parity validation steps:
 - `docs/tensorrt_pipeline.md`
+
+## Production inference cores
+
+Backend-agnostic inference templates for production deployment:
+- C++ template (ONNXRuntime/TensorRT): `examples/infer_cpp/`
+- Rust template (specification): `docs/rust_inference_template.md`
 
 ## External baselines (Apache-2.0-friendly)
 

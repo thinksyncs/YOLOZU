@@ -1,0 +1,26 @@
+{
+  "base_cmd": "python3 tools/yolozu.py export --backend torch --dataset {dataset} --split {split} --checkpoint {checkpoint} --device {device} --max-images {max_images} --ttt --ttt-method {ttt_method} --ttt-steps {ttt_steps} --ttt-lr {ttt_lr} --ttt-reset {ttt_reset} --wrap --output {run_dir}/predictions.json",
+  "param_grid": {
+    "ttt_method": ["tent", "mim"],
+    "ttt_steps": [1, 3, 5, 10],
+    "ttt_lr": [1e-5, 5e-5, 1e-4, 5e-4],
+    "ttt_reset": ["sample", "stream"]
+  },
+  "param_order": ["ttt_method", "ttt_reset", "ttt_steps", "ttt_lr"],
+  "run_dir": "runs/sweep_ttt/{run_id}",
+  "metrics": {
+    "path": "{run_dir}/predictions.json",
+    "keys": ["meta.run.timestamp"]
+  },
+  "result_jsonl": "reports/sweep_ttt.jsonl",
+  "result_csv": "reports/sweep_ttt.csv",
+  "result_md": "reports/sweep_ttt.md",
+  "shell": true,
+  "env": {
+    "dataset": "data/coco128",
+    "split": "train2017",
+    "checkpoint": "runs/rtdetr_pose/checkpoint.pt",
+    "device": "cuda:0",
+    "max_images": "50"
+  }
+}
