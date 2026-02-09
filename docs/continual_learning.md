@@ -23,13 +23,24 @@ python3 rtdetr_pose/tools/train_continual.py \
 
 To run **memoryless**, set `continual.replay_size: 0` in the config (or pass `--replay-size 0`).
 
-3) Evaluate forgetting (mAP proxy + CL summary metrics):
+3) Evaluate forgetting (mAP proxy or pose metrics + CL summary metrics):
 
 ```bash
 python3 tools/eval_continual.py \
   --run-json runs/continual/<run>/continual_run.json \
   --device cpu \
   --max-images 50
+```
+
+Pose/depth metrics (requires pose sidecar metadata in `labels/<split>/*.json`):
+
+```bash
+python3 tools/eval_continual.py \
+  --run-json runs/continual/<run>/continual_run.json \
+  --device cpu \
+  --max-images 50 \
+  --metric pose \
+  --metric-key pose_success
 ```
 
 This writes:
@@ -51,4 +62,4 @@ This writes:
 ## Notes / caveats
 
 - The current continual evaluation uses `yolozu.simple_map` (CPU-friendly proxy). For full COCO mAP you can switch your workflow to `tools/eval_coco.py` with `pycocotools` installed.
-- `rtdetr_pose` dataset loading currently scans `*.jpg` files under `images/<split>/` (extend if you use png).
+- `rtdetr_pose` dataset loading scans `*.jpg`, `*.jpeg`, and `*.png` under `images/<split>/`.

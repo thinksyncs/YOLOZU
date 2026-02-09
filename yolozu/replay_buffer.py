@@ -51,17 +51,49 @@ class ReplayBuffer:
             if isinstance(rec, dict):
                 self.add(rec)
 
-    def sample(self, k: int | None = None) -> list[dict[str, Any]]:
+    def sample(
+        self,
+        k: int | None = None,
+        *,
+        task_key: str | None = None,
+        per_task_cap: int | None = None,
+    ) -> list[dict[str, Any]]:
         if not self.items:
             return []
+
+        items = self.items
+        if per_task_cap is not None:
+            if not task_key:
+                raise ValueError("task_key is required when per_task_cap is set")
+            cap = int(per_task_cap)
+            if cap <= 0:
+                return []
+
+            by_task: dict[Any, list[dict[str, Any]]] = {}
+            for rec in items:
+                task_id: Any = rec.get(str(task_key))
+                try:
+                    hash(task_id)
+                except Exception:
+                    task_id = repr(task_id)
+                by_task.setdefault(task_id, []).append(rec)
+
+            capped: list[dict[str, Any]] = []
+            for group in by_task.values():
+                if len(group) <= cap:
+                    capped.extend(group)
+                else:
+                    capped.extend(self._rng.sample(group, cap))
+            items = capped
+
         if k is None:
-            return list(self.items)
+            return list(items)
         k_i = int(k)
         if k_i <= 0:
             return []
-        if k_i >= len(self.items):
-            return list(self.items)
-        return list(self._rng.sample(self.items, k_i))
+        if k_i >= len(items):
+            return list(items)
+        return list(self._rng.sample(items, k_i))
 
     def summary(self) -> dict[str, Any]:
         def _safe_image_key(rec: dict[str, Any]) -> str | None:
@@ -84,4 +116,3 @@ class ReplayBuffer:
             "size": int(len(self.items)),
             "images": images,
         }
-

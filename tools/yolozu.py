@@ -775,6 +775,59 @@ def _sweep(args: argparse.Namespace) -> int:
     return 0
 
 
+def _continual_train(args: argparse.Namespace) -> int:
+    cmd = [sys.executable, "rtdetr_pose/tools/train_continual.py", "--config", str(args.config)]
+    if args.run_dir:
+        cmd.extend(["--run-dir", str(args.run_dir)])
+    if args.replay_size is not None:
+        cmd.extend(["--replay-size", str(int(args.replay_size))])
+    if args.replay_fraction is not None:
+        cmd.extend(["--replay-fraction", str(float(args.replay_fraction))])
+    if args.replay_per_task_cap is not None:
+        cmd.extend(["--replay-per-task-cap", str(int(args.replay_per_task_cap))])
+    out = _subprocess_or_die(cmd)
+    if out:
+        print(out, end="" if out.endswith("\n") else "\n")
+    return 0
+
+
+def _continual_eval(args: argparse.Namespace) -> int:
+    cmd = [sys.executable, "tools/eval_continual.py", "--run-json", str(args.run_json)]
+    if args.device:
+        cmd.extend(["--device", str(args.device)])
+    if args.image_size is not None:
+        cmd.extend(["--image-size", str(int(args.image_size))])
+    if args.max_images is not None:
+        cmd.extend(["--max-images", str(int(args.max_images))])
+    if args.metric:
+        cmd.extend(["--metric", str(args.metric)])
+    if args.metric_key:
+        cmd.extend(["--metric-key", str(args.metric_key)])
+    if args.output:
+        cmd.extend(["--output", str(args.output)])
+    if args.html:
+        cmd.extend(["--html", str(args.html)])
+    if args.force:
+        cmd.append("--force")
+
+    # Pose-specific args (safe to forward; eval_continual validates per-metric).
+    if args.iou_threshold is not None:
+        cmd.extend(["--iou-threshold", str(float(args.iou_threshold))])
+    if args.min_score is not None:
+        cmd.extend(["--min-score", str(float(args.min_score))])
+    if args.success_rot_deg is not None:
+        cmd.extend(["--success-rot-deg", str(float(args.success_rot_deg))])
+    if args.success_trans is not None:
+        cmd.extend(["--success-trans", str(float(args.success_trans))])
+    if args.keep_per_image is not None:
+        cmd.extend(["--keep-per-image", str(int(args.keep_per_image))])
+
+    out = _subprocess_or_die(cmd)
+    if out:
+        print(out, end="" if out.endswith("\n") else "\n")
+    return 0
+
+
 def _iter_images(input_dir: Path, *, patterns: Iterable[str]) -> list[Path]:
     images: list[Path] = []
     for pat in patterns:
@@ -1137,6 +1190,31 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     p_sweep.add_argument("--dry-run", action="store_true", help="Print commands without executing.")
     p_sweep.add_argument("--max-runs", type=int, default=None, help="Optional cap for number of runs.")
     p_sweep.set_defaults(_fn=_sweep)
+
+    p_ct = sub.add_parser("continual-train", help="Run continual fine-tuning for rtdetr_pose.")
+    p_ct.add_argument("--config", required=True, help="YAML/JSON continual learning config.")
+    p_ct.add_argument("--run-dir", default=None, help="Optional run directory (default: runs/continual/<stamp>_rtdetr_pose).")
+    p_ct.add_argument("--replay-size", type=int, default=None, help="Override continual.replay_size (0 disables replay).")
+    p_ct.add_argument("--replay-fraction", type=float, default=None, help="Override continual.replay_fraction.")
+    p_ct.add_argument("--replay-per-task-cap", type=int, default=None, help="Override continual.replay_per_task_cap.")
+    p_ct.set_defaults(_fn=_continual_train)
+
+    p_ce = sub.add_parser("continual-eval", help="Evaluate a continual run (simple mAP proxy or pose metrics).")
+    p_ce.add_argument("--run-json", required=True, help="Path to runs/.../continual_run.json produced by train_continual.py.")
+    p_ce.add_argument("--device", default="cpu", help="Torch device for export (default: cpu).")
+    p_ce.add_argument("--image-size", type=int, default=320, help="Adapter image size (square, default: 320).")
+    p_ce.add_argument("--max-images", type=int, default=None, help="Optional cap for export/eval.")
+    p_ce.add_argument("--metric", choices=("simple_map", "pose"), default="simple_map", help="Metric backend (default: simple_map).")
+    p_ce.add_argument("--metric-key", default=None, help="Metric key for CL summaries (default depends on --metric).")
+    p_ce.add_argument("--iou-threshold", type=float, default=None, help="Pose matching IoU threshold (default: 0.5).")
+    p_ce.add_argument("--min-score", type=float, default=None, help="Pose eval min score (default: 0.0).")
+    p_ce.add_argument("--success-rot-deg", type=float, default=None, help="Pose success rotation threshold in degrees (default: 15).")
+    p_ce.add_argument("--success-trans", type=float, default=None, help="Pose success translation threshold in meters (default: 0.1).")
+    p_ce.add_argument("--keep-per-image", type=int, default=None, help="Keep N per-image summaries (default: 0).")
+    p_ce.add_argument("--output", default=None, help="Output JSON path (default: <run_dir>/continual_eval.json).")
+    p_ce.add_argument("--html", default=None, help="Optional HTML report path (default: <run_dir>/continual_eval.html).")
+    p_ce.add_argument("--force", action="store_true", help="Overwrite existing prediction/eval outputs.")
+    p_ce.set_defaults(_fn=_continual_eval)
 
     p_export = sub.add_parser("export", help="Export predictions JSON via a selected backend.")
     _parse_common_export_args(p_export)

@@ -339,7 +339,10 @@ def load_yolo_dataset(root, split="train2017"):
     images_dir = root / "images" / split
     labels_dir = root / "labels" / split
     records = []
-    for image_path in sorted(images_dir.glob("*.jpg")):
+    images = []
+    for ext in ("*.jpg", "*.jpeg", "*.png"):
+        images.extend(images_dir.glob(ext))
+    for image_path in sorted(images):
         label_path = labels_dir / f"{image_path.stem}.txt"
         meta_path = labels_dir / f"{image_path.stem}.json"
         labels = _load_yolo_labels(label_path)
