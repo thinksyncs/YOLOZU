@@ -956,7 +956,9 @@
       "inputs": [
         { "name": "config", "kind": "file", "required": true, "flag": "--config" },
         { "name": "run_dir", "kind": "dir", "required": false, "flag": "--run-dir" },
-        { "name": "replay_size", "kind": "number", "required": false, "flag": "--replay-size" }
+        { "name": "replay_size", "kind": "number", "required": false, "flag": "--replay-size" },
+        { "name": "replay_fraction", "kind": "number", "required": false, "flag": "--replay-fraction" },
+        { "name": "replay_per_task_cap", "kind": "number", "required": false, "flag": "--replay-per-task-cap" }
       ],
       "outputs": [{ "name": "run_json", "kind": "file", "description": "continual_run.json under the run dir." }],
       "examples": [
@@ -971,12 +973,14 @@
       "id": "eval_continual",
       "entrypoint": "tools/eval_continual.py",
       "runner": "python3",
-      "summary": "Evaluate a continual learning run (simple mAP + forgetting metrics) and write JSON+HTML.",
+      "summary": "Evaluate a continual learning run (simple mAP proxy or pose metrics + forgetting) and write JSON+HTML.",
       "tags": ["continual", "eval", "report"],
       "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
       "requires": { "python_packages": ["torch", "Pillow"] },
       "inputs": [
         { "name": "run_json", "kind": "file", "required": true, "flag": "--run-json" },
+        { "name": "metric", "kind": "string", "required": false, "flag": "--metric" },
+        { "name": "metric_key", "kind": "string", "required": false, "flag": "--metric-key" },
         { "name": "output", "kind": "file", "required": false, "flag": "--output" },
         { "name": "html", "kind": "file", "required": false, "flag": "--html" }
       ],

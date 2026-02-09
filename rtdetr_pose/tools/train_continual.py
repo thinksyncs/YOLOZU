@@ -158,6 +158,18 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     p.add_argument("--config", required=True, help="YAML/JSON continual learning config.")
     p.add_argument("--run-dir", default=None, help="Output directory for this continual run.")
     p.add_argument("--replay-size", type=int, default=None, help="Override continual.replay_size (0 disables replay).")
+    p.add_argument(
+        "--replay-fraction",
+        type=float,
+        default=None,
+        help="Override continual.replay_fraction (replay_k = fraction * train_records; default: use all buffer items).",
+    )
+    p.add_argument(
+        "--replay-per-task-cap",
+        type=int,
+        default=None,
+        help="Override continual.replay_per_task_cap (cap replay samples per past task; default: no cap).",
+    )
     return p.parse_args(argv)
 
 
@@ -188,6 +200,20 @@ def main(argv: list[str] | None = None) -> int:
         replay_size = int(args.replay_size)
     replay_size = max(0, int(replay_size))
 
+    replay_fraction_cfg = continual_cfg.get("replay_fraction")
+    replay_fraction = float(replay_fraction_cfg) if replay_fraction_cfg is not None else None
+    if args.replay_fraction is not None:
+        replay_fraction = float(args.replay_fraction)
+    if replay_fraction is not None and replay_fraction < 0.0:
+        raise SystemExit("continual.replay_fraction must be >= 0")
+
+    replay_per_task_cap_cfg = continual_cfg.get("replay_per_task_cap")
+    replay_per_task_cap = int(replay_per_task_cap_cfg) if replay_per_task_cap_cfg is not None else None
+    if args.replay_per_task_cap is not None:
+        replay_per_task_cap = int(args.replay_per_task_cap)
+    if replay_per_task_cap is not None and replay_per_task_cap < 0:
+        raise SystemExit("continual.replay_per_task_cap must be >= 0")
+
     distill_cfg = continual_cfg.get("distill") if isinstance(continual_cfg.get("distill"), dict) else {}
     distill_enabled = bool(distill_cfg.get("enabled", True))
 
@@ -205,7 +231,14 @@ def main(argv: list[str] | None = None) -> int:
     run_record = build_run_record(
         repo_root=repo_root,
         argv=(sys.argv[1:] if argv is None else argv),
-        args={"config": str(cfg_path), "run_dir": str(run_dir), "replay_size": int(replay_size), "seed": int(seed)},
+        args={
+            "config": str(cfg_path),
+            "run_dir": str(run_dir),
+            "replay_size": int(replay_size),
+            "replay_fraction": replay_fraction,
+            "replay_per_task_cap": replay_per_task_cap,
+            "seed": int(seed),
+        },
         extra={"timestamp_utc": _now_utc()},
     )
 
@@ -218,7 +251,13 @@ def main(argv: list[str] | None = None) -> int:
         "config_hash": _sha256_json(cfg),
         "model_config": str(model_config_path),
         "seed": int(seed),
-        "replay": {"size": int(replay_size), "strategy": str(continual_cfg.get("replay_strategy") or "reservoir")},
+        "replay": {
+            "size": int(replay_size),
+            "strategy": str(continual_cfg.get("replay_strategy") or "reservoir"),
+            "fraction": replay_fraction,
+            "per_task_cap": replay_per_task_cap,
+            "task_key": "__task",
+        },
         "distill": {
             "enabled": bool(distill_enabled),
             "weight": float(distill_cfg.get("weight", 1.0)),
@@ -238,7 +277,14 @@ def main(argv: list[str] | None = None) -> int:
         task_out.mkdir(parents=True, exist_ok=True)
 
         train_records = _to_abs_paths(_load_records(task.dataset_root, split=task.train_split), base=repo_root)
-        buffer_records = buffer.sample()
+        replay_k = None
+        if replay_fraction is not None:
+            replay_k = max(0, int(round(float(replay_fraction) * float(len(train_records)))))
+
+        sample_kwargs: dict[str, Any] = {}
+        if replay_per_task_cap is not None:
+            sample_kwargs = {"task_key": "__task", "per_task_cap": int(replay_per_task_cap)}
+        buffer_records = buffer.sample(replay_k, **sample_kwargs)
 
         extra_records_path = None
         if buffer_records:
@@ -299,7 +345,8 @@ def main(argv: list[str] | None = None) -> int:
             raise SystemExit(f"expected checkpoint not found: {ckpt_path}")
 
         # Update replay buffer AFTER training on this task.
-        buffer.add_many(train_records)
+        tagged_train_records = [dict(rec, __task=str(task.name)) for rec in train_records]
+        buffer.add_many(tagged_train_records)
 
         prev_ckpt = ckpt_path
 
@@ -311,6 +358,7 @@ def main(argv: list[str] | None = None) -> int:
                 "train_split": str(task.train_split),
                 "val_split": str(task.val_split),
                 "train_records": int(len(train_records)),
+                "replay_requested": replay_k,
                 "replay_used": int(len(buffer_records)),
                 "run_dir": str(task_out),
                 "checkpoint": str(ckpt_path),

@@ -7,6 +7,23 @@ from pathlib import Path
 
 
 class TestYOLOZUCLI(unittest.TestCase):
+    def test_help_lists_continual_commands(self):
+        repo_root = Path(__file__).resolve().parents[1]
+        script = repo_root / "tools" / "yolozu.py"
+
+        proc = subprocess.run(
+            [sys.executable, str(script), "--help"],
+            cwd=str(repo_root),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            text=True,
+        )
+        if proc.returncode != 0:
+            self.fail(f"yolozu --help failed:\n{proc.stdout}\n{proc.stderr}")
+        self.assertIn("continual-train", proc.stdout)
+        self.assertIn("continual-eval", proc.stdout)
+
     def test_doctor_writes_json(self):
         repo_root = Path(__file__).resolve().parents[1]
         script = repo_root / "tools" / "yolozu.py"

@@ -29,7 +29,31 @@ class TestReplayBuffer(unittest.TestCase):
         self.assertEqual(summary["size"], 10)
         self.assertEqual(len(summary["images"]), 10)
 
+    def test_sample_per_task_cap(self):
+        from yolozu.replay_buffer import ReplayBuffer
+
+        buf = ReplayBuffer(capacity=100, seed=0)
+        for i in range(7):
+            buf.add({"image_path": f"/tmp/a_{i}.jpg", "__task": "A"})
+        for i in range(5):
+            buf.add({"image_path": f"/tmp/b_{i}.jpg", "__task": "B"})
+
+        sample = buf.sample(task_key="__task", per_task_cap=2)
+        self.assertEqual(len(sample), 4)
+        counts = {"A": 0, "B": 0}
+        for rec in sample:
+            counts[rec.get("__task")] += 1
+        self.assertLessEqual(counts["A"], 2)
+        self.assertLessEqual(counts["B"], 2)
+
+        sample_k = buf.sample(3, task_key="__task", per_task_cap=2)
+        self.assertEqual(len(sample_k), 3)
+        counts_k = {"A": 0, "B": 0}
+        for rec in sample_k:
+            counts_k[rec.get("__task")] += 1
+        self.assertLessEqual(counts_k["A"], 2)
+        self.assertLessEqual(counts_k["B"], 2)
+
 
 if __name__ == "__main__":
     unittest.main()
-

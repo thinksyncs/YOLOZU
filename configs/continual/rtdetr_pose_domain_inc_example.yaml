@@ -34,6 +34,8 @@ continual:
   seed: 0
   replay_size: 50 # set 0 for memoryless mode
   replay_strategy: reservoir
+  # replay_fraction: 0.25   # optional: replay_k = fraction * current task train_records (capped by replay_size)
+  # replay_per_task_cap: 20 # optional: cap replay samples per past task (requires tagging; handled by train_continual)
   distill:
     enabled: true
     keys: logits,bbox
