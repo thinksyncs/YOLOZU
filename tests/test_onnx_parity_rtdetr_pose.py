@@ -71,7 +71,7 @@ class TestOnnxParityRTDETRPose(unittest.TestCase):
 
             ort_outs = sess.run(
                 ["logits", "bbox", "log_z", "rot6d", "offsets", "k_delta"],
-                {"input": x.cpu().numpy()},
+                {"images": x.cpu().numpy()},
             )
 
         keys = ["logits", "bbox", "log_z", "rot6d", "offsets", "k_delta"]

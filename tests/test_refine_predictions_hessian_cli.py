@@ -39,11 +39,6 @@ class TestRefinePredictionsHessianCLI(unittest.TestCase):
                             "log_z": math.log(4.0),
                             "rot6d": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
                             "offsets": [0.0, 0.0],
-                            "bbox": {"cx": 0.5, "cy": 0.5, "w": 0.2, "h": 0.2},
-                            # Target a depth value to force offsets refinement along +x (depth(u)=u).
-                            "log_z": math.log(4.0),
-                            "rot6d": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
-                            "offsets": [0.0, 0.0],
                         }
                     ],
                 }
