@@ -166,12 +166,14 @@ def _run_bucket(
     cmd = [
         python,
         "tools/eval_suite.py",
-        "--protocol",
-        "yolo26",
         "--dataset",
         str(dataset_root),
+        "--split",
+        str(split),
         "--predictions-glob",
         str(pred_path),
+        "--bbox-format",
+        "cxcywh_norm",
         "--dry-run",
         "--output",
         str(suite_path),
@@ -252,4 +254,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
