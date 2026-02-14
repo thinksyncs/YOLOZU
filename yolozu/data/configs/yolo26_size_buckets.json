@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "protocol_id": "yolo26",
+  "task": "detect",
+  "imgsz": 640,
+  "flops_definition": "FLOPs = 2 * MACs; MACs counted for Conv/Gemm/MatMul only (approx).",
+  "tolerance": {
+    "params_ratio": 0.1,
+    "flops_ratio": 0.1
+  },
+  "targets": {
+    "yolo26n": { "params": null, "flops": null },
+    "yolo26s": { "params": null, "flops": null },
+    "yolo26m": { "params": null, "flops": null },
+    "yolo26l": { "params": null, "flops": null },
+    "yolo26x": { "params": null, "flops": null }
+  },
+  "notes": [
+    "Fill in targets with measurements from your YOLO26 reference ONNX models.",
+    "Once filled, treat each bucket as an envelope: YOLOZU models should be within +/- tolerance ratios for both params and FLOPs."
+  ]
+}
+
