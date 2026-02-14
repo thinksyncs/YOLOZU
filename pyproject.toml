@@ -14,6 +14,9 @@ dependencies = ["PyYAML>=6.0", "numpy>=1.24", "Pillow>=10.0"]
 
 [project.optional-dependencies]
 demo = ["torch>=2.1"]
+onnxrt = ["onnx>=1.14", "onnxruntime>=1.17"]
+coco = ["pycocotools>=2.0.7"]
+full = ["torch>=2.1", "onnx>=1.14", "onnxruntime>=1.17", "pycocotools>=2.0.7"]
 
 [project.scripts]
 yolozu = "yolozu.cli:main"

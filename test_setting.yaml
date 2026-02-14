@@ -1,4 +1,4 @@
-# Default test settings for yolozu test
+# Default test settings for yolozu dev test (source checkout)
 # Keys map to tools/run_scenarios.py arguments
 adapter: dummy
 dataset: data/coco128

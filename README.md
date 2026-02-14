@@ -141,35 +141,59 @@ Start here: [docs/training_inference_export.md](docs/training_inference_export.m
   requires optional dependencies and the proper COCO layout.
 - Large model weights/datasets are intentionally kept out of git; you need external storage and reproducible pointers.
 
-## Quick start (coco128)
-
-1) Install test dependencies (CPU PyTorch is OK for local dev):
+## Install (pip users)
 
 ```bash
-python3 -m pip install -r requirements-test.txt
-```
-
-## Install (pip) + demos (CPU)
-
-For development (editable install):
-
-```bash
-python3 -m pip install -e .
+python3 -m pip install yolozu
 yolozu --help
+yolozu doctor --output -
 ```
 
-Run a minimal CPU-only demo (no torch required):
+Optional extras (recommended as needed):
+
+```bash
+python3 -m pip install 'yolozu[demo]'    # torch demos (CPU OK)
+python3 -m pip install 'yolozu[onnxrt]'  # ONNXRuntime CPU exporter
+python3 -m pip install 'yolozu[coco]'    # pycocotools COCOeval
+python3 -m pip install 'yolozu[full]'
+```
+
+CPU demos:
 
 ```bash
 yolozu demo instance-seg
+yolozu demo continual --method ewc_replay   # requires yolozu[demo]
 ```
 
-Run a continual-learning + domain-shift demo (CPU torch required):
+## Source checkout (repo users)
+
+This path unlocks the full repo tooling (`tools/`, `rtdetr_pose/`, scenarios, etc.).
 
 ```bash
-python3 -m pip install -e '.[demo]'
-yolozu demo continual --method ewc_replay
+python3 -m pip install -r requirements-test.txt
+python3 -m pip install -e .
+
+# Tiny smoke dataset (optional but useful for scenario runs)
+bash tools/fetch_coco128.sh
+
+python3 -m unittest -q
 ```
+
+## CLI: pip vs repo
+
+| Capability | pip (`pip install yolozu`) | repo checkout |
+|---|---|---|
+| Environment report | `yolozu doctor --output -` | `python3 tools/yolozu.py doctor --output reports/doctor.json` |
+| Export smoke (no inference) | `yolozu export --backend labels --dataset /path/to/yolo --output reports/predictions.json --force` | same |
+| Validate predictions JSON | `yolozu validate predictions reports/predictions.json --strict` | `python3 tools/validate_predictions.py reports/predictions.json --strict` |
+| Instance-seg eval (PNG masks) | `yolozu eval-instance-seg --dataset /path --predictions preds.json --output reports/instance_seg_eval.json` | `python3 tools/eval_instance_segmentation.py ...` |
+| ONNXRuntime CPU export | `yolozu onnxrt export ...` (requires `yolozu[onnxrt]`) | `python3 tools/export_predictions_onnxrt.py ...` |
+| Training scaffold | `yolozu dev train train_setting.yaml` (source checkout only) | `python3 rtdetr_pose/tools/train_minimal.py ...` |
+| Scenario suite | — | `python3 tools/run_scenarios.py ...` |
+
+Dev-only commands (source checkout): `yolozu dev train`, `yolozu dev test` (aliases: `yolozu train/test`).
+
+The “power-user” unified CLI lives in-repo: `python3 tools/yolozu.py --help`.
 
 ## Container images (GHCR)
 
@@ -191,51 +215,9 @@ Publish trigger:
 
 Details: [deploy/docker/README.md](deploy/docker/README.md)
 
-2) Fetch the tiny dataset (once):
-
-```bash
-bash tools/fetch_coco128.sh
-```
-
-3) Run a minimal check (pytest):
-
-```bash
-pytest -q
-```
-
-Or:
-
-```bash
-python3 -m unittest -q
-```
-
 ### GPU notes
 - GPU is supported (training/inference): install CUDA-enabled PyTorch in your environment and use `--device cuda:0`.
 - CI/dev does not require GPU; many checks are CPU-friendly.
-
-## CLI (simple train/test)
-
-Run flows with YAML settings:
-
-```bash
-yolozu train train_setting.yaml
-yolozu test test_setting.yaml
-
-# Equivalent:
-python -m yolozu train train_setting.yaml
-python -m yolozu test test_setting.yaml
-```
-
-Or use the wrapper:
-
-```bash
-./tools/yolozu train train_setting.yaml
-./tools/yolozu test test_setting.yaml
-```
-
-Templates:
-- `train_setting.yaml`
-- `test_setting.yaml`
 
 ## Training scaffold (RT-DETR pose)
 

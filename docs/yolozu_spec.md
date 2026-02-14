@@ -57,8 +57,9 @@ YOLOZU is a lightweight evaluation and scaffolding repo for real‑time monocula
   - See `docs/ttt_integration_plan.md` for the up-to-date interface notes.
 
 ### 9) CLI convenience
-- Installed CLI: `yolozu doctor`, `yolozu export`, `yolozu resources`, `yolozu demo`.
-- Dev-only (source checkout): `yolozu train train_setting.yaml`, `yolozu test test_setting.yaml`.
+- Installed CLI: `yolozu doctor`, `yolozu export`, `yolozu validate`, `yolozu eval-instance-seg`, `yolozu resources`, `yolozu demo`.
+- Optional extra: `yolozu onnxrt export ...` (install `yolozu[onnxrt]`).
+- Dev-only (source checkout): `yolozu dev train train_setting.yaml`, `yolozu dev test test_setting.yaml` (aliases: `yolozu train/test`).
 - Power-user in-repo CLI (source checkout): `python3 tools/yolozu.py ...`
 
 ## Contracts
