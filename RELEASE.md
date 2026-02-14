@@ -42,3 +42,6 @@ This triggers `.github/workflows/publish.yml` which builds and publishes to PyPI
 
 - You cannot upload the same version twice to PyPI. Always bump `__version__` before releasing.
 - If you prefer manual publishing, use `python -m build` + `python -m twine upload dist/*` with a PyPI API token.
+- If the publish workflow fails immediately with: `Tag "vX.Y.Z" is not allowed to deploy to pypi due to environment protection rules.`,
+  update GitHub **Settings → Environments → pypi** and allow tag pattern `v*` (or allow all branches/tags), then re-run
+  the workflow for that tag.
