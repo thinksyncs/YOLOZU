@@ -33,6 +33,8 @@ python3 tools/validate_predictions.py /path/to/predictions.json --strict
 - TensorRT (exported `.plan`): `python3 tools/export_predictions_trt.py ...`
 - Full TRT pipeline (engine build → export → parity → eval → latency): `python3 tools/run_trt_pipeline.py ...`
 
+YOLO26 per-bucket entrypoints (n/s/m/l/x): `docs/yolo26_inference_adapters.md`
+
 These are the fastest way to iterate in **research/eval**. For production, you might prefer C++/Rust inference.
 
 ## Production path: C++ / Rust inference
@@ -57,4 +59,3 @@ It focuses on:
 
 - Keep model weights / datasets out of git.
 - Keep inference repos/containers separate if license constraints differ; YOLOZU can still consume the output JSON.
-

@@ -55,6 +55,9 @@ If you're developing on macOS, keep GPU/TensorRT work on Runpod (or any Linux+NV
 - One-command runner: `python3 tools/run_trt_pipeline.py ...`
 - End-to-end `rtdetr_pose` export + parity + benchmark: `python3 tools/run_rtdetr_pose_backend_suite.py ...`
 
+For YOLO26 per-bucket adapter entrypoints (ONNXRuntime + TensorRT), see:
+- `docs/yolo26_inference_adapters.md`
+
 Example (writes a self-contained run folder under `runs/`):
 
 ```bash
