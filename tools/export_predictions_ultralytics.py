@@ -1,12 +1,15 @@
 import argparse
 import json
+import platform
 import sys
+import time
 from pathlib import Path
 
 repo_root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(repo_root))
 
 from yolozu.dataset import build_manifest
+from yolozu.predictions import validate_predictions_entries
 
 
 def _parse_args(argv):
@@ -24,6 +27,7 @@ def _parse_args(argv):
     parser.add_argument("--conf", type=float, default=0.001, help="Confidence threshold (default: 0.001)")
     parser.add_argument("--iou", type=float, default=0.7, help="IoU threshold (default: 0.7)")
     parser.add_argument("--max-det", type=int, default=300, help="Max detections per image (default: 300)")
+    parser.add_argument("--max-images", type=int, default=None, help="Optional cap for quick runs.")
     parser.add_argument("--batch", type=int, default=1, help="Batch size for inference (default: 1)")
     parser.add_argument("--device", default="cuda", help="Device for inference (default: cuda)")
     parser.add_argument("--half", action="store_true", help="Use FP16 inference where supported")
@@ -33,6 +37,8 @@ def _parse_args(argv):
         action=argparse.BooleanOptionalAction,
         help="Use end2end (NMS-free) head when supported (default: true)",
     )
+    parser.add_argument("--wrap", action="store_true", help="Wrap as {predictions:[...], meta:{...}}.")
+    parser.add_argument("--strict", action="store_true", help="Strict prediction schema validation.")
     return parser.parse_args(argv)
 
 
@@ -54,6 +60,8 @@ def main(argv=None):
 
     manifest = build_manifest(args.dataset, split=args.split)
     records = manifest["images"]
+    if args.max_images is not None:
+        records = records[: max(0, int(args.max_images))]
     image_paths = [record["image"] for record in records]
     images_dir = Path(args.dataset) / "images" / manifest["split"]
     source = args.source or str(images_dir)
@@ -113,9 +121,53 @@ def main(argv=None):
 
         outputs.append({"image": image_path, "detections": dets})
 
+    validate_predictions_entries(outputs, strict=bool(args.strict))
+
+    if args.wrap:
+        meta = {
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "exporter": "ultralytics",
+            "protocol_id": "yolo26",
+            "imgsz": int(args.image_size),
+            "dataset": str(args.dataset),
+            "split": manifest["split"],
+            "max_images": args.max_images,
+            "model": str(args.model),
+            "conf": float(args.conf),
+            "iou": float(args.iou),
+            "max_det": int(args.max_det),
+            "batch": int(args.batch),
+            "device": str(args.device),
+            "half": bool(args.half),
+            "end2end": bool(args.end2end),
+            "platform": {
+                "system": platform.system(),
+                "release": platform.release(),
+                "version": platform.version(),
+                "machine": platform.machine(),
+                "processor": platform.processor(),
+            },
+        }
+        try:
+            import torch  # type: ignore
+
+            meta["torch"] = {"version": getattr(torch, "__version__", None), "cuda": bool(torch.cuda.is_available())}
+        except Exception:
+            meta["torch"] = None
+        try:
+            import ultralytics  # type: ignore
+
+            meta["ultralytics"] = {"version": getattr(ultralytics, "__version__", None)}
+        except Exception:
+            meta["ultralytics"] = None
+
+        payload = {"predictions": outputs, "meta": meta}
+    else:
+        payload = outputs
+
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(json.dumps(outputs, indent=2, sort_keys=True))
+    output_path.write_text(json.dumps(payload, indent=2, sort_keys=True))
     print(output_path)
 
 
