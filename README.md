@@ -170,6 +170,20 @@ python3 -m pip install -e '.[demo]'
 yolozu demo continual --method ewc_replay
 ```
 
+## Container images (GHCR)
+
+YOLOZU can publish Docker images to GitHub Container Registry (GHCR) on tags `vX.Y.Z`.
+
+- Minimal (no torch): `ghcr.io/<owner>/yolozu:<tag>`
+- Demo (includes torch): `ghcr.io/<owner>/yolozu-demo:<tag>`
+
+Examples:
+
+```bash
+docker run --rm ghcr.io/<owner>/yolozu:0.1.0 doctor --output -
+docker run --rm ghcr.io/<owner>/yolozu-demo:0.1.0 demo continual --method ewc_replay
+```
+
 2) Fetch the tiny dataset (once):
 
 ```bash

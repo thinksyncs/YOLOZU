@@ -36,6 +36,8 @@ git push origin vX.Y.Z
 
 This triggers `.github/workflows/publish.yml` which builds and publishes to PyPI.
 
+If configured, `.github/workflows/container.yml` also publishes Docker images to GHCR for the same tag.
+
 5) Optional: create a GitHub Release for human-friendly notes (does not affect publishing).
 
 ## Notes

@@ -71,6 +71,24 @@ Outputs (default paths):
 
 TensorRT is not installed via pip; use an NVIDIA/TensorRT base image and add Python deps for YOLOZU’s tooling.
 
+## Prebuilt images (GHCR)
+
+If enabled in CI, tag pushes (`vX.Y.Z`) publish images to GHCR.
+
+CPU images:
+
+```bash
+docker pull ghcr.io/<owner>/yolozu:0.1.0
+docker pull ghcr.io/<owner>/yolozu-demo:0.1.0
+```
+
+Optional RunPod GPU images (require an NVIDIA NGC API key configured as a GitHub secret named `NGC_API_KEY`):
+
+```bash
+docker pull ghcr.io/<owner>/yolozu-trt:0.1.0
+docker pull ghcr.io/<owner>/yolozu-rtdetr-pose:0.1.0
+```
+
 Build (example):
 
 ```bash

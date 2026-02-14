@@ -1,0 +1,151 @@
+name: container
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  cpu:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: yolozu
+            dockerfile: deploy/docker/Dockerfile
+          - image: yolozu-demo
+            dockerfile: deploy/docker/Dockerfile.demo
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image tags
+        id: tags
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="${REGISTRY}/${{ github.repository_owner }}/${{ matrix.image }}"
+
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            ref="${GITHUB_REF_NAME}"
+            version="${ref#v}"
+            {
+              echo "tags<<EOF"
+              echo "${image}:${version}"
+              echo "${image}:${ref}"
+              echo "${image}:latest"
+              echo "EOF"
+            } >> "${GITHUB_OUTPUT}"
+          else
+            short="${GITHUB_SHA::12}"
+            {
+              echo "tags<<EOF"
+              echo "${image}:sha-${short}"
+              echo "EOF"
+            } >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  runpod:
+    if: ${{ secrets.NGC_API_KEY != '' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: yolozu-trt
+            dockerfile: deploy/runpod/Dockerfile
+          - image: yolozu-rtdetr-pose
+            dockerfile: deploy/runpod/Dockerfile.rtdetr_pose
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to NVIDIA NGC (nvcr.io)
+        uses: docker/login-action@v3
+        with:
+          registry: nvcr.io
+          username: $oauthtoken
+          password: ${{ secrets.NGC_API_KEY }}
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image tags
+        id: tags
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="${REGISTRY}/${{ github.repository_owner }}/${{ matrix.image }}"
+
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            ref="${GITHUB_REF_NAME}"
+            version="${ref#v}"
+            {
+              echo "tags<<EOF"
+              echo "${image}:${version}"
+              echo "${image}:${ref}"
+              echo "${image}:latest"
+              echo "EOF"
+            } >> "${GITHUB_OUTPUT}"
+          else
+            short="${GITHUB_SHA::12}"
+            {
+              echo "tags<<EOF"
+              echo "${image}:sha-${short}"
+              echo "EOF"
+            } >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
