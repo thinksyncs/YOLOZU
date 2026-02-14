@@ -25,6 +25,7 @@ jobs:
           python -m pip install .
           yolozu doctor --output -
           yolozu export --help
+          python -c "from yolozu import resources; paths = resources.list_resource_paths(); assert 'schemas/predictions.schema.json' in paths; assert 'protocols/yolo26_eval.json' in paths; print('resources OK:', len(paths))"
 
       - name: License policy
         run: |

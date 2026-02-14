@@ -106,6 +106,27 @@ def _cmd_export(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_resources(args: argparse.Namespace) -> int:
+    from yolozu import resources
+
+    if args.resources_command == "list":
+        for p in resources.list_resource_paths():
+            print(p)
+        return 0
+
+    if args.resources_command == "cat":
+        text = resources.read_text(str(args.path))
+        print(text, end="" if text.endswith("\n") else "\n")
+        return 0
+
+    if args.resources_command == "copy":
+        out = resources.copy_to(str(args.path), output=str(args.output), force=bool(args.force))
+        print(str(out))
+        return 0
+
+    raise SystemExit("unknown resources command")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="yolozu")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
@@ -126,6 +147,16 @@ def main(argv: list[str] | None = None) -> int:
         help="Predictions JSON output path (default: reports/predictions.json).",
     )
     export.add_argument("--force", action="store_true", help="Overwrite outputs if they exist.")
+
+    resources_p = sub.add_parser("resources", help="Access packaged configs/schemas/protocols.")
+    resources_sub = resources_p.add_subparsers(dest="resources_command", required=True)
+    resources_sub.add_parser("list", help="List packaged resource paths.")
+    cat = resources_sub.add_parser("cat", help="Print a packaged resource to stdout.")
+    cat.add_argument("path", type=str, help="Resource path under yolozu/data (e.g., schemas/predictions.schema.json).")
+    copy = resources_sub.add_parser("copy", help="Copy a packaged resource to a file path.")
+    copy.add_argument("path", type=str, help="Resource path under yolozu/data.")
+    copy.add_argument("--output", required=True, help="Output file path.")
+    copy.add_argument("--force", action="store_true", help="Overwrite output if it exists.")
 
     train = sub.add_parser("train", help="Run training using a YAML/JSON config.")
     train.add_argument("config", type=str, help="Path to train_setting.yaml")
@@ -177,6 +208,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_doctor(str(args.output))
     if args.command == "export":
         return _cmd_export(args)
+    if args.command == "resources":
+        return _cmd_resources(args)
     if args.command == "demo":
         if args.demo_command == "instance-seg":
             from yolozu.demos.instance_seg import run_instance_seg_demo

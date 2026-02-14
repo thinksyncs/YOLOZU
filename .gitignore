@@ -8,4 +8,4 @@ __pycache__/
 
 reports/
 rtdetr_pose/reports/
-data/
+/data/

@@ -28,6 +28,17 @@ version = { attr = "yolozu.__version__" }
 where = ["."]
 include = ["yolozu*"]
 
+[tool.setuptools.package-data]
+"yolozu.data" = [
+  "configs/*.json",
+  "configs/*.yaml",
+  "configs/*.yml",
+  "configs/continual/*.yaml",
+  "configs/continual/*.yml",
+  "protocols/*.json",
+  "schemas/*.json",
+]
+
 [tool.ruff]
 # Exclude common directories
 exclude = [

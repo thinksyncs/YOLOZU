@@ -1,0 +1,22 @@
+{
+  "id": "yolo26",
+  "task": "detect",
+  "dataset": "coco",
+  "split": "val2017",
+  "imgsz": 640,
+  "bbox_format": "cxcywh_norm",
+  "metric_key": "map50_95",
+  "metric_label": "e2e mAP@[.5:.95] (bbox, no NMS)",
+  "e2e": {
+    "nms": "none",
+    "notes": [
+      "Evaluator never applies NMS; it scores detections as provided.",
+      "If your exporter runs NMS, that is not e2e and will not match the intended protocol."
+    ]
+  },
+  "reports": {
+    "suite": "reports/eval_suite.json",
+    "single": "reports/coco_eval.json"
+  }
+}
+

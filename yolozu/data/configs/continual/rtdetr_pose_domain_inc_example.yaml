@@ -1,0 +1,65 @@
+# Continual learning config (domain-incremental) for rtdetr_pose.
+#
+# Goal: sequentially fine-tune on multiple datasets while mitigating catastrophic forgetting.
+# Default forgetfulness mitigation:
+#  - Memoryless mode: self-distillation from previous checkpoint (SDFT-style)
+#  - Memory mode: replay buffer (reservoir sampling) + self-distillation
+#
+# Usage:
+#   python3 rtdetr_pose/tools/train_continual.py --config configs/continual/rtdetr_pose_domain_inc_example.yaml
+#
+# Notes:
+# - `model_config` is the rtdetr_pose JSON config that defines the architecture.
+# - `train` keys mirror rtdetr_pose/tools/train_minimal.py flags (snake_case).
+# - `tasks[*].dataset_root` must point to YOLO-format datasets: images/<split>/ + labels/<split>/.
+#
+# For pip installs: copy this example out via `yolozu resources copy`.
+
+schema_version: 1
+
+model_config: rtdetr_pose/configs/base.json
+
+train:
+  device: cpu
+  amp: none
+  real_images: true
+  image_size: 320
+  epochs: 1
+  max_steps: 30
+  batch_size: 2
+  lr: 1e-4
+  seed: 0
+  use_matcher: true
+  task_aligner: none
+
+continual:
+  seed: 0
+  replay_size: 50 # set 0 for memoryless mode
+  replay_strategy: reservoir
+  # replay_fraction: 0.25   # optional: replay_k = fraction * current task train_records (capped by replay_size)
+  # replay_per_task_cap: 20 # optional: cap replay samples per past task (requires tagging; handled by train_continual)
+  distill:
+    enabled: true
+    keys: logits,bbox
+    weight: 1.0
+    temperature: 1.0
+    kl: reverse
+  lora:
+    enabled: false
+    r: 8
+    alpha: null
+    dropout: 0.0
+    target: head
+    freeze_base: true
+    train_bias: none
+
+tasks:
+  - name: source
+    dataset_root: /path/to/dataset_source
+    train_split: train2017
+    val_split: val2017
+  - name: target
+    dataset_root: /path/to/dataset_target
+    train_split: train2017
+    val_split: val2017
+

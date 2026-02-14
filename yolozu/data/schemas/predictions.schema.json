@@ -1,0 +1,72 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://example.com/yolozu/predictions.schema.json",
+  "title": "YOLOZU Predictions JSON Schema",
+  "type": ["array", "object"],
+  "description": "Predictions JSON for evaluation",
+  "oneOf": [
+    {
+      "type": "array",
+      "items": {"$ref": "#/definitions/entry"}
+    },
+    {
+      "type": "object",
+      "properties": {
+        "schema_version": {"type": "integer", "minimum": 1},
+        "predictions": {
+          "type": "array",
+          "items": {"$ref": "#/definitions/entry"}
+        },
+        "meta": {"type": "object"}
+      },
+      "required": ["predictions"],
+      "additionalProperties": true
+    },
+    {
+      "type": "object",
+      "patternProperties": {
+        ".+": {
+          "type": "array",
+          "items": {"$ref": "#/definitions/detection"}
+        }
+      },
+      "additionalProperties": false
+    }
+  ],
+  "definitions": {
+    "entry": {
+      "type": "object",
+      "properties": {
+        "image": {"type": "string"},
+        "detections": {
+          "type": "array",
+          "items": {"$ref": "#/definitions/detection"}
+        }
+      },
+      "required": ["image", "detections"],
+      "additionalProperties": true
+    },
+    "detection": {
+      "type": "object",
+      "properties": {
+        "class_id": {"type": "integer"},
+        "score": {"type": "number"},
+        "bbox": {"$ref": "#/definitions/bbox"}
+      },
+      "required": ["class_id", "score", "bbox"],
+      "additionalProperties": true
+    },
+    "bbox": {
+      "type": "object",
+      "properties": {
+        "cx": {"type": "number"},
+        "cy": {"type": "number"},
+        "w": {"type": "number"},
+        "h": {"type": "number"}
+      },
+      "required": ["cx", "cy", "w", "h"],
+      "additionalProperties": true
+    }
+  }
+}
+
