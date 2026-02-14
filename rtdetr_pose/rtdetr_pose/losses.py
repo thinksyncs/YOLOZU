@@ -202,8 +202,6 @@ class Losses(nn.Module):
         bbox_pred = outputs.get("bbox")
         bbox_gt = targets.get("bbox")
         if bbox_pred is not None and bbox_gt is not None:
-            # Train bbox in the same normalized space used by matching and inference.
-            bbox_pred = bbox_pred.sigmoid()
             if valid is None:
                 loss_box = self.l1(bbox_pred, bbox_gt)
             else:
