@@ -100,3 +100,11 @@ python3 tools/check_map_targets.py \
   --targets baselines/yolo26_targets.json \
   --key map50_95
 ```
+
+If you want to fill `baselines/yolo26_targets.json` from an already-generated baseline suite report:
+
+```bash
+python3 tools/update_map_targets_from_suite.py \
+  --suite reports/eval_suite.json \
+  --targets baselines/yolo26_targets.json
+```
