@@ -148,6 +148,28 @@ Start here: [docs/training_inference_export.md](docs/training_inference_export.m
 python3 -m pip install -r requirements-test.txt
 ```
 
+## Install (pip) + demos (CPU)
+
+For development (editable install):
+
+```bash
+python3 -m pip install -e .
+yolozu --help
+```
+
+Run a minimal CPU-only demo (no torch required):
+
+```bash
+yolozu demo instance-seg
+```
+
+Run a continual-learning + domain-shift demo (CPU torch required):
+
+```bash
+python3 -m pip install -e '.[demo]'
+yolozu demo continual --method ewc_replay
+```
+
 2) Fetch the tiny dataset (once):
 
 ```bash
@@ -175,6 +197,10 @@ python3 -m unittest -q
 Run flows with YAML settings:
 
 ```bash
+ yolozu train train_setting.yaml
+ yolozu test test_setting.yaml
+
+ # Equivalent:
 python -m yolozu train train_setting.yaml
 python -m yolozu test test_setting.yaml
 ```

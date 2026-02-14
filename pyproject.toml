@@ -1,3 +1,33 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "yolozu"
+dynamic = ["version"]
+description = "Contract-first evaluation + tooling harness for detection/pose/segmentation."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { file = "LICENSE" }
+authors = [{ name = "YOLOZU contributors" }]
+dependencies = ["numpy", "Pillow", "PyYAML"]
+
+[project.optional-dependencies]
+demo = ["torch"]
+
+[project.scripts]
+yolozu = "yolozu.cli:main"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.dynamic]
+version = { attr = "yolozu.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["yolozu*"]
+
 [tool.ruff]
 # Exclude common directories
 exclude = [
