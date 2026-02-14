@@ -11,11 +11,19 @@
     "Fill in target values from your trusted source (e.g., internal benchmark sheet).",
     "Targets should reflect NMS-free (end-to-end) evaluation for a fair comparison."
   ],
+  "provenance": {
+    "git_head": "4f6e4a64fa4398469d09063c769c5553931a44f6",
+    "metric_key": "map50_95",
+    "suite_path": "/workspace/YOLOZU/runs/yolo26_baseline_2026-02-14T13-25-35Z/eval_suite.json",
+    "suite_protocol_id": "yolo26",
+    "suite_timestamp": "2026-02-14T13:29:31Z",
+    "updated_at": "2026-02-14T13:29:31Z"
+  },
   "targets": {
-    "yolo26n": null,
-    "yolo26s": null,
-    "yolo26m": null,
-    "yolo26l": null,
-    "yolo26x": null
+    "yolo26n": 0.3934248160440288,
+    "yolo26s": 0.46728511670772443,
+    "yolo26m": 0.5147960533280935,
+    "yolo26l": 0.5308512402768699,
+    "yolo26x": 0.558278001206324
   }
 }
