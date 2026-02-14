@@ -1,0 +1,22 @@
+ARG BASE_IMAGE=nvcr.io/nvidia/tensorrt:24.05-py3
+FROM ${BASE_IMAGE}
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    build-essential \
+    cmake \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace/YOLOZU
+COPY examples/infer_cpp ./examples/infer_cpp
+
+RUN cmake -S examples/infer_cpp -B /build \
+      -DYOLOZU_INFER_BUILD_ONNXRT=OFF && \
+    cmake --build /build -j
+
+WORKDIR /build
+
+CMD ["./yolozu_infer_trt", "--help"]
+

@@ -46,6 +46,38 @@ cmake --build build -j
 
 TensorRT C++ is easiest inside an NVIDIA/TensorRT base image (Runpod/Linux). The CMake checks for `NvInfer.h` + `libnvinfer`.
 
+## Docker build recipes
+
+These are meant as **repeatable build environments** (Linux) for the optional runners.
+
+### ONNXRuntime (CPU) container
+
+Build:
+
+```bash
+docker build -f examples/infer_cpp/docker/Dockerfile.onnxrt -t yolozu-infer-cpp:onnxrt .
+```
+
+Run (prints help by default):
+
+```bash
+docker run --rm -it yolozu-infer-cpp:onnxrt
+```
+
+### TensorRT container
+
+Build:
+
+```bash
+docker build -f examples/infer_cpp/docker/Dockerfile.trt -t yolozu-infer-cpp:trt .
+```
+
+Run (prints help by default):
+
+```bash
+docker run --rm -it --gpus all yolozu-infer-cpp:trt
+```
+
 ## Extracting into a submodule (recommended later)
 
 Once you create a separate repo (e.g. `yolozu-infer-cpp`) under the same GitHub org:
@@ -58,4 +90,3 @@ git submodule add <YOUR_REPO_URL> external/yolozu-infer-cpp
 ```
 
 Then update docs to point users to that submodule for production inference.
-
