@@ -189,3 +189,16 @@ Then validate and evaluate in this repo.
 ## Notes
 - When using GPU, install CUDA-enabled PyTorch and use --device cuda:0.
 - Keep the predictions schema consistent with the adapter output: image path + detections list.
+
+## YOLO26n smoke (RT-DETR scaffold)
+
+This repo includes a tiny “it runs end-to-end” smoke command that:
+- fetches `data/coco128` if missing
+- runs a few steps of `rtdetr_pose/tools/train_minimal.py`
+- exports `model.onnx`
+- exports wrapped predictions JSON
+- runs `tools/eval_suite.py --dry-run` to validate the full I/O chain
+
+```bash
+python3 tools/run_yolo26n_smoke_rtdetr_pose.py
+```
