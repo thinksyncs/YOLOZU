@@ -59,6 +59,41 @@ This writes:
   - `metrics.jsonl/json/csv`
   - `run_record.json`
 
+## Config knobs (selected)
+
+Under `continual:` in the YAML/JSON:
+
+- Replay:
+  - `replay_size`: buffer capacity (0 disables replay).
+  - `replay_fraction`: if set, use `round(fraction * train_records)` replay samples per task instead of the full buffer.
+  - `replay_per_task_cap`: optional cap of replay samples per past task (helps avoid imbalance).
+
+- Self-distillation (memoryless baseline; enabled by default in the runner):
+  - `distill.enabled`: enable/disable distillation against the previous checkpoint.
+  - `distill.keys`: e.g. `"logits,bbox"`.
+  - `distill.weight`, `distill.temperature`, `distill.kl`.
+
+- DER++-style replay distillation (optional, stronger baseline):
+  - `derpp.enabled`: enable DER++ loss for replay samples that have teacher outputs stored in their records.
+  - `derpp.teacher_key`: record key for stored teacher outputs (default: `derpp_teacher_npz`).
+  - `derpp.keys`, `derpp.weight`, `derpp.temperature`, `derpp.kl`.
+  - `derpp.logits_weight`, `derpp.bbox_weight`, `derpp.other_l1_weight`.
+
+  Notes:
+  - This implementation expects **per-sample teacher outputs** to be present in the dataset records (either as an inline dict or an `.npz/.json` path).
+  - It is CPU-safe (no extra teacher forward required at training time), but full validation needs real continual runs.
+
+- Regularizers (optional; tracked per task):
+  - EWC (Elastic Weight Consolidation):
+    - `ewc.enabled`: enable.
+    - `ewc.lambda`: penalty weight.
+    - Per-task state is saved as `taskXX_*/ewc_state.pt` and used as `--ewc-state-in` for the next task.
+  - SI (Synaptic Intelligence):
+    - `si.enabled`: enable.
+    - `si.c`: penalty weight.
+    - `si.epsilon`: denominator stabilizer (default: `1e-3`).
+    - Per-task state is saved as `taskXX_*/si_state.pt` and used as `--si-state-in` for the next task.
+
 ## Notes / caveats
 
 - The current continual evaluation uses `yolozu.simple_map` (CPU-friendly proxy). For full COCO mAP you can switch your workflow to `tools/eval_coco.py` with `pycocotools` installed.

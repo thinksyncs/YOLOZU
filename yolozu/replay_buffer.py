@@ -46,6 +46,32 @@ class ReplayBuffer:
         if j < self.capacity:
             self.items[j] = record
 
+    def add_with_info(self, record: dict[str, Any]) -> tuple[bool, dict[str, Any] | None]:
+        """Add a record and return (inserted, replaced_record).
+
+        This is useful for callers that need to attach sidecar data for items
+        that actually make it into the buffer (e.g. DER++ teacher outputs).
+        """
+
+        if self.capacity <= 0:
+            self.seen += 1
+            return False, None
+
+        i = int(self.seen)
+        self.seen += 1
+
+        if len(self.items) < self.capacity:
+            self.items.append(record)
+            return True, None
+
+        j = self._rng.randint(0, i)
+        if j < self.capacity:
+            replaced = self.items[j]
+            self.items[j] = record
+            return True, replaced
+
+        return False, None
+
     def add_many(self, records: Iterable[dict[str, Any]]) -> None:
         for rec in records:
             if isinstance(rec, dict):

@@ -220,6 +220,15 @@ def main(argv: list[str] | None = None) -> int:
     lora_cfg = continual_cfg.get("lora") if isinstance(continual_cfg.get("lora"), dict) else {}
     lora_enabled = bool(lora_cfg.get("enabled", False))
 
+    derpp_cfg = continual_cfg.get("derpp") if isinstance(continual_cfg.get("derpp"), dict) else {}
+    derpp_enabled = bool(derpp_cfg.get("enabled", False))
+
+    ewc_cfg = continual_cfg.get("ewc") if isinstance(continual_cfg.get("ewc"), dict) else {}
+    ewc_enabled = bool(ewc_cfg.get("enabled", False))
+
+    si_cfg = continual_cfg.get("si") if isinstance(continual_cfg.get("si"), dict) else {}
+    si_enabled = bool(si_cfg.get("enabled", False))
+
     tasks = _parse_tasks(cfg)
 
     run_dir = _resolve(args.run_dir, base=repo_root) if args.run_dir else None
@@ -265,12 +274,17 @@ def main(argv: list[str] | None = None) -> int:
             "kl": str(distill_cfg.get("kl", "reverse")),
             "keys": str(distill_cfg.get("keys", "logits,bbox")),
         },
+        "derpp": dict(derpp_cfg) if isinstance(derpp_cfg, dict) else {},
+        "ewc": dict(ewc_cfg) if isinstance(ewc_cfg, dict) else {},
+        "si": dict(si_cfg) if isinstance(si_cfg, dict) else {},
         "lora": dict(lora_cfg) if isinstance(lora_cfg, dict) else {},
         "tasks": [],
         "run_record": run_record,
     }
 
     prev_ckpt: Path | None = None
+    prev_ewc_state: Path | None = None
+    prev_si_state: Path | None = None
 
     for task_idx, task in enumerate(tasks):
         task_out = _task_dir(run_dir, task_idx, task.name)
@@ -335,6 +349,45 @@ def main(argv: list[str] | None = None) -> int:
             train_args.append("--lora-freeze-base" if freeze_base else "--no-lora-freeze-base")
             train_args.extend(["--lora-train-bias", str(lora_cfg.get("train_bias") or "none")])
 
+        if derpp_enabled:
+            train_args.append("--derpp")
+            teacher_key = str(derpp_cfg.get("teacher_key") or "derpp_teacher_npz")
+            train_args.extend(["--derpp-teacher-key", teacher_key])
+            if derpp_cfg.get("weight") is not None:
+                train_args.extend(["--derpp-weight", str(float(derpp_cfg.get("weight")))])
+            if derpp_cfg.get("temperature") is not None:
+                train_args.extend(["--derpp-temperature", str(float(derpp_cfg.get("temperature")))])
+            if derpp_cfg.get("kl") is not None:
+                train_args.extend(["--derpp-kl", str(derpp_cfg.get("kl"))])
+            if derpp_cfg.get("keys") is not None:
+                train_args.extend(["--derpp-keys", str(derpp_cfg.get("keys"))])
+            if derpp_cfg.get("logits_weight") is not None:
+                train_args.extend(["--derpp-logits-weight", str(float(derpp_cfg.get("logits_weight")))])
+            if derpp_cfg.get("bbox_weight") is not None:
+                train_args.extend(["--derpp-bbox-weight", str(float(derpp_cfg.get("bbox_weight")))])
+            if derpp_cfg.get("other_l1_weight") is not None:
+                train_args.extend(["--derpp-other-l1-weight", str(float(derpp_cfg.get("other_l1_weight")))])
+
+        if ewc_enabled:
+            train_args.append("--ewc")
+            if ewc_cfg.get("lambda") is not None:
+                train_args.extend(["--ewc-lambda", str(float(ewc_cfg.get("lambda")))])
+            if prev_ewc_state is not None:
+                train_args.extend(["--ewc-state-in", str(prev_ewc_state)])
+            ewc_state_out = task_out / "ewc_state.pt"
+            train_args.extend(["--ewc-state-out", str(ewc_state_out)])
+
+        if si_enabled:
+            train_args.append("--si")
+            if si_cfg.get("c") is not None:
+                train_args.extend(["--si-c", str(float(si_cfg.get("c")))])
+            if si_cfg.get("epsilon") is not None:
+                train_args.extend(["--si-epsilon", str(float(si_cfg.get("epsilon")))])
+            if prev_si_state is not None:
+                train_args.extend(["--si-state-in", str(prev_si_state)])
+            si_state_out = task_out / "si_state.pt"
+            train_args.extend(["--si-state-out", str(si_state_out)])
+
         train_args.extend(_as_cli_args(forwarded))
 
         cmd = _train_minimal_cmd(python=sys.executable, args=train_args)
@@ -349,6 +402,12 @@ def main(argv: list[str] | None = None) -> int:
         buffer.add_many(tagged_train_records)
 
         prev_ckpt = ckpt_path
+        if ewc_enabled:
+            candidate = task_out / "ewc_state.pt"
+            prev_ewc_state = candidate if candidate.exists() else None
+        if si_enabled:
+            candidate = task_out / "si_state.pt"
+            prev_si_state = candidate if candidate.exists() else None
 
         run_meta["tasks"].append(
             {
@@ -362,6 +421,8 @@ def main(argv: list[str] | None = None) -> int:
                 "replay_used": int(len(buffer_records)),
                 "run_dir": str(task_out),
                 "checkpoint": str(ckpt_path),
+                "ewc_state": (str(prev_ewc_state) if prev_ewc_state is not None else None),
+                "si_state": (str(prev_si_state) if prev_si_state is not None else None),
             }
         )
 

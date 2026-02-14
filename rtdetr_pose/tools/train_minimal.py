@@ -396,6 +396,81 @@ def build_parser() -> argparse.ArgumentParser:
         help="Per-key L1 weight for any other distilled tensor outputs.",
     )
 
+    # DER++ replay distillation (optional; requires per-sample teacher outputs in records)
+    parser.add_argument(
+        "--derpp",
+        action="store_true",
+        help="Enable DER++-style replay distillation (uses per-sample teacher outputs stored in records).",
+    )
+    parser.add_argument(
+        "--derpp-teacher-key",
+        type=str,
+        default="derpp_teacher_npz",
+        help="Record key holding DER++ teacher outputs (dict) or a path to an .npz/.json (default: derpp_teacher_npz).",
+    )
+    parser.add_argument(
+        "--derpp-weight",
+        type=float,
+        default=1.0,
+        help="Global multiplier for DER++ distillation loss (default: 1.0).",
+    )
+    parser.add_argument(
+        "--derpp-temperature",
+        type=float,
+        default=1.0,
+        help="Softmax temperature for DER++ logits distillation (>=1 recommended).",
+    )
+    parser.add_argument(
+        "--derpp-kl",
+        choices=("forward", "reverse", "sym"),
+        default="reverse",
+        help="KL direction for DER++ logits distillation (default: reverse, SDFT-style).",
+    )
+    parser.add_argument(
+        "--derpp-keys",
+        type=str,
+        default="logits,bbox",
+        help="Comma-separated model output keys to distill for DER++ (default: logits,bbox).",
+    )
+    parser.add_argument(
+        "--derpp-logits-weight",
+        type=float,
+        default=1.0,
+        help="Per-key weight for DER++ logits distillation term.",
+    )
+    parser.add_argument(
+        "--derpp-bbox-weight",
+        type=float,
+        default=1.0,
+        help="Per-key weight for DER++ bbox distillation term (compared in sigmoid space).",
+    )
+    parser.add_argument(
+        "--derpp-other-l1-weight",
+        type=float,
+        default=1.0,
+        help="Per-key L1 weight for any other DER++ distilled tensor outputs.",
+    )
+
+    # Continual learning regularizers (optional)
+    parser.add_argument(
+        "--ewc",
+        action="store_true",
+        help="Enable EWC regularization (penalty uses --ewc-state-in; importance saved to --ewc-state-out).",
+    )
+    parser.add_argument("--ewc-lambda", type=float, default=1.0, help="EWC penalty weight (default: 1.0).")
+    parser.add_argument("--ewc-state-in", default=None, help="EWC state (.pt) path from a previous task.")
+    parser.add_argument("--ewc-state-out", default=None, help="Write EWC state (.pt) for this task.")
+
+    parser.add_argument(
+        "--si",
+        action="store_true",
+        help="Enable Synaptic Intelligence regularization (penalty uses --si-state-in; importance saved to --si-state-out).",
+    )
+    parser.add_argument("--si-c", type=float, default=1.0, help="SI penalty weight (default: 1.0).")
+    parser.add_argument("--si-epsilon", type=float, default=1e-3, help="SI epsilon for importance normalization.")
+    parser.add_argument("--si-state-in", default=None, help="SI state (.pt) path from a previous task.")
+    parser.add_argument("--si-state-out", default=None, help="Write SI state (.pt) for this task.")
+
     # Checkpointing / resume
     parser.add_argument("--resume-from", default=None, help="Resume weights or full checkpoint bundle from this path.")
     parser.add_argument(
@@ -453,6 +528,10 @@ def apply_run_dir_defaults(args: argparse.Namespace) -> tuple[argparse.Namespace
         args.checkpoint_out = _default_path(args.checkpoint_out, "checkpoint.pt")
         args.checkpoint_bundle_out = _default_path(args.checkpoint_bundle_out, "checkpoint_bundle.pt")
         args.onnx_out = _default_path(args.onnx_out, "model.onnx")
+        if getattr(args, "ewc", False):
+            args.ewc_state_out = _default_path(getattr(args, "ewc_state_out", None), "ewc_state.pt")
+        if getattr(args, "si", False):
+            args.si_state_out = _default_path(getattr(args, "si_state_out", None), "si_state.pt")
 
     return args, run_dir
 
@@ -680,6 +759,9 @@ class ManifestDataset(Dataset):
         jitter_droll,
         jitter_dpitch,
         jitter_dyaw,
+        derpp_enabled,
+        derpp_teacher_key,
+        derpp_keys,
     ):
         self.records = records
         self.num_queries = int(num_queries)
@@ -710,6 +792,79 @@ class ManifestDataset(Dataset):
         self.jitter_droll = float(jitter_droll)
         self.jitter_dpitch = float(jitter_dpitch)
         self.jitter_dyaw = float(jitter_dyaw)
+        self.derpp_enabled = bool(derpp_enabled)
+        self.derpp_teacher_key = str(derpp_teacher_key) if derpp_teacher_key is not None else ""
+        self.derpp_keys = tuple(str(k) for k in (derpp_keys or ()))
+
+    def _load_derpp_teacher(self, value: Any) -> dict[str, "torch.Tensor"] | None:
+        if not self.derpp_enabled or not self.derpp_teacher_key:
+            return None
+        if value is None:
+            return None
+
+        keys = tuple(k for k in self.derpp_keys if k)
+        if not keys:
+            return None
+
+        def _maybe_squeeze(t: "torch.Tensor") -> "torch.Tensor":
+            if t.ndim >= 1 and int(t.shape[0]) == 1:
+                return t.squeeze(0)
+            return t
+
+        if isinstance(value, dict):
+            out: dict[str, torch.Tensor] = {}
+            for k in keys:
+                v = value.get(k)
+                if isinstance(v, torch.Tensor):
+                    out[k] = _maybe_squeeze(v.detach().to(dtype=torch.float32, device="cpu").clone())
+                elif isinstance(v, (list, tuple)):
+                    try:
+                        out[k] = _maybe_squeeze(torch.tensor(v, dtype=torch.float32))
+                    except Exception:
+                        continue
+            return out or None
+
+        if isinstance(value, str) and value:
+            path = Path(value)
+            if not path.is_absolute():
+                path = (repo_root.parent / path).resolve()
+            if not path.exists():
+                return None
+            if path.suffix.lower() == ".json":
+                import json
+
+                try:
+                    loaded = json.loads(path.read_text(encoding="utf-8"))
+                except Exception:
+                    return None
+                if isinstance(loaded, dict):
+                    return self._load_derpp_teacher(loaded)
+                return None
+            if path.suffix.lower() in (".npy", ".npz"):
+                try:
+                    import numpy as np
+                except Exception:
+                    return None
+                try:
+                    loaded = np.load(path, allow_pickle=False)
+                except Exception:
+                    return None
+                out: dict[str, torch.Tensor] = {}
+                if hasattr(loaded, "files"):
+                    for k in keys:
+                        if k in loaded.files:
+                            try:
+                                out[k] = _maybe_squeeze(torch.from_numpy(loaded[k]).to(dtype=torch.float32))
+                            except Exception:
+                                continue
+                else:
+                    if len(keys) == 1:
+                        try:
+                            out[keys[0]] = _maybe_squeeze(torch.from_numpy(loaded).to(dtype=torch.float32))
+                        except Exception:
+                            return None
+                return out or None
+        return None
 
     def _load_rgb_image_tensor(self, image_path: Path, target_size: int) -> "torch.Tensor | None":
         if not image_path.exists():
@@ -1083,9 +1238,7 @@ class ManifestDataset(Dataset):
                 gt_M_mask_t = torch.tensor(gt_M_mask, dtype=torch.bool)
                 gt_D_obj_mask_t = torch.tensor(gt_D_obj_mask, dtype=torch.bool)
 
-            return {
-                "image": image,
-                "targets": {
+            targets = {
                     "gt_labels": gt_labels_t,
                     "gt_bbox": gt_bbox_t,
                     "gt_z": gt_z_t,
@@ -1102,8 +1255,11 @@ class ManifestDataset(Dataset):
                     **({"gt_D_obj": d_tensor} if d_tensor is not None else {}),
                     **({"K_gt": K_gt} if K_gt is not None else {}),
                     "image_hw": image_hw,
-                },
-            }
+                }
+            derpp_teacher = self._load_derpp_teacher(record.get(self.derpp_teacher_key))
+            if derpp_teacher is not None:
+                targets["derpp_teacher"] = derpp_teacher
+            return {"image": image, "targets": targets}
 
         labels = torch.full((self.num_queries,), -1, dtype=torch.long)
         bbox = torch.zeros((self.num_queries, 4), dtype=torch.float32)
@@ -1120,7 +1276,11 @@ class ManifestDataset(Dataset):
             bbox[qi, 2] = float(bb.get("w", 0.0))
             bbox[qi, 3] = float(bb.get("h", 0.0))
 
-        return {"image": image, "targets": {"labels": labels, "bbox": bbox}}
+        targets = {"labels": labels, "bbox": bbox}
+        derpp_teacher = self._load_derpp_teacher(record.get(self.derpp_teacher_key))
+        if derpp_teacher is not None:
+            targets["derpp_teacher"] = derpp_teacher
+        return {"image": image, "targets": targets}
 
 
 def _pad_field(targets, key, max_len, *, pad_value=0.0, dtype=None):
@@ -1334,6 +1494,10 @@ def main(argv: list[str] | None = None) -> int:
             + " ".join(f"{key}={value}" for key, value in sorted(stats.items()))
         )
 
+    derpp_keys = ()
+    if bool(args.derpp):
+        derpp_keys = tuple(k.strip() for k in str(args.derpp_keys).split(",") if k.strip())
+
     ds = ManifestDataset(
         records,
         num_queries=args.num_queries,
@@ -1364,6 +1528,9 @@ def main(argv: list[str] | None = None) -> int:
         jitter_droll=args.jitter_droll,
         jitter_dpitch=args.jitter_dpitch,
         jitter_dyaw=args.jitter_dyaw,
+        derpp_enabled=bool(args.derpp),
+        derpp_teacher_key=str(args.derpp_teacher_key),
+        derpp_keys=derpp_keys,
     )
     sampler = None
     if ddp_enabled:
@@ -1504,6 +1671,64 @@ def main(argv: list[str] | None = None) -> int:
                 f"weight={sdft_cfg.weight}",
             )
 
+    derpp_cfg = None
+    if bool(args.derpp):
+        derpp_cfg = SdftConfig(
+            weight=float(args.derpp_weight),
+            temperature=float(args.derpp_temperature),
+            kl=str(args.derpp_kl),
+            keys=tuple(k.strip() for k in str(args.derpp_keys).split(",") if k.strip()),
+            logits_weight=float(args.derpp_logits_weight),
+            bbox_weight=float(args.derpp_bbox_weight),
+            other_l1_weight=float(args.derpp_other_l1_weight),
+        )
+        if is_main:
+            print(
+                "derpp",
+                f"enabled=True teacher_key={args.derpp_teacher_key}",
+                f"keys={','.join(derpp_cfg.keys) if derpp_cfg.keys else '(none)'}",
+                f"kl={derpp_cfg.kl}",
+                f"temp={derpp_cfg.temperature}",
+                f"weight={derpp_cfg.weight}",
+            )
+
+    ewc_state = None
+    ewc_accum = None
+    if bool(getattr(args, "ewc", False)) or args.ewc_state_in or args.ewc_state_out:
+        from yolozu.continual_regularizers import EwcAccumulator, ewc_penalty, load_ewc_state, save_ewc_state
+
+        ewc_state = None
+        if args.ewc_state_in:
+            ewc_state = load_ewc_state(str(args.ewc_state_in)).to(device)
+        if args.ewc_state_out:
+            ewc_accum = EwcAccumulator()
+        if is_main and bool(getattr(args, "ewc", False)):
+            print(
+                "ewc",
+                f"enabled=True lambda={float(args.ewc_lambda)}",
+                f"state_in={args.ewc_state_in}",
+                f"state_out={args.ewc_state_out}",
+            )
+
+    si_state = None
+    si_accum = None
+    if bool(getattr(args, "si", False)) or args.si_state_in or args.si_state_out:
+        from yolozu.continual_regularizers import SiAccumulator, load_si_state, save_si_state, si_penalty
+
+        si_state = None
+        si_accum = SiAccumulator(epsilon=float(args.si_epsilon))
+        if args.si_state_in:
+            si_state = load_si_state(str(args.si_state_in)).to(device)
+            si_accum.load_state(load_si_state(str(args.si_state_in)))
+        si_accum.begin_task(unwrap_model(model))
+        if is_main and bool(getattr(args, "si", False)):
+            print(
+                "si",
+                f"enabled=True c={float(args.si_c)} epsilon={float(args.si_epsilon)}",
+                f"state_in={args.si_state_in}",
+                f"state_out={args.si_state_out}",
+            )
+
     if ddp_enabled:
         model = torch.nn.parallel.DistributedDataParallel(
             model,
@@ -1575,6 +1800,9 @@ def main(argv: list[str] | None = None) -> int:
                 window_size = windows[window_idx] if window_idx < len(windows) else int(grad_accum)
 
             images = images.to(device)
+            per_sample_targets = targets.get("per_sample") if isinstance(targets, dict) else targets
+            if not isinstance(per_sample_targets, list):
+                per_sample_targets = None
 
             sync_step = step_in_window == int(window_size) - 1
             ddp_nosync = ddp_enabled and hasattr(model, "no_sync") and not sync_step
@@ -1603,8 +1831,61 @@ def main(argv: list[str] | None = None) -> int:
                             teacher_out_sdft["bbox"] = teacher_out["bbox"].sigmoid()
                         sdft_total, sdft_parts = compute_sdft_loss(student_out_sdft, teacher_out_sdft, sdft_cfg)
 
+                    derpp_total = None
+                    derpp_parts = None
+                    derpp_count = 0
+                    if derpp_cfg is not None and float(derpp_cfg.weight) != 0.0 and per_sample_targets is not None:
+                        indices: list[int] = []
+                        teacher_by_key: dict[str, list[torch.Tensor]] = {k: [] for k in derpp_cfg.keys}
+                        for i, tgt in enumerate(per_sample_targets):
+                            if not isinstance(tgt, dict):
+                                continue
+                            teacher = tgt.get("derpp_teacher")
+                            if not isinstance(teacher, dict):
+                                continue
+                            ok = True
+                            for k in derpp_cfg.keys:
+                                if not isinstance(teacher.get(k), torch.Tensor):
+                                    ok = False
+                                    break
+                            if not ok:
+                                continue
+                            indices.append(int(i))
+                            for k in derpp_cfg.keys:
+                                teacher_by_key[k].append(teacher[k])
+
+                        if indices:
+                            idx = torch.tensor(indices, device=images.device, dtype=torch.long)
+                            student_sub: dict[str, torch.Tensor] = {}
+                            teacher_sub: dict[str, torch.Tensor] = {}
+                            for k in derpp_cfg.keys:
+                                s_val = out.get(k)
+                                if not isinstance(s_val, torch.Tensor):
+                                    continue
+                                if int(s_val.shape[0]) <= int(idx.max().item()):
+                                    continue
+                                student_sub[k] = s_val.index_select(0, idx)
+                                try:
+                                    teacher_sub[k] = torch.stack(teacher_by_key[k], dim=0).to(device=images.device)
+                                except Exception:
+                                    teacher_sub.pop(k, None)
+                                    student_sub.pop(k, None)
+                            if student_sub and teacher_sub and "bbox" in derpp_cfg.keys:
+                                if isinstance(student_sub.get("bbox"), torch.Tensor) and isinstance(
+                                    teacher_sub.get("bbox"), torch.Tensor
+                                ):
+                                    student_sub = dict(student_sub)
+                                    teacher_sub = dict(teacher_sub)
+                                    student_sub["bbox"] = student_sub["bbox"].sigmoid()
+                                    teacher_sub["bbox"] = teacher_sub["bbox"].sigmoid()
+                            if student_sub and teacher_sub:
+                                derpp_count = int(len(indices))
+                                derpp_total, derpp_parts = compute_sdft_loss(student_sub, teacher_sub, derpp_cfg)
+
                     if args.use_matcher:
-                        per_sample = targets.get("per_sample") if isinstance(targets, dict) else targets
+                        per_sample = per_sample_targets
+                        if per_sample is None:
+                            raise RuntimeError("use_matcher requires per-sample targets list")
                         aligned = build_query_aligned_targets(
                             out["logits"],
                             out["bbox"],
@@ -1648,15 +1929,40 @@ def main(argv: list[str] | None = None) -> int:
                             "bbox": torch.stack([t["bbox"] for t in targets], dim=0).to(device),
                         }
 
-                    loss_dict = losses_fn(out, targets)
-                    loss = loss_dict["loss"]
-                    if sdft_total is not None and sdft_parts is not None:
-                        loss_supervised = loss
-                        loss_dict = dict(loss_dict)
+                    loss_dict = dict(losses_fn(out, targets))
+                    loss_supervised = loss_dict["loss"]
+                    loss = loss_supervised
+
+                    if sdft_total is not None and sdft_parts is not None and sdft_cfg is not None:
                         loss_dict["loss_supervised"] = loss_supervised
                         loss_dict.update(sdft_parts)
-                        loss = loss_supervised + float(sdft_cfg.weight) * sdft_total
-                        loss_dict["loss"] = loss
+                        loss = loss + float(sdft_cfg.weight) * sdft_total
+
+                    if derpp_total is not None and derpp_parts is not None and derpp_cfg is not None:
+                        loss_dict["derpp_samples"] = torch.tensor(int(derpp_count), device=loss.device)
+                        loss_dict["loss_derpp"] = derpp_total
+                        for k, v in derpp_parts.items():
+                            if not isinstance(v, torch.Tensor):
+                                continue
+                            if str(k) == "loss_sdft":
+                                continue
+                            suffix = str(k).replace("loss_sdft_", "")
+                            loss_dict[f"loss_derpp_{suffix}"] = v
+                        loss = loss + float(derpp_cfg.weight) * derpp_total
+
+                    if ewc_state is not None and float(args.ewc_lambda) != 0.0:
+                        ewc_raw = ewc_penalty(unwrap_model(model), ewc_state)
+                        ewc_term = 0.5 * float(args.ewc_lambda) * ewc_raw
+                        loss_dict["loss_ewc"] = ewc_term
+                        loss = loss + ewc_term
+
+                    if si_state is not None and float(args.si_c) != 0.0:
+                        si_raw = si_penalty(unwrap_model(model), si_state)
+                        si_term = 0.5 * float(args.si_c) * si_raw
+                        loss_dict["loss_si"] = si_term
+                        loss = loss + si_term
+
+                    loss_dict["loss"] = loss
                     last_loss_dict = loss_dict
 
                     if bool(args.stop_on_non_finite_loss):
@@ -1687,6 +1993,12 @@ def main(argv: list[str] | None = None) -> int:
             if sync_step:
                 if scaler is not None:
                     scaler.unscale_(optim)
+
+                if si_accum is not None:
+                    si_accum.capture_before_step(unwrap_model(model))
+                if ewc_accum is not None:
+                    ewc_accum.accumulate_from_grads(unwrap_model(model))
+
                 grad_norm = None
                 if args.clip_grad_norm and float(args.clip_grad_norm) > 0:
                     grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), float(args.clip_grad_norm))
@@ -1703,6 +2015,9 @@ def main(argv: list[str] | None = None) -> int:
                     scaler.update()
                 else:
                     optim.step()
+
+                if si_accum is not None:
+                    si_accum.update_after_step(unwrap_model(model))
 
                 global_step += 1
                 if args.lr_warmup_steps and int(args.lr_warmup_steps) > 0:
@@ -1823,6 +2138,12 @@ def main(argv: list[str] | None = None) -> int:
             last_loss_dict=last_loss_dict,
             run_record=run_record,
         )
+
+    if is_main and ewc_accum is not None and args.ewc_state_out:
+        save_ewc_state(str(args.ewc_state_out), ewc_accum.finalize(unwrap_model(model)))
+
+    if is_main and si_accum is not None and args.si_state_out:
+        save_si_state(str(args.si_state_out), si_accum.finalize(unwrap_model(model)))
 
     if is_main and args.onnx_out:
         try:

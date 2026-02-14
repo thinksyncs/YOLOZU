@@ -11,6 +11,36 @@ class TestReplayBuffer(unittest.TestCase):
         self.assertEqual(len(buf), 0)
         self.assertEqual(buf.seen, 10)
 
+    def test_add_with_info(self):
+        from yolozu.replay_buffer import ReplayBuffer
+
+        buf = ReplayBuffer(capacity=2, seed=0)
+
+        inserted, replaced = buf.add_with_info({"image_path": "/tmp/0.jpg"})
+        self.assertTrue(inserted)
+        self.assertIsNone(replaced)
+        self.assertEqual(len(buf), 1)
+        self.assertEqual(buf.seen, 1)
+
+        inserted, replaced = buf.add_with_info({"image_path": "/tmp/1.jpg"})
+        self.assertTrue(inserted)
+        self.assertIsNone(replaced)
+        self.assertEqual(len(buf), 2)
+        self.assertEqual(buf.seen, 2)
+
+        inserted, replaced = buf.add_with_info({"image_path": "/tmp/2.jpg"})
+        self.assertTrue(inserted)
+        self.assertIsNotNone(replaced)
+        self.assertEqual(replaced.get("image_path"), "/tmp/1.jpg")
+        self.assertEqual(len(buf), 2)
+        self.assertEqual(buf.seen, 3)
+
+        inserted, replaced = buf.add_with_info({"image_path": "/tmp/3.jpg"})
+        self.assertFalse(inserted)
+        self.assertIsNone(replaced)
+        self.assertEqual(len(buf), 2)
+        self.assertEqual(buf.seen, 4)
+
     def test_reservoir_basic_properties(self):
         from yolozu.replay_buffer import ReplayBuffer
 
