@@ -9,3 +9,8 @@ __pycache__/
 reports/
 rtdetr_pose/reports/
 /data/
+
+# virtualenvs
+.venv/
+.venv-runpod/
+.venv-runpods/
