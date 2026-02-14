@@ -186,10 +186,11 @@ class Losses(nn.Module):
         if logits is not None and labels is not None:
             logits_flat = logits.reshape(-1, logits.shape[-1])
             labels_flat = labels.reshape(-1)
-            if valid is None:
-                valid_cls = labels_flat != -1
-            else:
-                valid_cls = valid.reshape(-1)
+
+            # Classification supervision should apply to *all* queries that have
+            # a concrete label, including the "no-object" background class.
+            # Do not reuse the bbox/pose valid mask here.
+            valid_cls = labels_flat != -1
 
             if not bool(valid_cls.any()):
                 loss_cls = logits_flat.sum() * 0.0

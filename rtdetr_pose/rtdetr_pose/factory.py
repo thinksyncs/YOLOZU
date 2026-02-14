@@ -99,7 +99,9 @@ def build_model(cfg: ModelConfig) -> RTDETRPose:
 
     backbone, stage_channels = build_backbone(cfg)
     return RTDETRPose(
-        num_classes=int(getattr(cfg, "num_classes", 80)),
+        # Keep cfg.num_classes as the number of foreground classes and reserve the
+        # last logit as "no-object" / background (RT-DETR-style).
+        num_classes=int(getattr(cfg, "num_classes", 80)) + 1,
         hidden_dim=int(getattr(cfg, "hidden_dim", 256)),
         num_queries=int(getattr(cfg, "num_queries", 300)),
         use_uncertainty=bool(getattr(cfg, "use_uncertainty", False)),

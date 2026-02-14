@@ -76,6 +76,9 @@ def build_query_aligned_targets(
     neg_log_prob = -torch.log_softmax(logits, dim=-1)
     bbox_norm = bbox_pred.sigmoid()
 
+    # Reserve the last class index as the "no-object" / background class.
+    background_class_id = int(logits.shape[-1]) - 1
+
     if log_z_pred is not None:
         log_z_pred = log_z_pred
     if rot6d_pred is not None:
@@ -124,7 +127,7 @@ def build_query_aligned_targets(
         has_k = k_gt is not None
         has_t = gt_t is not None and (gt_t_mask is None or bool(gt_t_mask.any()))
         if gt_labels is None or gt_bbox is None or gt_labels.numel() == 0:
-            labels_q = torch.full((num_queries,), -1, dtype=torch.long, device=logits.device)
+            labels_q = torch.full((num_queries,), background_class_id, dtype=torch.long, device=logits.device)
             bbox_q = torch.zeros((num_queries, 4), dtype=torch.float32, device=logits.device)
             mask_q = torch.zeros((num_queries,), dtype=torch.bool, device=logits.device)
             z_q = torch.zeros((num_queries, 1), dtype=torch.float32, device=logits.device)
@@ -256,7 +259,7 @@ def build_query_aligned_targets(
             cost = cost + float(cost_t) * t_cost
 
         row_ind, col_ind = linear_sum_assignment(cost.detach().cpu().tolist())
-        labels_q = torch.full((num_queries,), -1, dtype=torch.long, device=logits.device)
+        labels_q = torch.full((num_queries,), background_class_id, dtype=torch.long, device=logits.device)
         bbox_q = torch.zeros((num_queries, 4), dtype=torch.float32, device=logits.device)
         mask_q = torch.zeros((num_queries,), dtype=torch.bool, device=logits.device)
         z_q = torch.zeros((num_queries, 1), dtype=torch.float32, device=logits.device)

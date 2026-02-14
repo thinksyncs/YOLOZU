@@ -149,6 +149,7 @@ class RTDETRPoseAdapter(ModelAdapter):
         from rtdetr_pose.factory import build_model
 
         cfg = load_config(self.config_path)
+        num_classes_fg = int(getattr(cfg.model, "num_classes", 80))
         model = build_model(cfg.model).eval()
 
         # Optional LoRA injection (useful for PEFT checkpoints and TTT adapter-only updates).
@@ -236,7 +237,7 @@ class RTDETRPoseAdapter(ModelAdapter):
 
             return x.unsqueeze(0) if x.ndim == 3 else x, meta, intr
 
-        self._backend = {"torch": torch, "model": model, "preprocess": preprocess}
+        self._backend = {"torch": torch, "model": model, "preprocess": preprocess, "num_classes_fg": num_classes_fg}
         self._lora_report = lora_report
 
     def get_lora_report(self) -> dict | None:
@@ -298,7 +299,11 @@ class RTDETRPoseAdapter(ModelAdapter):
             k_delta = out["k_delta"][0]
 
             probs = torch.softmax(logits, dim=-1)
-            scores, class_ids = torch.max(probs, dim=-1)
+
+            # Prefer foreground classes; treat the last class as background.
+            num_classes_fg = int(self._backend.get("num_classes_fg") or (probs.shape[-1] - 1))
+            probs_fg = probs[..., :num_classes_fg]
+            scores, class_ids = torch.max(probs_fg, dim=-1)
             k = min(self.max_detections, int(scores.shape[0]))
             top_scores, top_idx = torch.topk(scores, k=k)
 
