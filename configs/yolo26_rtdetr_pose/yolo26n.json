@@ -7,7 +7,7 @@
   "model": {
     "num_classes": 80,
     "hidden_dim": 256,
-    "num_queries": 300,
+    "num_queries": 100,
     "use_uncertainty": false,
     "backbone_name": "cspresnet",
     "stem_channels": 32,
