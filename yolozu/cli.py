@@ -79,6 +79,33 @@ def _cmd_doctor(output: str) -> int:
     return int(write_doctor_report(output=output))
 
 
+def _cmd_export(args: argparse.Namespace) -> int:
+    from yolozu.export import DEFAULT_PREDICTIONS_PATH, export_dummy_predictions, write_predictions_json
+
+    backend = str(getattr(args, "backend", "dummy"))
+    if backend != "dummy":
+        raise SystemExit("only --backend dummy is currently supported in pip installs")
+
+    dataset = str(args.dataset)
+    if not dataset:
+        raise SystemExit("--dataset is required")
+
+    try:
+        payload, _run = export_dummy_predictions(
+            dataset_root=dataset,
+            split=str(args.split) if args.split else None,
+            max_images=int(args.max_images) if args.max_images is not None else None,
+            score=float(args.score),
+        )
+    except FileNotFoundError as exc:
+        raise SystemExit(str(exc)) from exc
+
+    output = str(args.output) if args.output else DEFAULT_PREDICTIONS_PATH
+    out_path = write_predictions_json(output=output, payload=payload, force=bool(args.force))
+    print(str(out_path))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="yolozu")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
@@ -86,6 +113,19 @@ def main(argv: list[str] | None = None) -> int:
 
     doctor = sub.add_parser("doctor", help="Print environment diagnostics as JSON.")
     doctor.add_argument("--output", default="reports/doctor.json", help="Output JSON path (use - for stdout).")
+
+    export = sub.add_parser("export", help="Export predictions.json artifacts.")
+    export.add_argument("--backend", choices=("dummy",), default="dummy", help="Inference backend (default: dummy).")
+    export.add_argument("--dataset", default="data/coco128", help="YOLO-format dataset root.")
+    export.add_argument("--split", default=None, help="Dataset split under images/ and labels/ (default: auto).")
+    export.add_argument("--max-images", type=int, default=50, help="Optional cap for number of images.")
+    export.add_argument("--score", type=float, default=0.9, help="Dummy detection score (default: 0.9).")
+    export.add_argument(
+        "--output",
+        default=None,
+        help="Predictions JSON output path (default: reports/predictions.json).",
+    )
+    export.add_argument("--force", action="store_true", help="Overwrite outputs if they exist.")
 
     train = sub.add_parser("train", help="Run training using a YAML/JSON config.")
     train.add_argument("config", type=str, help="Path to train_setting.yaml")
@@ -135,6 +175,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_test(config_path)
     if args.command == "doctor":
         return _cmd_doctor(str(args.output))
+    if args.command == "export":
+        return _cmd_export(args)
     if args.command == "demo":
         if args.demo_command == "instance-seg":
             from yolozu.demos.instance_seg import run_instance_seg_demo
