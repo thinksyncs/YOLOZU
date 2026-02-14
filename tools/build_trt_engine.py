@@ -163,8 +163,15 @@ def _run_capture(cmd: list[str]) -> str | None:
 
 
 def _parse_cuda_version(nvidia_smi_text: str) -> str | None:
-    m = re.search(r"CUDA Version:\\s*([0-9]+\\.[0-9]+)", nvidia_smi_text)
+    m = re.search(r"CUDA Version:\s*([0-9]+(?:\.[0-9]+)?)", str(nvidia_smi_text))
     return None if not m else m.group(1)
+
+
+def _compute_cap_to_sm(compute_cap: str) -> str | None:
+    m = re.match(r"^\s*(\d+)\.(\d+)\s*$", str(compute_cap))
+    if not m:
+        return None
+    return f"{m.group(1)}{m.group(2)}"
 
 
 def _nvidia_smi_info() -> dict[str, Any]:
@@ -192,6 +199,7 @@ def _nvidia_smi_info() -> dict[str, Any]:
                     "name": parts[0],
                     "uuid": parts[1],
                     "compute_cap": parts[2],
+                    "sm": _compute_cap_to_sm(parts[2]),
                     "driver_version": parts[3],
                 }
             )

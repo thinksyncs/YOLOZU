@@ -58,8 +58,15 @@ def _run_capture(cmd: list[str]) -> str | None:
         return None
 
 def _parse_cuda_version(nvidia_smi_text: str) -> str | None:
-    m = re.search(r"CUDA Version:\\s*([0-9]+\\.[0-9]+)", str(nvidia_smi_text))
+    m = re.search(r"CUDA Version:\s*([0-9]+(?:\.[0-9]+)?)", str(nvidia_smi_text))
     return None if not m else m.group(1)
+
+
+def _compute_cap_to_sm(compute_cap: str) -> str | None:
+    m = re.match(r"^\s*(\d+)\.(\d+)\s*$", str(compute_cap))
+    if not m:
+        return None
+    return f"{m.group(1)}{m.group(2)}"
 
 
 def _nvidia_smi_info() -> dict[str, Any] | None:
@@ -86,6 +93,7 @@ def _nvidia_smi_info() -> dict[str, Any] | None:
                     "name": parts[0],
                     "uuid": parts[1],
                     "compute_cap": parts[2],
+                    "sm": _compute_cap_to_sm(parts[2]),
                     "driver_version": parts[3],
                 }
             )
@@ -312,9 +320,20 @@ class _OnnxRtRunner:
         except Exception as exc:  # pragma: no cover
             raise RuntimeError("onnxruntime is required for onnxrt backend") from exc
 
+        available_providers = list(ort.get_available_providers())
+        preferred_order = [
+            "TensorrtExecutionProvider",
+            "CUDAExecutionProvider",
+            "ROCMExecutionProvider",
+            "CPUExecutionProvider",
+        ]
+        providers = [p for p in preferred_order if p in available_providers] + [
+            p for p in available_providers if p not in preferred_order
+        ]
+
         sess_options = ort.SessionOptions()
         sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-        session = ort.InferenceSession(str(onnx_path), sess_options=sess_options, providers=ort.get_available_providers())
+        session = ort.InferenceSession(str(onnx_path), sess_options=sess_options, providers=providers)
         return cls(session=session, input_name=str(input_name))
 
     def infer(self, x: np.ndarray) -> dict[str, np.ndarray]:
