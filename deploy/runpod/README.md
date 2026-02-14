@@ -141,3 +141,16 @@ One-time alternative: teach `origin` to track `beads-sync`, then `git fetch orig
 git remote set-branches --add origin beads-sync
 git fetch origin
 ```
+
+## COCO val2017 bootstrap (optional)
+
+To download COCO val2017 + annotations and prepare a YOLO-format dataset (without writing large artifacts into
+`/workspace`), run:
+
+```bash
+bash deploy/runpod/bootstrap_coco_val2017.sh
+```
+
+This produces:
+- raw COCO under `/tmp/coco`
+- YOLO dataset under `/tmp/coco-yolo` (use this path with `--dataset`)
