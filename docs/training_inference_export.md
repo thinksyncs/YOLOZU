@@ -10,6 +10,23 @@ This note provides a minimal, end-to-end path for training, inference, and expor
 2) Fetch the sample dataset (coco128):
 - bash tools/fetch_coco128.sh
 
+Optional: prepare full COCO (val2017/train2017) in YOLO-format (recommended path under `data/`, which is gitignored):
+
+```bash
+# Example COCO layout:
+#   /data/coco/
+#     annotations/instances_val2017.json
+#     val2017/*.jpg
+python3 tools/prepare_coco_yolo.py \
+  --coco-root /data/coco \
+  --split val2017 \
+  --out data/coco-yolo
+```
+
+Notes:
+- `tools/prepare_coco_yolo.py` writes `data/coco-yolo/dataset.json` with absolute paths so evaluators can find images without copying.
+- To copy images into `data/coco-yolo/images/<split>/`, add `--copy-images` (slower, larger).
+
 3) Run the minimal trainer:
 - python3 rtdetr_pose/tools/train_minimal.py --dataset-root data/coco128 --config rtdetr_pose/configs/base.json --max-steps 50 --use-matcher
 

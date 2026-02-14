@@ -1,4 +1,11 @@
-# Executable Plan (Symmetry + Commonsense + Real-Time Constraints)
+# Roadmap notes (Symmetry + Commonsense + Real-Time Constraints)
+
+This document is kept for **historical context**. Active work should be tracked as Beads issues:
+
+```bash
+bd list
+bd search "<keyword>"
+```
 
 Goal: Convert symmetry + commonsense + real-time constraints into an implementable, test-first plan with explicit gates.
 

@@ -1,4 +1,18 @@
-# TODO — Beat YOLO26 (COCO Detect, e2e mAP, Apache-2.0 only)
+# Roadmap notes — Beat YOLO26 (COCO Detect, e2e mAP, Apache-2.0 only)
+
+This document is kept for **historical context**. Active work should be tracked as Beads issues:
+
+```bash
+bd list
+bd search "YOLO26"
+```
+
+Related issues (selected):
+- YOLOZU-u52: where to put COCO dataset + conversion snippet
+- YOLOZU-len: capture export/eval settings in suite reports
+- YOLOZU-w5x: define YOLOZU size buckets (params/FLOPs)
+- YOLOZU-tu0: exportable inference adapters per bucket (ONNX + TRT)
+- YOLOZU-6gz: training/eval loop to beat targets (epic)
 
 Goal: outperform **YOLO26** on **COCO Detect** using **end-to-end mAP** (NMS-free), for each size bucket:
 `yolo26n`, `yolo26s`, `yolo26m`, `yolo26l`, `yolo26x`.

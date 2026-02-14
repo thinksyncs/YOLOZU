@@ -116,6 +116,7 @@ Start here: [docs/training_inference_export.md](docs/training_inference_export.m
 - P0 (done): Unified CLI (`torch` / `onnxruntime` / `tensorrt`) with consistent args + same output schema; always write meta (git SHA / env / GPU / seed / config hash); keep `tools/manifest.json` updated.
 - P1 (done): `doctor` (deps/GPU/driver/onnxrt/TRT diagnostics) + `predict-images` (folder input → predictions JSON + overlays) + HTML report.
 - P2 (partial): cache/re-run (fingerprinted runs) + sweeps (wrapper exists; expand sweeps for TTT/threshold/gate weights) + production inference cores (C++/Rust) as needed.
+- Long-form notes: `docs/roadmap.md`
 
 ## Pros / Cons (project-level)
 

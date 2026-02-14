@@ -110,6 +110,242 @@ def _load_sidecar_metadata(meta_path: Path, root: Path) -> dict[str, Any]:
     return out
 
 
+def _as_numpy_mask(mask: Any) -> np.ndarray:
+    import numpy as np
+
+    if isinstance(mask, np.ndarray):
+        return mask
+    return np.asarray(mask)
+
+
+def _load_mask_value(value: Any) -> Any:
+    import numpy as np
+    from PIL import Image
+
+    if value is None:
+        return None
+    if isinstance(value, (str, Path)):
+        path = Path(value)
+        if not path.exists():
+            return None
+        try:
+            with Image.open(path) as img:
+                return np.asarray(img)
+        except Exception:
+            return None
+    return value
+
+
+def _parse_color_key(key: Any) -> Any:
+    if isinstance(key, (int, float)):
+        return int(key)
+    if isinstance(key, str):
+        if "," in key:
+            parts = [int(p.strip()) for p in key.split(",")]
+            return tuple(parts)
+        if key.startswith("#") and len(key) == 7:
+            r = int(key[1:3], 16)
+            g = int(key[3:5], 16)
+            b = int(key[5:7], 16)
+            return (r, g, b)
+        if key.isdigit():
+            return int(key)
+    return key
+
+
+def _bbox_from_mask(mask_bool: np.ndarray) -> tuple[int, int, int, int] | None:
+    import numpy as np
+
+    ys, xs = np.where(mask_bool)
+    if ys.size == 0:
+        return None
+    y_min = int(ys.min())
+    y_max = int(ys.max())
+    x_min = int(xs.min())
+    x_max = int(xs.max())
+    return x_min, y_min, x_max, y_max
+
+
+def _connected_components(mask_bool: np.ndarray) -> list[tuple[int, int, int, int]]:
+    import numpy as np
+
+    h, w = mask_bool.shape
+    visited = np.zeros((h, w), dtype=bool)
+    bboxes: list[tuple[int, int, int, int]] = []
+    for y in range(h):
+        for x in range(w):
+            if not mask_bool[y, x] or visited[y, x]:
+                continue
+            stack = [(y, x)]
+            visited[y, x] = True
+            y_min = y_max = y
+            x_min = x_max = x
+            while stack:
+                cy, cx = stack.pop()
+                y_min = min(y_min, cy)
+                y_max = max(y_max, cy)
+                x_min = min(x_min, cx)
+                x_max = max(x_max, cx)
+                for ny, nx in ((cy - 1, cx), (cy + 1, cx), (cy, cx - 1), (cy, cx + 1)):
+                    if 0 <= ny < h and 0 <= nx < w and mask_bool[ny, nx] and not visited[ny, nx]:
+                        visited[ny, nx] = True
+                        stack.append((ny, nx))
+            bboxes.append((x_min, y_min, x_max, y_max))
+    return bboxes
+
+
+def _label_from_bbox(*, class_id: int, bbox: tuple[int, int, int, int], h: int, w: int) -> dict[str, Any]:
+    x_min, y_min, x_max, y_max = bbox
+    cx = (x_min + x_max + 1) / 2.0 / w
+    cy = (y_min + y_max + 1) / 2.0 / h
+    bw = (x_max - x_min + 1) / w
+    bh = (y_max - y_min + 1) / h
+    return {"class_id": int(class_id), "cx": float(cx), "cy": float(cy), "w": float(bw), "h": float(bh)}
+
+
+def _mask_to_yolo_labels(
+    mask: Any,
+    *,
+    mask_format: str | None = None,
+    class_map: dict[str, Any] | None = None,
+    mask_class_id: int | None = None,
+    instances: bool = False,
+) -> list[dict[str, Any]]:
+    """Derive YOLO-style bbox labels from a mask image or array.
+
+    Supported patterns:
+    - color mask (RGB): each unique non-black color is treated as a class
+      - optional mask_class_map maps colors (\"r,g,b\" or \"#RRGGBB\") -> class_id
+    - instance mask (single-channel IDs): each non-zero ID is treated as an instance
+      - class_id comes from mask_class_id (fallback) or mask_class_map (id -> class_id)
+    - class-id mask (single-channel IDs): each non-zero value is treated as a class_id (or remapped via class_map)
+
+    When instances=True, connected components are split into multiple boxes (useful for binary masks).
+    """
+
+    class_map = class_map or {}
+    import numpy as np
+
+    mask_np = _as_numpy_mask(mask)
+
+    # RGB / RGBA color masks.
+    if mask_format == "color" or (mask_np.ndim == 3 and mask_np.shape[-1] in (3, 4)):
+        if mask_np.ndim != 3:
+            return []
+        rgb = mask_np[..., :3]
+        flat = rgb.reshape(-1, 3)
+        unique = np.unique(flat, axis=0)
+        colors = [tuple(c.tolist()) for c in unique]
+        colors = [c for c in colors if c != (0, 0, 0)]
+        mapping: dict[tuple[int, int, int], int] = {}
+        if class_map:
+            for k, v in class_map.items():
+                key = _parse_color_key(k)
+                if isinstance(key, tuple) and len(key) == 3:
+                    mapping[tuple(int(x) for x in key)] = int(v)
+        else:
+            for idx, color in enumerate(sorted(colors)):
+                mapping[color] = int(idx)
+
+        labels: list[dict[str, Any]] = []
+        h, w = mask_np.shape[:2]
+        for color, class_id in mapping.items():
+            mask_bool = np.all(rgb == np.array(color, dtype=rgb.dtype), axis=-1)
+            if instances:
+                for bbox in _connected_components(mask_bool):
+                    labels.append(_label_from_bbox(class_id=int(class_id), bbox=bbox, h=h, w=w))
+            else:
+                bbox = _bbox_from_mask(mask_bool)
+                if bbox is None:
+                    continue
+                labels.append(_label_from_bbox(class_id=int(class_id), bbox=bbox, h=h, w=w))
+        return labels
+
+    # Numeric masks: instance IDs or class IDs.
+    if mask_np.ndim == 3 and mask_np.shape[-1] == 1:
+        mask_np = mask_np[..., 0]
+    if mask_np.ndim != 2:
+        return []
+    mask_int = mask_np.astype(int)
+    unique = np.unique(mask_int)
+    ids = [int(v) for v in unique if int(v) != 0]
+    h, w = mask_int.shape[:2]
+
+    labels = []
+    fmt = (mask_format or "").lower()
+    is_instance_mask = fmt in ("instance", "instances")
+    fallback_class = int(mask_class_id) if mask_class_id is not None else 0
+    for mask_id in ids:
+        class_id = fallback_class
+        if class_map:
+            class_id = int(class_map.get(str(mask_id), class_map.get(mask_id, class_id)))
+        elif not is_instance_mask:
+            class_id = int(mask_id)
+        mask_bool = mask_int == int(mask_id)
+        if instances and not is_instance_mask:
+            for bbox in _connected_components(mask_bool):
+                labels.append(_label_from_bbox(class_id=int(class_id), bbox=bbox, h=h, w=w))
+            continue
+        bbox = _bbox_from_mask(mask_bool)
+        if bbox is None:
+            continue
+        labels.append(_label_from_bbox(class_id=int(class_id), bbox=bbox, h=h, w=w))
+    return labels
+
+
+def _derive_labels_from_mask(record: dict[str, Any]) -> list[dict[str, Any]]:
+    if record.get("mask_path") is None and record.get("mask") is None:
+        return []
+
+    import numpy as np
+
+    mask_value = record.get("mask") or record.get("mask_path")
+    instances = bool(record.get("mask_instances", False))
+    class_map = record.get("mask_class_map") or {}
+    mask_classes = record.get("mask_classes")
+    mask_format = record.get("mask_format")
+    mask_class_id = record.get("mask_class_id")
+
+    if isinstance(mask_value, (list, tuple)) and mask_value and isinstance(mask_value[0], (str, Path)):
+        labels: list[dict[str, Any]] = []
+        class_ids = list(mask_classes) if isinstance(mask_classes, (list, tuple)) else list(range(len(mask_value)))
+        for idx, mask_path in enumerate(mask_value):
+            mask_data = _load_mask_value(mask_path)
+            if mask_data is None:
+                continue
+            class_id = class_ids[idx] if idx < len(class_ids) else idx
+            mask_np = _as_numpy_mask(mask_data)
+            if mask_np.ndim == 3 and mask_np.shape[-1] in (3, 4):
+                mask_bool = np.any(mask_np[..., :3] != 0, axis=-1)
+            elif mask_np.ndim == 3 and mask_np.shape[-1] == 1:
+                mask_bool = mask_np[..., 0] != 0
+            else:
+                mask_bool = mask_np != 0
+            if mask_bool.ndim != 2:
+                continue
+            h, w = mask_bool.shape
+            if instances:
+                for bbox in _connected_components(mask_bool):
+                    labels.append(_label_from_bbox(class_id=int(class_id), bbox=bbox, h=h, w=w))
+            else:
+                bbox = _bbox_from_mask(mask_bool)
+                if bbox is None:
+                    continue
+                labels.append(_label_from_bbox(class_id=int(class_id), bbox=bbox, h=h, w=w))
+        return labels
+
+    mask_data = _load_mask_value(mask_value)
+    if mask_data is None:
+        return []
+    return _mask_to_yolo_labels(
+        mask_data,
+        mask_format=str(mask_format) if mask_format is not None else None,
+        class_map=class_map if isinstance(class_map, dict) else {},
+        mask_class_id=int(mask_class_id) if mask_class_id is not None else None,
+        instances=instances,
+    )
+
+
 def load_yolo_dataset(images_dir, labels_dir, *, dataset_root: Path | None = None):
     images_dir = Path(images_dir)
     labels_dir = Path(labels_dir)
@@ -156,6 +392,8 @@ def load_yolo_dataset(images_dir, labels_dir, *, dataset_root: Path | None = Non
                 labels.append(label)
         record = {"image": str(image_path), "labels": labels}
         record.update(_load_sidecar_metadata(meta_path, dataset_root))
+        if not record["labels"]:
+            record["labels"] = _derive_labels_from_mask(record)
         records.append(record)
     return records
 
@@ -169,10 +407,62 @@ def _pick_split(dataset_root: Path, split: str | None) -> str:
     return "train2017"
 
 
+def _resolve_dataset_json_layout(dataset_root: Path, split: str | None) -> tuple[Path, Path, str] | None:
+    """Resolve images/labels directories from a dataset.json descriptor (optional).
+
+    Some prepare tools write a dataset.json with absolute paths to avoid copying
+    large image trees. When present, prefer it as a hint for build_manifest().
+    """
+
+    descriptor = dataset_root / "dataset.json"
+    if not descriptor.exists():
+        return None
+    try:
+        data = json.loads(descriptor.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if not isinstance(data, dict):
+        return None
+
+    images_dir = data.get("images_dir")
+    labels_dir = data.get("labels_dir")
+    split_from_desc = data.get("split")
+    if not images_dir or not labels_dir:
+        return None
+
+    img = Path(images_dir)
+    lbl = Path(labels_dir)
+    if not img.is_absolute():
+        img = dataset_root / img
+    if not lbl.is_absolute():
+        lbl = dataset_root / lbl
+
+    effective_split = str(split_from_desc) if split_from_desc else None
+    if split:
+        effective_split = str(split)
+        img_candidate = img.parent / effective_split
+        lbl_candidate = lbl.parent / effective_split
+        if img_candidate.exists():
+            img = img_candidate
+        if lbl_candidate.exists():
+            lbl = lbl_candidate
+    if effective_split is None:
+        # Best-effort: infer from labels dir name.
+        effective_split = lbl.name
+
+    return img, lbl, effective_split
+
+
 def build_manifest(dataset_root, *, split: str | None = None):
     dataset_root = Path(dataset_root)
-    split = _pick_split(dataset_root, split)
-    images_dir = dataset_root / "images" / split
-    labels_dir = dataset_root / "labels" / split
+    resolved = _resolve_dataset_json_layout(dataset_root, split)
+    if resolved is not None:
+        images_dir, labels_dir, split_effective = resolved
+        records = load_yolo_dataset(images_dir, labels_dir, dataset_root=dataset_root)
+        return {"images": records, "split": split_effective}
+
+    split_effective = _pick_split(dataset_root, split)
+    images_dir = dataset_root / "images" / split_effective
+    labels_dir = dataset_root / "labels" / split_effective
     records = load_yolo_dataset(images_dir, labels_dir, dataset_root=dataset_root)
-    return {"images": records, "split": split}
+    return {"images": records, "split": split_effective}

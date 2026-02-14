@@ -23,12 +23,27 @@ python3 tools/validate_predictions.py /path/to/predictions.json --strict
 python3 tools/eval_suite.py --predictions /path/to/predictions.json --dataset /path/to/coco-yolo
 ```
 
-## Build (stub only)
+## Recommended workflow
+
+1) Start with the stub to validate your end-to-end I/O contract (C++ → `predictions.json` → Python validators).
+2) Implement real inference in ONNXRuntime or TensorRT while keeping the JSON output stable.
+3) Use YOLOZU’s evaluator/suite to compare backends apples-to-apples.
+
+Note: the stub intentionally emits **empty detections**, so COCO mAP will be ~0. It is only a contract check.
+For a “sanity mAP” run without any inference backend, use:
+
+```bash
+yolozu export --backend labels --dataset /path/to/coco-yolo --output /tmp/predictions_labels.json --force
+python3 tools/eval_suite.py --predictions /tmp/predictions_labels.json --dataset /path/to/coco-yolo
+```
+
+## Build (stub)
 
 ```bash
 cmake -S . -B build
 cmake --build build -j
 ./build/yolozu_infer_stub --image /abs/path.jpg --output /tmp/predictions.json
+python3 tools/validate_predictions.py /tmp/predictions.json --strict
 ```
 
 ## Build (ONNXRuntime)

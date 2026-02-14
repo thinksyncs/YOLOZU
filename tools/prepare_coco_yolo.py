@@ -91,9 +91,9 @@ def main(argv=None):
         json.dumps(
             {
                 "split": split,
-                "images_dir": str(images_out if args.copy_images else images_src),
-                "labels_dir": str(labels_out),
-                "instances_json": str(instances_path),
+                "images_dir": str((images_out if args.copy_images else images_src).resolve()),
+                "labels_dir": str(labels_out.resolve()),
+                "instances_json": str(instances_path.resolve()),
                 "copied_images": bool(args.copy_images),
             },
             indent=2,
@@ -106,4 +106,3 @@ def main(argv=None):
 
 if __name__ == "__main__":
     main()
-

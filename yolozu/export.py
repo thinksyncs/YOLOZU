@@ -119,6 +119,94 @@ def export_dummy_predictions(
     return payload, meta["run"]
 
 
+def export_labels_predictions(
+    *,
+    dataset_root: str | Path,
+    split: str | None = None,
+    max_images: int | None = None,
+    score: float = 1.0,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Export predictions from dataset labels (perfect predictions).
+
+    This is useful for smoke-testing the evaluation pipeline without requiring
+    an inference backend.
+    """
+
+    from yolozu.dataset import build_manifest
+
+    dataset_root = Path(dataset_root)
+    if not dataset_root.exists():
+        raise FileNotFoundError(f"dataset root not found: {dataset_root}")
+    if not (dataset_root / "images").exists():
+        raise FileNotFoundError(f"dataset root missing images/: {dataset_root}")
+    if not (dataset_root / "labels").exists():
+        raise FileNotFoundError(f"dataset root missing labels/: {dataset_root}")
+    manifest = build_manifest(dataset_root, split=split)
+    records = list(manifest.get("images") or [])
+    if max_images is not None:
+        records = records[: max(0, int(max_images))]
+
+    preds: list[dict[str, Any]] = []
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        image = record.get("image")
+        if not isinstance(image, str) or not image:
+            continue
+        labels = record.get("labels", [])
+        detections = []
+        if isinstance(labels, list):
+            for lbl in labels:
+                if not isinstance(lbl, dict):
+                    continue
+                try:
+                    class_id = int(lbl.get("class_id", 0))
+                except Exception:
+                    class_id = 0
+                bbox = lbl.get("bbox")
+                if not isinstance(bbox, dict):
+                    bbox = {
+                        "cx": lbl.get("cx"),
+                        "cy": lbl.get("cy"),
+                        "w": lbl.get("w"),
+                        "h": lbl.get("h"),
+                    }
+                try:
+                    bbox_out = {
+                        "cx": float(bbox.get("cx", 0.5)),
+                        "cy": float(bbox.get("cy", 0.5)),
+                        "w": float(bbox.get("w", 0.0)),
+                        "h": float(bbox.get("h", 0.0)),
+                    }
+                except Exception:
+                    continue
+                detections.append({"class_id": int(class_id), "score": float(score), "bbox": bbox_out})
+
+        preds.append({"image": image, "detections": detections})
+
+    config_fingerprint = {
+        "backend": "labels",
+        "dataset": str(dataset_root),
+        "split": split,
+        "max_images": max_images,
+        "score": float(score),
+    }
+
+    meta = {
+        "schema_version": 1,
+        "timestamp": _now_utc(),
+        "generator": "yolozu export --backend labels",
+        "images": int(len(preds)),
+        "run": {
+            "config_fingerprint": config_fingerprint,
+            "config_hash": _sha256_json(config_fingerprint),
+        },
+    }
+
+    payload = {"schema_version": 1, "predictions": preds, "meta": meta}
+    return payload, meta["run"]
+
+
 def write_predictions_json(*, output: str | Path, payload: dict[str, Any], force: bool = False) -> Path:
     out_path = Path(output)
     if not out_path.is_absolute():

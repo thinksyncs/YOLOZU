@@ -1,11 +1,18 @@
-# TODO (PyTorch Model + TensorRT + Metrics/Loss + Datasets)
+# Roadmap notes (PyTorch Model + TensorRT + Metrics/Loss + Datasets)
+
+This document is kept for **historical context**. Active work should be tracked as Beads issues:
+
+```bash
+bd list
+bd search "<keyword>"
+```
 
 Spec reference: `rt_detr_6dof_geom_mim_spec_en_v0_4.md`
 
 ## YOLO26 competition tooling
 
 For the Apache-2.0-only toolchain to compete against YOLO26 (COCO detect, e2e mAP, size buckets),
-track tasks in `todo_yolo26_competition.md`.
+track tasks in `docs/roadmaps/yolo26_competition.md` and Beads issues.
 
 ## Implementation status (at a glance)
 

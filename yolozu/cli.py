@@ -80,23 +80,36 @@ def _cmd_doctor(output: str) -> int:
 
 
 def _cmd_export(args: argparse.Namespace) -> int:
-    from yolozu.export import DEFAULT_PREDICTIONS_PATH, export_dummy_predictions, write_predictions_json
+    from yolozu.export import (
+        DEFAULT_PREDICTIONS_PATH,
+        export_dummy_predictions,
+        export_labels_predictions,
+        write_predictions_json,
+    )
 
     backend = str(getattr(args, "backend", "dummy"))
-    if backend != "dummy":
-        raise SystemExit("only --backend dummy is currently supported in pip installs")
 
     dataset = str(args.dataset)
     if not dataset:
         raise SystemExit("--dataset is required")
 
     try:
-        payload, _run = export_dummy_predictions(
-            dataset_root=dataset,
-            split=str(args.split) if args.split else None,
-            max_images=int(args.max_images) if args.max_images is not None else None,
-            score=float(args.score),
-        )
+        if backend == "dummy":
+            payload, _run = export_dummy_predictions(
+                dataset_root=dataset,
+                split=str(args.split) if args.split else None,
+                max_images=int(args.max_images) if args.max_images is not None else None,
+                score=float(args.score),
+            )
+        elif backend == "labels":
+            payload, _run = export_labels_predictions(
+                dataset_root=dataset,
+                split=str(args.split) if args.split else None,
+                max_images=int(args.max_images) if args.max_images is not None else None,
+                score=float(args.score),
+            )
+        else:
+            raise SystemExit(f"unsupported --backend: {backend}")
     except FileNotFoundError as exc:
         raise SystemExit(str(exc)) from exc
 
@@ -136,11 +149,16 @@ def main(argv: list[str] | None = None) -> int:
     doctor.add_argument("--output", default="reports/doctor.json", help="Output JSON path (use - for stdout).")
 
     export = sub.add_parser("export", help="Export predictions.json artifacts.")
-    export.add_argument("--backend", choices=("dummy",), default="dummy", help="Inference backend (default: dummy).")
+    export.add_argument(
+        "--backend",
+        choices=("dummy", "labels"),
+        default="dummy",
+        help="Export backend (dummy=1 det/image; labels=use dataset labels).",
+    )
     export.add_argument("--dataset", default="data/coco128", help="YOLO-format dataset root.")
     export.add_argument("--split", default=None, help="Dataset split under images/ and labels/ (default: auto).")
     export.add_argument("--max-images", type=int, default=50, help="Optional cap for number of images.")
-    export.add_argument("--score", type=float, default=0.9, help="Dummy detection score (default: 0.9).")
+    export.add_argument("--score", type=float, default=0.9, help="Score to assign to exported detections (default: 0.9).")
     export.add_argument(
         "--output",
         default=None,
@@ -158,10 +176,21 @@ def main(argv: list[str] | None = None) -> int:
     copy.add_argument("--output", required=True, help="Output file path.")
     copy.add_argument("--force", action="store_true", help="Overwrite output if it exists.")
 
-    train = sub.add_parser("train", help="Run training using a YAML/JSON config.")
+    repo_root = Path(__file__).resolve().parents[1]
+    dev_enabled = (repo_root / "rtdetr_pose" / "tools" / "train_minimal.py").exists() and (
+        repo_root / "tools" / "run_scenarios.py"
+    ).exists()
+
+    train_help = "(dev) Run training using a YAML/JSON config (source checkout only)."
+    test_help = "(dev) Run scenario tests using a YAML/JSON config (source checkout only)."
+    if not dev_enabled:
+        train_help = argparse.SUPPRESS
+        test_help = argparse.SUPPRESS
+
+    train = sub.add_parser("train", help=train_help)
     train.add_argument("config", type=str, help="Path to train_setting.yaml")
 
-    test = sub.add_parser("test", help="Run scenario tests using a YAML/JSON config.")
+    test = sub.add_parser("test", help=test_help)
     test.add_argument("config", type=str, help="Path to test_setting.yaml")
 
     demo = sub.add_parser("demo", help="Run small self-contained demos (CPU-friendly).")
