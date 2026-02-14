@@ -27,11 +27,18 @@ python3 -m unittest -q
 
 3) Push to `main`.
 
-4) Create a GitHub Release (tag `vX.Y.Z`).
-   - This triggers `.github/workflows/publish.yml` which builds and publishes to PyPI.
+4) Create an annotated git tag and push it:
+
+```bash
+git tag -a vX.Y.Z -m "vX.Y.Z"
+git push origin vX.Y.Z
+```
+
+This triggers `.github/workflows/publish.yml` which builds and publishes to PyPI.
+
+5) Optional: create a GitHub Release for human-friendly notes (does not affect publishing).
 
 ## Notes
 
 - You cannot upload the same version twice to PyPI. Always bump `__version__` before releasing.
 - If you prefer manual publishing, use `python -m build` + `python -m twine upload dist/*` with a PyPI API token.
-
