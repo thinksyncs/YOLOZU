@@ -73,10 +73,19 @@ def _cmd_test(config_path: Path) -> int:
     return 0
 
 
+def _cmd_doctor(output: str) -> int:
+    from yolozu.doctor import write_doctor_report
+
+    return int(write_doctor_report(output=output))
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="yolozu")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
+
+    doctor = sub.add_parser("doctor", help="Print environment diagnostics as JSON.")
+    doctor.add_argument("--output", default="reports/doctor.json", help="Output JSON path (use - for stdout).")
 
     train = sub.add_parser("train", help="Run training using a YAML/JSON config.")
     train.add_argument("config", type=str, help="Path to train_setting.yaml")
@@ -124,6 +133,8 @@ def main(argv: list[str] | None = None) -> int:
         if not config_path.exists():
             raise SystemExit(f"config not found: {config_path}")
         return _cmd_test(config_path)
+    if args.command == "doctor":
+        return _cmd_doctor(str(args.output))
     if args.command == "demo":
         if args.demo_command == "instance-seg":
             from yolozu.demos.instance_seg import run_instance_seg_demo

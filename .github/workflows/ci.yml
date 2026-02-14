@@ -20,6 +20,11 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements-dev.txt
 
+      - name: Packaging smoke (pip install + yolozu doctor)
+        run: |
+          python -m pip install .
+          yolozu doctor --output -
+
       - name: License policy
         run: |
           python tools/check_license_policy.py
@@ -36,4 +41,3 @@ jobs:
         run: |
           bash tools/fetch_coco128.sh
           python tools/run_scenarios.py --adapter dummy --max-images 10
-
