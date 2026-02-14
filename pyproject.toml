@@ -10,10 +10,10 @@ readme = "README.md"
 requires-python = ">=3.9"
 license = { file = "LICENSE" }
 authors = [{ name = "YOLOZU contributors" }]
-dependencies = ["numpy", "Pillow", "PyYAML"]
+dependencies = ["PyYAML>=6.0", "numpy>=1.24", "Pillow>=10.0"]
 
 [project.optional-dependencies]
-demo = ["torch"]
+demo = ["torch>=2.1"]
 
 [project.scripts]
 yolozu = "yolozu.cli:main"
