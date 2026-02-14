@@ -197,10 +197,10 @@ python3 -m unittest -q
 Run flows with YAML settings:
 
 ```bash
- yolozu train train_setting.yaml
- yolozu test test_setting.yaml
+yolozu train train_setting.yaml
+yolozu test test_setting.yaml
 
- # Equivalent:
+# Equivalent:
 python -m yolozu train train_setting.yaml
 python -m yolozu test test_setting.yaml
 ```
