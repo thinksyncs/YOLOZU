@@ -202,3 +202,7 @@ This repo includes a tiny “it runs end-to-end” smoke command that:
 ```bash
 python3 tools/run_yolo26n_smoke_rtdetr_pose.py
 ```
+
+Multi-bucket variant (n/s/m/l/x) + bucket configs:
+- `python3 tools/run_yolo26_smoke_rtdetr_pose.py --buckets n,s,m,l,x`
+- `docs/yolo26_rtdetr_pose_recipes.md`

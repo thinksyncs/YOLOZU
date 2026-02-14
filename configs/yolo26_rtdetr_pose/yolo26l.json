@@ -1,0 +1,35 @@
+{
+  "dataset": {
+    "root": "../data/coco128",
+    "split": "train2017",
+    "format": "yolo"
+  },
+  "model": {
+    "num_classes": 80,
+    "hidden_dim": 512,
+    "num_queries": 300,
+    "use_uncertainty": false,
+    "backbone_name": "cspresnet",
+    "stem_channels": 80,
+    "backbone_channels": [160, 320, 640],
+    "stage_blocks": [3, 4, 6],
+    "use_sppf": true,
+    "use_level_embed": true,
+    "num_encoder_layers": 3,
+    "num_decoder_layers": 6,
+    "nhead": 8,
+    "encoder_dim_feedforward": null,
+    "decoder_dim_feedforward": null,
+    "backbone_kwargs": {}
+  },
+  "loss": {
+    "name": "default",
+    "task_aligner": "none",
+    "weights": {}
+  },
+  "train": {
+    "batch_size": 2,
+    "lr": 0.0001,
+    "epochs": 1
+  }
+}
