@@ -1,0 +1,78 @@
+{
+  "archive_dir": "/root/YOLOZU/baselines/yolo26_runs/2026-02-02T16-02-34Z",
+  "artifacts": {
+    "eval_suite_json": "/root/YOLOZU/baselines/yolo26_runs/2026-02-02T16-02-34Z/eval_suite.json"
+  },
+  "bucket_files": {
+    "yolo26l": "/root/YOLOZU/reports/pred_yolo26l.json",
+    "yolo26m": "/root/YOLOZU/reports/pred_yolo26m.json",
+    "yolo26n": "/root/YOLOZU/reports/pred_yolo26n.json",
+    "yolo26s": "/root/YOLOZU/reports/pred_yolo26s.json",
+    "yolo26x": "/root/YOLOZU/reports/pred_yolo26x.json"
+  },
+  "commands": [
+    "python3 tools/validate_predictions.py /root/YOLOZU/reports/pred_yolo26n.json",
+    "python3 tools/validate_predictions.py /root/YOLOZU/reports/pred_yolo26s.json",
+    "python3 tools/validate_predictions.py /root/YOLOZU/reports/pred_yolo26m.json",
+    "python3 tools/validate_predictions.py /root/YOLOZU/reports/pred_yolo26l.json",
+    "python3 tools/validate_predictions.py /root/YOLOZU/reports/pred_yolo26x.json",
+    "python3 tools/eval_suite.py --dataset data/coco2017_yolo --predictions-glob reports/pred_yolo26*.json --output reports/eval_suite.json --protocol yolo26"
+  ],
+  "dataset": "data/coco2017_yolo",
+  "dry_run": false,
+  "git_head": "6fb2e2597125f00325091aa97644b062db744dc7",
+  "notes": "Ultralytics YOLO26 pretrained weights (yolo26n/s/m/l/x). imgsz=640 conf=0.001 max_det=300 batch=1 end2end=True device=cuda (RTX A4500). ultralytics=8.4.9 torch=2.4.1+cu124.",
+  "notes_text": null,
+  "output_suite": "reports/eval_suite.json",
+  "platform": {
+    "machine": "x86_64",
+    "processor": "x86_64",
+    "release": "5.15.0-91-generic",
+    "system": "Linux",
+    "version": "#101-Ubuntu SMP Tue Nov 14 13:30:08 UTC 2023"
+  },
+  "predictions": [
+    {
+      "bucket": "yolo26n",
+      "entries": 5000,
+      "path": "/root/YOLOZU/reports/pred_yolo26n.json",
+      "sha256": "110f14279c0f1aac3e3819966fc1f9513d6053419750126fc2c83add4c913ee4",
+      "warnings": []
+    },
+    {
+      "bucket": "yolo26s",
+      "entries": 5000,
+      "path": "/root/YOLOZU/reports/pred_yolo26s.json",
+      "sha256": "be020bbcd282545c8d038568435b499c52ed75cae97192ba227bff78912bb700",
+      "warnings": []
+    },
+    {
+      "bucket": "yolo26m",
+      "entries": 5000,
+      "path": "/root/YOLOZU/reports/pred_yolo26m.json",
+      "sha256": "b7cf0f2db89283fa44d88d9c60b519f70798b4db7225c056fa12ae0ba226bb35",
+      "warnings": []
+    },
+    {
+      "bucket": "yolo26l",
+      "entries": 5000,
+      "path": "/root/YOLOZU/reports/pred_yolo26l.json",
+      "sha256": "7a19ce1bbb2f08c794ecfe179e23d70e7f9ecc1929d1bdb5f665ea16591593a7",
+      "warnings": []
+    },
+    {
+      "bucket": "yolo26x",
+      "entries": 5000,
+      "path": "/root/YOLOZU/reports/pred_yolo26x.json",
+      "sha256": "a224c991a258bf9465e4cb7f322683dc295c0acd851eb498581a24563ce31039",
+      "warnings": []
+    }
+  ],
+  "predictions_glob": "reports/pred_yolo26*.json",
+  "protocol_id": "yolo26",
+  "python": "3.11.10 (main, Sep  7 2024, 18:35:41) [GCC 11.4.0]",
+  "run_id": "2026-02-02T16-02-34Z",
+  "split": null,
+  "strict": false,
+  "timestamp": "2026-02-02T16:02:34Z"
+}

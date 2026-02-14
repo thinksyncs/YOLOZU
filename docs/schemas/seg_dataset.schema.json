@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "YOLOZU Segmentation Dataset Descriptor",
+  "description": "Dataset descriptor produced by tools/prepare_*_seg.py scripts. Intended for semantic segmentation evaluation tools.",
+  "type": "object",
+  "required": ["dataset", "task", "split", "mode", "path_type", "ignore_index", "samples"],
+  "properties": {
+    "dataset": { "type": "string" },
+    "task": { "type": "string", "const": "semantic_segmentation" },
+    "split": { "type": "string" },
+    "mode": { "type": "string", "enum": ["manifest", "symlink", "copy"] },
+    "path_type": { "type": "string", "enum": ["absolute", "relative"] },
+    "ignore_index": { "type": "integer" },
+    "classes": {
+      "description": "Optional class names list. When present, its length defines num_classes.",
+      "type": ["array", "null"],
+      "items": { "type": "string" }
+    },
+    "samples": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/sample" }
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "sample": {
+      "type": "object",
+      "required": ["id", "image"],
+      "properties": {
+        "id": { "type": "string" },
+        "image": { "type": "string" },
+        "mask": { "type": ["string", "null"] }
+      },
+      "additionalProperties": true
+    }
+  }
+}
+

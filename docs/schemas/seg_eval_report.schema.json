@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "YOLOZU Segmentation Eval Report",
+  "description": "Report payload emitted by tools/eval_segmentation.py.",
+  "type": "object",
+  "required": ["schema_version", "timestamp", "losses", "metrics", "meta"],
+  "properties": {
+    "schema_version": { "type": "integer", "minimum": 1 },
+    "timestamp": { "type": "string" },
+    "losses": { "type": "object", "additionalProperties": true },
+    "metrics": {
+      "type": "object",
+      "required": ["miou", "pixel_accuracy", "classes"],
+      "properties": {
+        "miou": { "type": ["number", "null"] },
+        "pixel_accuracy": { "type": ["number", "null"] },
+        "classes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/class_metrics" }
+        }
+      },
+      "additionalProperties": true
+    },
+    "meta": { "type": "object", "additionalProperties": true }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "class_metrics": {
+      "type": "object",
+      "required": ["id", "name", "iou", "tp", "fp", "fn", "gt_pixels", "pred_pixels", "union"],
+      "properties": {
+        "id": { "type": "integer", "minimum": 0 },
+        "name": { "type": "string" },
+        "iou": { "type": ["number", "null"] },
+        "tp": { "type": "integer", "minimum": 0 },
+        "fp": { "type": "integer", "minimum": 0 },
+        "fn": { "type": "integer", "minimum": 0 },
+        "gt_pixels": { "type": "integer", "minimum": 0 },
+        "pred_pixels": { "type": "integer", "minimum": 0 },
+        "union": { "type": "integer", "minimum": 0 },
+        "included_in_miou": { "type": "boolean" }
+      },
+      "additionalProperties": true
+    }
+  }
+}
+

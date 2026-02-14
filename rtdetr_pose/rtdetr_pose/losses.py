@@ -3,12 +3,13 @@ try:
     from torch import nn
     from torch.nn import functional as F
 except ImportError:  # pragma: no cover
+    from types import SimpleNamespace
+
     torch = None
-    nn = None
-    F = None
+    nn = SimpleNamespace(Module=object)
+    F = SimpleNamespace()
 
 from .model import rot6d_to_matrix
-from .geometry import corrected_intrinsics, recover_translation
 
 
 def _first_present(mapping, keys):
@@ -91,9 +92,63 @@ def upright_loss(rot6d_pred, roll_range, pitch_range):
     return (roll_penalty + pitch_penalty).mean()
 
 
+def mim_reconstruction_loss(recon_feat, teacher_feat, mask=None):
+    """MIM reconstruction loss with optional masking.
+    
+    Args:
+        recon_feat: (B, C, H, W) reconstructed features
+        teacher_feat: (B, C, H, W) teacher features (geometry-derived)
+        mask: (H, W) or (B, H, W) optional mask (True = compute loss on these locations)
+        
+    Returns:
+        loss: scalar L1 loss between reconstructed and teacher features
+    """
+    if torch is None:
+        raise RuntimeError("torch is required for mim_reconstruction_loss")
+    
+    if teacher_feat is None:
+        # No teacher available, return zero loss
+        return recon_feat.sum() * 0.0
+    
+    # L1 loss
+    diff = torch.abs(recon_feat - teacher_feat)
+    
+    if mask is not None:
+        # Apply mask: compute loss only on masked locations
+        mask_expanded = mask.unsqueeze(0).unsqueeze(0) if mask.ndim == 2 else mask.unsqueeze(1)
+        mask_expanded = mask_expanded.expand_as(diff).to(dtype=torch.bool)
+        
+        if not mask_expanded.any():
+            return diff.sum() * 0.0
+        
+        return diff[mask_expanded].mean()
+    
+    return diff.mean()
+
+
+def entropy_loss(logits):
+    """Entropy loss for geometric consistency (lower entropy = more confident).
+    
+    Args:
+        logits: (B, N, C) classification logits
+        
+    Returns:
+        loss: scalar entropy loss
+    """
+    if torch is None or F is None:
+        raise RuntimeError("torch is required for entropy_loss")
+    
+    probs = F.softmax(logits, dim=-1)
+    log_probs = torch.log(torch.clamp(probs, min=1e-12))
+    entropy = -(probs * log_probs).sum(dim=-1).mean()
+    return entropy
+
+
 class Losses(nn.Module):
     def __init__(self, weights=None, *, task_aligner: str = "none"):
         super().__init__()
+        if torch is None:  # pragma: no cover
+            raise RuntimeError("torch is required for Losses")
         self.task_aligner = str(task_aligner)
         self.weights = {
             "cls": 1.0,
@@ -106,6 +161,8 @@ class Losses(nn.Module):
             "plane": 0.1,
             "upright": 0.1,
             "t": 0.1,
+            "mim": 0.1,
+            "entropy": 0.01,
         }
         if weights:
             self.weights.update(weights)
@@ -119,6 +176,8 @@ class Losses(nn.Module):
 
         valid = _valid_mask_from_targets(targets)
         z_mask = targets.get("z_mask")
+        d_obj_mask = targets.get("D_obj_mask")
+        m_mask = targets.get("M_mask")
         rot_mask = targets.get("rot_mask")
         off_mask = targets.get("off_mask")
 
@@ -161,6 +220,12 @@ class Losses(nn.Module):
             if z_mask is not None:
                 z_mask = z_mask.to(device=log_z_pred.device, dtype=torch.bool)
                 mask_for_z = z_mask if mask_for_z is None else (mask_for_z & z_mask)
+            if d_obj_mask is not None:
+                d_obj_mask = d_obj_mask.to(device=log_z_pred.device, dtype=torch.bool)
+                mask_for_z = d_obj_mask if mask_for_z is None else (mask_for_z & d_obj_mask)
+            if m_mask is not None:
+                m_mask = m_mask.to(device=log_z_pred.device, dtype=torch.bool)
+                mask_for_z = m_mask if mask_for_z is None else (mask_for_z & m_mask)
 
             if valid is None:
                 if mask_for_z is None:
@@ -364,6 +429,24 @@ class Losses(nn.Module):
             loss_upright = upright_loss(rot_pred, upright["roll"], upright["pitch"])
             losses["loss_upright"] = loss_upright
             total = total + self.weights["upright"] * loss_upright
+
+        # Masked reconstruction loss (MIM)
+        mim_outputs = outputs.get("mim")
+        if mim_outputs is not None:
+            recon_feat = mim_outputs.get("recon_feat")
+            teacher_feat = mim_outputs.get("teacher_feat")
+            feature_mask = mim_outputs.get("mask")
+            
+            if recon_feat is not None and teacher_feat is not None:
+                loss_mim = mim_reconstruction_loss(recon_feat, teacher_feat, mask=feature_mask)
+                losses["loss_mim"] = loss_mim
+                total = total + self.weights["mim"] * loss_mim
+            
+            # Entropy loss for geometric consistency
+            entropy = mim_outputs.get("entropy")
+            if entropy is not None:
+                losses["loss_entropy"] = entropy
+                total = total + self.weights["entropy"] * entropy
 
         losses["loss"] = total
         return losses

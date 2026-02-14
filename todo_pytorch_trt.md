@@ -26,7 +26,7 @@ track tasks in `todo_yolo26_competition.md`.
 - [x] Positional embedding: 2D sin/cos
 - [ ] Full RT-DETR backbone + neck (parity with spec / real RT-DETR)
 - [ ] RT-DETR hybrid encoder / multi-scale fusion (if required for parity)
-- [ ] RT-DETR training-time tricks (e.g., denoising queries) if targeting published behavior
+- [x] RT-DETR training-time tricks (e.g., denoising queries) if targeting published behavior
 
 ### Heads / geometry
 - [x] HeadFast outputs (cls/bbox/log_z/rot6D + optional uncertainty)
@@ -71,13 +71,14 @@ Current priorities (auto)
 - [x] Minimal trainer entrypoint (1 epoch over coco128; logs loss scalars)
 - [x] Trainer prints GT availability summary for debugging
 - [x] Matching (Hungarian) + staged cost terms (start with cls/box, then add z/rot)
-- [ ] Checkpointing + config-driven runs (resume/repro)
+- [x] Checkpointing + config-driven runs (resume/repro)
+- [x] Run record metadata in metrics/checkpoints (git/versions/argv)
 - [x] Loss/metric integration test: one training step + backward + no NaNs
 
 Notes (2026-01-21)
 - Training scaffold can now consume full GT availability for mask/depth via `gt_M_mask`/`gt_D_obj_mask` (propagated through Hungarian alignment as `M_mask`/`D_obj_mask`).
 - Optional: when `t_gt` is missing, `tools/train_minimal.py` can derive `z` (and `t` if `K_gt` exists) from `D_obj` at bbox center via `--z-from-dobj` (arrays inline by default; paths require `--load-aux`).
-- [ ] Inference-only utilities (later): decoding + constraints gate + template verify
+- [x] Inference-only utilities (later): decoding + constraints gate + template verify
 
 ## Stage 0) Repo + environment alignment
 - [x] Decide codebase location (new repo under `/Users/akira/YOLOZU` or existing).
@@ -138,16 +139,16 @@ Start next (着手)
 - [x] Wire metric aggregation/mAP/AR with prediction JSON (COCOeval).
 
 ## Stage 4) Training pipeline (per spec §6, §10, §11)
-- [ ] Data augmentation + SIM jitter integration.
-- [ ] Hungarian matching with staged cost terms.
+- [x] Data augmentation + SIM jitter integration.
+- [x] Hungarian matching with staged cost terms.
 - [ ] MIM teacher + masking + loss schedule.
-- [ ] Staged training: offsets first, then GlobalKHead.
+- [x] Staged training: offsets first, then GlobalKHead.
 
 ## Stage 5) Inference + constraints (per spec §2, §8, §9)
 - [x] Translation recovery using corrected `K'` + offsets (utility-level).
-- [ ] Symmetry-aware template verification (Top-K only).
-- [ ] Constraints gating (depth prior, plane, upright) using `constraints.yaml`.
-- [ ] Low-FP gate via `score_tmp_sym < τ`.
+- [x] Symmetry-aware template verification (Top-K only).
+- [x] Constraints gating (depth prior, plane, upright) using `constraints.yaml`.
+- [x] Low-FP gate via `score_tmp_sym < τ`.
 
 ## Stage 6) TensorRT export + parity
 - [ ] Export to ONNX and build TensorRT engine.
@@ -155,10 +156,13 @@ Start next (着手)
 - [ ] Benchmark fps and latency vs target (>= 30 fps).
 
 ## Stage 7) Evaluation + scenario suite (per spec §6)
-- [ ] Scenario suite run (symmetry, tabletop, depth extremes, jitter).
-- [ ] Single report output: fps, mAP/Recall, depth error, pose error, rejection rate.
+- [x] Scenario suite run (symmetry, tabletop, depth extremes, jitter).
+- [x] Single report output: fps, mAP/Recall, depth error, pose error, rejection rate.
 - [ ] CI smoke run on tiny COCO subset.
 
 ## Stage 8) Documentation + handoff
-- [ ] Update spec/checklist with actual implementation references.
-- [ ] Document training/inference commands and export steps.
+- [x] Update spec/checklist with actual implementation references.
+  - Spec summary: `docs/yolozu_spec.md`
+  - TTT integration notes: `docs/ttt_integration_plan.md`
+  - CLI entrypoint: `tools/export_predictions.py` (`--ttt`, `--ttt-method`, `--ttt-log-out`)
+- [x] Document training/inference commands and export steps.

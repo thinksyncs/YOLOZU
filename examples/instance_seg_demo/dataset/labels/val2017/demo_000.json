@@ -1,0 +1,12 @@
+{
+  "mask_classes": [
+    0,
+    1,
+    2
+  ],
+  "mask_path": [
+    "masks/val2017/demo_000_car.png",
+    "masks/val2017/demo_000_person.png",
+    "masks/val2017/demo_000_sign.png"
+  ]
+}

@@ -10,6 +10,9 @@ from yolozu.scenario_suite import build_report, SCENARIOS
 class TestScenarioSuite(unittest.TestCase):
     def test_report_schema(self):
         report = build_report()
+        self.assertIn("schema_version", report)
+        self.assertIn("timestamp", report)
+        self.assertIn("summary", report)
         self.assertIn("scenarios", report)
         self.assertEqual(len(report["scenarios"]), len(SCENARIOS))
         for entry in report["scenarios"]:

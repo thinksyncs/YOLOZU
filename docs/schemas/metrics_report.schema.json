@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "YOLOZU Metrics Report",
+  "description": "Stable report schema emitted by yolozu.metrics_report.build_report().",
+  "type": "object",
+  "required": ["schema_version", "timestamp", "losses", "metrics", "meta"],
+  "properties": {
+    "schema_version": { "type": "integer", "minimum": 1 },
+    "timestamp": { "type": "string" },
+    "losses": { "type": "object", "additionalProperties": true },
+    "metrics": { "type": "object", "additionalProperties": true },
+    "meta": { "type": "object", "additionalProperties": true }
+  },
+  "additionalProperties": true
+}
+

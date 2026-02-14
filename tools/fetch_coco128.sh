@@ -12,4 +12,9 @@ if [[ -d "$OUT_DIR/images/train2017" && -d "$OUT_DIR/labels/train2017" ]]; then
   exit 0
 fi
 
-python3 "$REPO_ROOT/tools/fetch_coco128_official.py" --out "$OUT_DIR"
+INSECURE_FLAG=""
+if [[ "${YOLOZU_INSECURE_SSL:-}" == "1" || "${CI:-}" == "true" ]]; then
+  INSECURE_FLAG="--insecure"
+fi
+
+python3 "$REPO_ROOT/tools/fetch_coco128_official.py" --out "$OUT_DIR" $INSECURE_FLAG

@@ -1,0 +1,14 @@
+{
+  "output": "reports/benchmark_latency.json",
+  "history": "reports/benchmark_latency.jsonl",
+  "notes": "target HW (fill in model/engine + provider)",
+  "engine_template": "/abs/path/engines/{bucket}.plan",
+  "model_template": "/abs/path/models/{bucket}.onnx",
+  "buckets": [
+    {"name": "yolo26n", "metrics_path": "reports/latency_yolo26n.json"},
+    {"name": "yolo26s", "metrics_path": "reports/latency_yolo26s.json"},
+    {"name": "yolo26m", "metrics_path": "reports/latency_yolo26m.json"},
+    {"name": "yolo26l", "metrics_path": "reports/latency_yolo26l.json"},
+    {"name": "yolo26x", "metrics_path": "reports/latency_yolo26x.json"}
+  ]
+}

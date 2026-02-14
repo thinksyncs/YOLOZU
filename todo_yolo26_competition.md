@@ -25,7 +25,7 @@ Constraints:
 ### Predictions JSON interoperability
 - [x] Define/validate predictions schema: `tools/validate_predictions.py`.
 - [x] Normalize class ids (category_id -> class_id) via `labels/<split>/classes.json`: `tools/normalize_predictions.py`.
-- [ ] Support bbox formats commonly produced by inference engines (already supported in eval via `--bbox-format`).
+- [x] Support bbox formats commonly produced by inference engines (already supported in eval via `--bbox-format`).
 - [x] Add a “reference exporter” skeleton for ONNX Runtime / TensorRT (Apache-2.0 code only).
 
 ### Evaluation

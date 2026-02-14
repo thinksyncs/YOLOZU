@@ -11,6 +11,8 @@ except ImportError:  # pragma: no cover
     torch = None
 
 from rtdetr_pose.model import RTDETRPose
+from rtdetr_pose.config import ModelConfig
+from rtdetr_pose.factory import build_model
 
 
 class TestModelShapes(unittest.TestCase):
@@ -31,6 +33,25 @@ class TestModelShapes(unittest.TestCase):
         self.assertEqual(out["rot6d"].shape, (2, 10, 6))
         self.assertEqual(out["offsets"].shape, (2, 10, 2))
         self.assertEqual(out["k_delta"].shape, (2, 4))
+
+    @unittest.skipIf(torch is None, "torch not installed")
+    def test_factory_tiny_backbone(self):
+        cfg = ModelConfig(
+            num_classes=5,
+            hidden_dim=64,
+            num_queries=10,
+            num_decoder_layers=2,
+            nhead=4,
+            backbone_name="tiny_cnn",
+            stem_channels=16,
+            backbone_channels=[32, 64, 128],
+            stage_blocks=[1, 1, 1],
+        )
+        model = build_model(cfg)
+        x = torch.zeros(2, 3, 64, 64)
+        out = model(x)
+        self.assertEqual(out["logits"].shape, (2, 10, 5))
+        self.assertEqual(out["bbox"].shape, (2, 10, 4))
 
 
 if __name__ == "__main__":

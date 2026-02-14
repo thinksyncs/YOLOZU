@@ -1,0 +1,48 @@
+{
+  "meta": {
+    "note": "Synthetic demo predictions with one mask stored as RGB (for --allow-rgb-masks demo).",
+    "split": "val2017"
+  },
+  "predictions": [
+    {
+      "image": "demo_000.png",
+      "instances": [
+        {
+          "class_id": 0,
+          "mask": "masks/demo_000_car_rgb.png",
+          "score": 0.92
+        },
+        {
+          "class_id": 1,
+          "mask": "masks/demo_000_person.png",
+          "score": 0.88
+        },
+        {
+          "class_id": 2,
+          "mask": "masks/demo_000_sign.png",
+          "score": 0.85
+        }
+      ]
+    },
+    {
+      "image": "demo_001.png",
+      "instances": [
+        {
+          "class_id": 0,
+          "mask": "masks/demo_001_car.png",
+          "score": 0.95
+        },
+        {
+          "class_id": 1,
+          "mask": "masks/demo_001_person.png",
+          "score": 0.83
+        },
+        {
+          "class_id": 2,
+          "mask": "masks/demo_001_sign.png",
+          "score": 0.8
+        }
+      ]
+    }
+  ]
+}

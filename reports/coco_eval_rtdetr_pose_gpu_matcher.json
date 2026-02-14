@@ -1,0 +1,33 @@
+{
+  "bbox_format": "cxcywh_norm",
+  "dataset": "data/coco128",
+  "max_images": null,
+  "metrics": {
+    "ar100": 0.0008962818003913894,
+    "map50": 0.00210663702528821,
+    "map50_95": 0.0006220229914539002,
+    "map75": 2.404787258090426e-07
+  },
+  "predictions": "reports/pred_coco128_rtdetr_pose_gpu_matcher.json",
+  "protocol": null,
+  "protocol_id": null,
+  "report_schema_version": 1,
+  "split": "train2017",
+  "split_requested": "train2017",
+  "stats": [
+    0.0006220229914539002,
+    0.00210663702528821,
+    2.404787258090426e-07,
+    0.0,
+    1.2724327668312331e-05,
+    0.0008292883343107324,
+    0.0004801043705153294,
+    0.0008962818003913894,
+    0.0008962818003913894,
+    0.0,
+    6.79925208227095e-05,
+    0.00155341446923597
+  ],
+  "timestamp": "2026-02-02T15:20:44Z",
+  "warnings": []
+}

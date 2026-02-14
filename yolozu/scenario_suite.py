@@ -1,4 +1,5 @@
 import json
+import time
 
 
 SCENARIOS = [
@@ -26,12 +27,34 @@ def _scenario_metrics(index):
     }
 
 
+def _now_utc_iso():
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
 def build_report():
     scenarios = []
+    summary = {
+        "fps": 0.0,
+        "map": 0.0,
+        "recall": 0.0,
+        "depth_error": 0.0,
+        "pose_error": 0.0,
+        "rejection_rate": 0.0,
+    }
     for index, scenario in enumerate(SCENARIOS):
         metrics = _scenario_metrics(index)
         scenarios.append({"name": scenario["name"], "metrics": metrics})
-    return {"scenarios": scenarios}
+        for key in summary:
+            summary[key] += float(metrics.get(key, 0.0))
+    if scenarios:
+        for key in summary:
+            summary[key] = float(summary[key]) / float(len(scenarios))
+    return {
+        "schema_version": 1,
+        "timestamp": _now_utc_iso(),
+        "summary": summary,
+        "scenarios": scenarios,
+    }
 
 
 def main():

@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "YOLOZU COCO Eval Report",
+  "description": "Report payload emitted by tools/eval_coco.py (supports dry-run mode).",
+  "type": "object",
+  "required": ["timestamp", "dataset", "predictions", "bbox_format", "metrics", "stats", "dry_run", "counts", "warnings"],
+  "properties": {
+    "report_schema_version": { "type": "integer", "minimum": 1 },
+    "timestamp": { "type": "string" },
+    "protocol_id": { "type": ["string", "null"] },
+    "protocol": { "type": ["object", "null"], "additionalProperties": true },
+    "dataset": { "type": "string" },
+    "split": { "type": "string" },
+    "split_requested": { "type": ["string", "null"] },
+    "predictions": { "type": "string" },
+    "bbox_format": { "type": "string" },
+    "max_images": { "type": ["integer", "null"] },
+    "metrics": {
+      "type": "object",
+      "required": ["map50_95", "map50", "map75", "ar100"],
+      "properties": {
+        "map50_95": { "type": ["number", "null"] },
+        "map50": { "type": ["number", "null"] },
+        "map75": { "type": ["number", "null"] },
+        "ar100": { "type": ["number", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "stats": { "type": "array", "items": {} },
+    "dry_run": { "type": "boolean" },
+    "counts": {
+      "type": "object",
+      "required": ["images", "detections"],
+      "properties": {
+        "images": { "type": "integer", "minimum": 0 },
+        "detections": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": true
+    },
+    "warnings": { "type": "array", "items": { "type": "string" } }
+  },
+  "additionalProperties": true
+}
+

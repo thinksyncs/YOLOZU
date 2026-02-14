@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "YOLOZU Instance Segmentation Predictions JSON",
+  "description": "Predictions artifact for instance segmentation evaluation. Canonical form is {predictions:[...], meta:{...}}, but other simple shapes are supported.",
+  "oneOf": [
+    { "$ref": "#/$defs/predictions_wrapper" },
+    { "$ref": "#/$defs/predictions_list" },
+    { "$ref": "#/$defs/predictions_mapping" }
+  ],
+  "$defs": {
+    "instance": {
+      "type": "object",
+      "required": ["mask", "class_id"],
+      "properties": {
+        "mask": { "type": "string", "description": "Path to a binary PNG mask for this instance." },
+        "class_id": { "type": "integer", "minimum": 0 },
+        "score": { "type": "number" }
+      },
+      "additionalProperties": true
+    },
+    "prediction_entry": {
+      "type": "object",
+      "required": ["image", "instances"],
+      "properties": {
+        "image": { "type": "string" },
+        "instances": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/instance" }
+        }
+      },
+      "additionalProperties": true
+    },
+    "predictions_list": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/prediction_entry" }
+    },
+    "predictions_wrapper": {
+      "type": "object",
+      "required": ["predictions"],
+      "properties": {
+        "predictions": { "$ref": "#/$defs/predictions_list" },
+        "meta": { "type": "object", "additionalProperties": true }
+      },
+      "additionalProperties": true
+    },
+    "predictions_mapping": {
+      "type": "object",
+      "description": "Mapping format: { \"image.jpg\": {\"instances\":[...]}, \"image.jpg\":[...], ... }",
+      "additionalProperties": {
+        "oneOf": [
+          { "$ref": "#/$defs/prediction_entry" },
+          { "type": "array", "items": { "$ref": "#/$defs/instance" } }
+        ]
+      }
+    }
+  }
+}
+

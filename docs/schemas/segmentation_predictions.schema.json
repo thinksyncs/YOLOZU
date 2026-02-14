@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "YOLOZU Segmentation Predictions JSON",
+  "description": "Predictions artifact for semantic segmentation evaluation. Canonical form is {predictions:[...], meta:{...}}, but other simple shapes are supported.",
+  "oneOf": [
+    { "$ref": "#/$defs/predictions_wrapper" },
+    { "$ref": "#/$defs/predictions_list" },
+    { "$ref": "#/$defs/predictions_mapping" }
+  ],
+  "$defs": {
+    "prediction_entry": {
+      "type": "object",
+      "required": ["id", "mask"],
+      "properties": {
+        "id": { "type": "string" },
+        "mask": { "type": "string" },
+        "image": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "predictions_list": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/prediction_entry" }
+    },
+    "predictions_wrapper": {
+      "type": "object",
+      "required": ["predictions"],
+      "properties": {
+        "predictions": { "$ref": "#/$defs/predictions_list" },
+        "meta": { "type": "object", "additionalProperties": true }
+      },
+      "additionalProperties": true
+    },
+    "predictions_mapping": {
+      "type": "object",
+      "description": "Mapping format: { \"sample_id\": \"mask_path.png\", ... }",
+      "additionalProperties": { "type": "string" }
+    }
+  }
+}
+

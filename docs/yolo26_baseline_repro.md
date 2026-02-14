@@ -33,6 +33,33 @@ python3 tools/export_predictions_trt.py --dataset /path/to/coco-yolo --engine /p
 
 Both tools are **NMS-free** (they never run NMS), and they capture run metadata when `--wrap` is enabled.
 
+### TensorRT engine build (FP16 / INT8)
+
+If you need a reproducible TensorRT plan build, use the provided builder script:
+
+```bash
+python3 tools/build_trt_engine.py \
+  --onnx /path/to/model.onnx \
+  --engine /path/to/model.plan \
+  --input-name images \
+  --input-shape 1x3x640x640 \
+  --fp16
+```
+
+Optional INT8 (requires calibration data):
+
+```bash
+python3 tools/build_trt_engine.py \
+  --onnx /path/to/model.onnx \
+  --engine /path/to/model_int8.plan \
+  --input-name images \
+  --input-shape 1x3x640x640 \
+  --int8 \
+  --calib-dataset /path/to/coco-yolo \
+  --calib-max-images 128 \
+  --calib-cache reports/trt_calib.cache
+```
+
 ## 2) Evaluate + archive in this repo
 
 Run a pinned evaluation and archive the suite JSON plus run metadata (commands + machine info):

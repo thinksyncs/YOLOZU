@@ -1,0 +1,16 @@
+[tool.ruff]
+# Exclude common directories
+exclude = [
+    ".git",
+    ".ruff_cache",
+    "__pycache__",
+]
+
+[tool.ruff.lint]
+# Ignore E402 (module level import not at top of file) for tools and test files
+# These files intentionally modify sys.path before importing local modules
+[tool.ruff.lint.per-file-ignores]
+"tools/*.py" = ["E402"]
+"rtdetr_pose/tools/*.py" = ["E402"]
+"rtdetr_pose/tests/*.py" = ["E402"]
+"tests/*.py" = ["E402"]

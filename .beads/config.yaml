@@ -3,11 +3,8 @@
 # All settings can also be set via environment variables (BD_* prefix)
 # or overridden with command-line flags
 
-# Issue prefix for this repository (used by bd init)
-# If not set, bd init will auto-detect from directory name
-# Example: issue-prefix: "myproject" creates issues like "myproject-1", "myproject-2", etc.
-# issue-prefix: ""
-
+# Issue prefix for this repository (used for ID generation).
+issue-prefix: "YOLOZU"
 # Use no-db mode: load from JSONL, no SQLite, write back after each command
 # When true, bd will use .beads/issues.jsonl as the source of truth
 # instead of SQLite database
@@ -43,6 +40,10 @@
 # Can also use BEADS_SYNC_BRANCH env var for local override.
 # If not set, bd sync will require you to run 'bd config set sync.branch <branch>'.
 sync-branch: "beads-sync"
+repos:
+  primary: "."
+  additional:
+    - "/root/.beads-planning"
 
 # Multi-repo configuration (experimental - bd-307)
 # Allows hydrating from multiple repositories and routing writes to the correct JSONL

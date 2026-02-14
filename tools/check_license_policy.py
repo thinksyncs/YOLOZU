@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import re
-import sys
+import subprocess
 from pathlib import Path
 
 
@@ -70,7 +70,7 @@ def check_fetch_script_is_official() -> None:
 
 
 def check_repo_text_no_license_texts() -> None:
-    # Keep this cheap and targeted: scan tracked source/docs files for GPL/AGPL license blobs.
+    # Keep this cheap and targeted: scan *tracked* source/docs files for GPL/AGPL license blobs.
     # (We still allow 'GPL/AGPL' words in TODO/docs as policy statements.)
     allow_ext = {
         ".py",
@@ -85,9 +85,22 @@ def check_repo_text_no_license_texts() -> None:
         ".cfg",
         "",
     }
-    for path in REPO_ROOT.rglob("*"):
-        if not path.is_file():
-            continue
+
+    tracked_paths: list[Path] = []
+    try:
+        out = subprocess.check_output(["git", "ls-files"], cwd=REPO_ROOT)
+        for raw in out.decode("utf-8", errors="replace").splitlines():
+            rel = raw.strip()
+            if not rel:
+                continue
+            tracked_paths.append(REPO_ROOT / rel)
+    except Exception:
+        tracked_paths = []
+
+    # Fallback for non-git environments (best-effort): scan the working tree.
+    paths = tracked_paths if tracked_paths else [p for p in REPO_ROOT.rglob("*") if p.is_file()]
+
+    for path in paths:
         if ".git" in path.parts or ".beads" in path.parts:
             continue
         if path.name == "LICENSE":
@@ -96,6 +109,9 @@ def check_repo_text_no_license_texts() -> None:
             continue
         if path.suffix not in allow_ext:
             continue
+        if not path.exists() or not path.is_file():
+            continue
+
         txt = _read_text(path)
         for pat in DENY_FILE_TEXT_PATTERNS:
             if re.search(pat, txt, flags=re.IGNORECASE):

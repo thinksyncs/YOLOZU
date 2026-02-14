@@ -1,0 +1,1000 @@
+{
+  "manifest_version": 1,
+  "repo": {
+    "name": "YOLOZU",
+    "description": "Apache-2.0-only evaluation + tooling harness (CPU-first) for detection/pose workflows."
+  },
+  "contracts": {
+    "predictions_json": {
+      "summary": "YOLOZU predictions JSON (list of {image,detections} or {predictions:[...],meta:{...}}).",
+      "schema": "docs/schemas/predictions.schema.json",
+      "validator": "python3 tools/validate_predictions.py <path> [--strict]"
+    },
+    "metrics_report_json": {
+      "summary": "Stable metrics report schema emitted by yolozu.metrics_report.build_report().",
+      "schema": "docs/schemas/metrics_report.schema.json",
+      "builder": "yolozu/metrics_report.py"
+    },
+    "coco_eval_report_json": {
+      "summary": "Report payload emitted by tools/eval_coco.py (COCOeval or dry-run conversion).",
+      "schema": "docs/schemas/coco_eval_report.schema.json",
+      "producer": "python3 tools/eval_coco.py"
+    },
+    "eval_suite_report_json": {
+      "summary": "Report payload emitted by tools/eval_suite.py (suite over prediction JSONs).",
+      "schema": "docs/schemas/eval_suite_report.schema.json",
+      "producer": "python3 tools/eval_suite.py"
+    },
+    "seg_dataset_json": {
+      "summary": "Segmentation dataset.json descriptor produced by tools/prepare_*_seg.py.",
+      "schema": "docs/schemas/seg_dataset.schema.json"
+    },
+    "segmentation_predictions_json": {
+      "summary": "Segmentation predictions JSON (list of {id,mask} or {predictions:[...],meta:{...}}).",
+      "schema": "docs/schemas/segmentation_predictions.schema.json",
+      "validator": "python3 tools/validate_segmentation_predictions.py <path>"
+    },
+    "seg_eval_report_json": {
+      "summary": "Segmentation eval report payload emitted by tools/eval_segmentation.py.",
+      "schema": "docs/schemas/seg_eval_report.schema.json",
+      "producer": "python3 tools/eval_segmentation.py"
+    },
+    "instance_segmentation_predictions_json": {
+      "summary": "Instance segmentation predictions JSON (list of {image,instances} or {predictions:[...],meta:{...}}).",
+      "schema": "docs/schemas/instance_segmentation_predictions.schema.json",
+      "validator": "python3 tools/validate_instance_segmentation_predictions.py <path>"
+    },
+    "instance_seg_eval_report_json": {
+      "summary": "Instance segmentation eval report payload emitted by tools/eval_instance_segmentation.py.",
+      "schema": "docs/schemas/instance_seg_eval_report.schema.json",
+      "producer": "python3 tools/eval_instance_segmentation.py"
+    }
+  },
+  "tools": [
+    {
+      "id": "fetch_coco128",
+      "entrypoint": "tools/fetch_coco128.sh",
+      "runner": "bash",
+      "summary": "Fetch tiny COCO subset (YOLO-format) into data/coco128 (official COCO hosting).",
+      "tags": ["dataset"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "requires": { "network": true },
+      "outputs": [
+        { "name": "dataset_root", "kind": "dir", "description": "Created dataset root.", "default": "data/coco128" }
+      ],
+      "examples": [
+        { "description": "Fetch dataset once for tests/smoke.", "command": "bash tools/fetch_coco128.sh" }
+      ]
+    },
+    {
+      "id": "make_subset_dataset",
+      "entrypoint": "tools/make_subset_dataset.py",
+      "runner": "python3",
+      "summary": "Create a deterministic subset YOLO dataset (symlink/copy images+labels) for reproducible eval/ablation runs.",
+      "tags": ["dataset"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "inputs": [
+        { "name": "dataset", "kind": "dir", "required": true, "flag": "--dataset" },
+        { "name": "split", "kind": "string", "required": false, "flag": "--split", "default": null },
+        { "name": "n", "kind": "number", "required": false, "flag": "--n", "default": 50 },
+        { "name": "seed", "kind": "number", "required": false, "flag": "--seed", "default": 0 },
+        { "name": "out", "kind": "dir", "required": false, "flag": "--out", "default": "reports/subset_dataset" }
+      ],
+      "outputs": [
+        { "name": "dataset_root", "kind": "dir", "description": "Subset dataset root created at --out." },
+        { "name": "subset_json", "kind": "file", "description": "Subset metadata (image list + sha).", "default": "<out>/subset.json" },
+        { "name": "subset_images_txt", "kind": "file", "description": "Frozen image list.", "default": "<out>/subset_images.txt" }
+      ],
+      "examples": [
+        {
+          "description": "Create a frozen 50-image subset for ablations.",
+          "command": "python3 tools/make_subset_dataset.py --dataset data/coco128 --split train2017 --n 50 --seed 0 --out reports/coco128_50"
+        }
+      ]
+    },
+    {
+      "id": "prepare_coco_yolo",
+      "entrypoint": "tools/prepare_coco_yolo.py",
+      "runner": "python3",
+      "summary": "Convert official COCO instances JSON into YOLO-format labels + (optional) copy images.",
+      "tags": ["dataset", "coco"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "inputs": [
+        { "name": "coco_root", "kind": "dir", "required": true, "flag": "--coco-root" },
+        { "name": "out", "kind": "dir", "required": true, "flag": "--out" },
+        { "name": "split", "kind": "string", "required": false, "flag": "--split", "default": "val2017" }
+      ],
+      "outputs": [
+        { "name": "dataset_root", "kind": "dir", "description": "YOLO-format dataset root created at --out." },
+        { "name": "dataset_descriptor", "kind": "file", "description": "Convenience dataset.json.", "default": "<out>/dataset.json" }
+      ],
+      "examples": [
+        {
+          "description": "Prepare val2017 labels without copying images.",
+          "command": "python3 tools/prepare_coco_yolo.py --coco-root /path/to/coco --split val2017 --out data/coco-yolo"
+        }
+      ]
+    },
+    {
+      "id": "prepare_coco_instance_seg",
+      "entrypoint": "tools/prepare_coco_instance_seg.py",
+      "runner": "python3",
+      "summary": "Convert official COCO instances JSON into YOLO-format labels + per-instance PNG masks + sidecar metadata for instance-seg eval.",
+      "tags": ["dataset", "coco", "instance_segmentation"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "inputs": [
+        { "name": "coco_root", "kind": "dir", "required": true, "flag": "--coco-root" },
+        { "name": "out", "kind": "dir", "required": true, "flag": "--out" },
+        { "name": "split", "kind": "string", "required": false, "flag": "--split", "default": "val2017" }
+      ],
+      "outputs": [
+        { "name": "dataset_root", "kind": "dir", "description": "YOLO-format dataset root created at --out." },
+        { "name": "dataset_descriptor", "kind": "file", "description": "Convenience dataset.json.", "default": "<out>/dataset.json" }
+      ],
+      "examples": [
+        {
+          "description": "Prepare val2017 labels+masks (pycocotools required).",
+          "command": "python3 tools/prepare_coco_instance_seg.py --coco-root /path/to/coco --split val2017 --out data/coco-instance-seg"
+        }
+      ]
+    },
+    {
+      "id": "convert_coco_instance_seg_predictions",
+      "entrypoint": "tools/convert_coco_instance_seg_predictions.py",
+      "runner": "python3",
+      "summary": "Convert COCO instance segmentation predictions (polygons/RLE) into YOLOZU instance-seg PNG-mask contract.",
+      "tags": ["coco", "instance_segmentation", "predictions", "convert"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "contracts": { "produces": ["instance_segmentation_predictions_json"] },
+      "inputs": [
+        { "name": "predictions", "kind": "file", "required": true, "flag": "--predictions" },
+        { "name": "instances_json", "kind": "file", "required": true, "flag": "--instances-json" },
+        { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/instance_seg_predictions.json" },
+        { "name": "masks_dir", "kind": "dir", "required": false, "flag": "--masks-dir", "default": "reports/instance_seg_masks" }
+      ],
+      "outputs": [
+        { "name": "predictions_json", "kind": "file", "default": "reports/instance_seg_predictions.json" },
+        { "name": "masks_dir", "kind": "dir", "default": "reports/instance_seg_masks" }
+      ],
+      "examples": [
+        {
+          "description": "Convert COCO predictions to YOLOZU PNG masks (pycocotools required).",
+          "command": "python3 tools/convert_coco_instance_seg_predictions.py --predictions /path/to/coco_preds.json --instances-json /path/to/instances_val2017.json --output reports/instance_seg_predictions.json --masks-dir reports/instance_seg_masks"
+        }
+      ]
+    },
+    {
+      "id": "prepare_cityscapes_seg",
+      "entrypoint": "tools/prepare_cityscapes_seg.py",
+      "runner": "python3",
+      "summary": "Prepare Cityscapes semantic segmentation layout + dataset.json manifest.",
+      "tags": ["dataset", "cityscapes", "segmentation"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "inputs": [
+        { "name": "cityscapes_root", "kind": "dir", "required": true, "flag": "--cityscapes-root" },
+        { "name": "out", "kind": "dir", "required": true, "flag": "--out" },
+        { "name": "split", "kind": "string", "required": false, "flag": "--split", "default": "train" }
+      ],
+      "outputs": [
+        { "name": "dataset_root", "kind": "dir", "description": "Prepared output root created at --out." },
+        { "name": "dataset_descriptor", "kind": "file", "description": "dataset.json manifest.", "default": "<out>/dataset.json" }
+      ],
+      "examples": [
+        {
+          "description": "Create a manifest-only dataset.json (no copying).",
+          "command": "python3 tools/prepare_cityscapes_seg.py --cityscapes-root /path/to/cityscapes --split train --out data/cityscapes_seg --mode manifest"
+        }
+      ]
+    },
+    {
+      "id": "prepare_voc_seg",
+      "entrypoint": "tools/prepare_voc_seg.py",
+      "runner": "python3",
+      "summary": "Prepare Pascal VOC semantic segmentation layout + dataset.json manifest.",
+      "tags": ["dataset", "pascal_voc", "voc", "segmentation"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "inputs": [
+        { "name": "voc_root", "kind": "dir", "required": true, "flag": "--voc-root" },
+        { "name": "out", "kind": "dir", "required": true, "flag": "--out" },
+        { "name": "split", "kind": "string", "required": false, "flag": "--split", "default": "train" }
+      ],
+      "outputs": [
+        { "name": "dataset_root", "kind": "dir", "description": "Prepared output root created at --out." },
+        { "name": "dataset_descriptor", "kind": "file", "description": "dataset.json manifest.", "default": "<out>/dataset.json" }
+      ],
+      "examples": [
+        {
+          "description": "Create a manifest-only dataset.json (no copying).",
+          "command": "python3 tools/prepare_voc_seg.py --voc-root /path/to/VOCdevkit/VOC2012 --split train --out data/voc_seg --mode manifest"
+        }
+      ]
+    },
+    {
+      "id": "prepare_ade20k_seg",
+      "entrypoint": "tools/prepare_ade20k_seg.py",
+      "runner": "python3",
+      "summary": "Prepare ADE20K semantic segmentation layout + dataset.json manifest.",
+      "tags": ["dataset", "ade20k", "segmentation"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "inputs": [
+        { "name": "ade20k_root", "kind": "dir", "required": true, "flag": "--ade20k-root" },
+        { "name": "out", "kind": "dir", "required": true, "flag": "--out" },
+        { "name": "split", "kind": "string", "required": false, "flag": "--split", "default": "train" }
+      ],
+      "outputs": [
+        { "name": "dataset_root", "kind": "dir", "description": "Prepared output root created at --out." },
+        { "name": "dataset_descriptor", "kind": "file", "description": "dataset.json manifest.", "default": "<out>/dataset.json" }
+      ],
+      "examples": [
+        {
+          "description": "Create a manifest-only dataset.json (no copying).",
+          "command": "python3 tools/prepare_ade20k_seg.py --ade20k-root /path/to/ADEChallengeData2016 --split train --out data/ade20k_seg --mode manifest"
+        }
+      ]
+    },
+    {
+      "id": "build_manifest",
+      "entrypoint": "tools/build_manifest.py",
+      "runner": "python3",
+      "summary": "Build a dataset manifest for data/coco128 (writes reports/manifest.json).",
+      "tags": ["dataset"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "outputs": [
+        { "name": "manifest_json", "kind": "file", "default": "reports/manifest.json" }
+      ],
+      "examples": [
+        { "description": "Emit manifest JSON for coco128.", "command": "python3 tools/build_manifest.py" }
+      ]
+    },
+    {
+      "id": "export_predictions",
+      "entrypoint": "tools/export_predictions.py",
+      "runner": "python3",
+      "summary": "Run an adapter to export YOLOZU predictions JSON (dummy or rtdetr_pose).",
+      "tags": ["predictions", "adapter"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "contracts": { "produces": ["predictions_json"] },
+      "inputs": [
+        { "name": "adapter", "kind": "string", "required": false, "flag": "--adapter", "default": "dummy" },
+        { "name": "dataset", "kind": "dir", "required": false, "flag": "--dataset", "default": "data/coco128" },
+        { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/predictions.json" }
+      ],
+      "outputs": [{ "name": "predictions_json", "kind": "file", "default": "reports/predictions.json" }],
+      "examples": [
+        {
+          "description": "Export dummy predictions (schema smoke).",
+          "command": "python3 tools/export_predictions.py --adapter dummy --dataset data/coco128 --wrap --output reports/predictions_dummy.json"
+        }
+      ],
+      "docs": ["docs/real_model_interface.md"]
+    },
+    {
+      "id": "yolozu",
+      "entrypoint": "tools/yolozu.py",
+      "runner": "python3",
+      "summary": "Unified CLI: doctor + export (dummy/torch/onnxrt/trt) + predict-images (folder→JSON+overlays+HTML) + eval-instance-seg (PNG mask mAP) + sweep wrapper + fingerprinted caching.",
+      "tags": ["cli", "predictions", "diagnostics", "report", "sweep"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "contracts": { "produces": ["predictions_json"] },
+      "examples": [
+        { "description": "Doctor report.", "command": "python3 tools/yolozu.py doctor --output reports/doctor.json" },
+        {
+          "description": "Export dummy predictions with run meta.",
+          "command": "python3 tools/yolozu.py export --backend dummy --dataset data/coco128 --max-images 5 --output reports/predictions_dummy_run.json"
+        },
+        {
+          "description": "Folder input → predictions JSON + overlays + HTML (dummy backend).",
+          "command": "python3 tools/yolozu.py predict-images --backend dummy --input-dir data/coco128/images/val2017 --max-images 5 --output reports/predict_images_dummy.json --overlays-dir reports/overlays_dummy --html reports/predict_images_dummy.html"
+        },
+        {
+          "description": "Evaluate instance-seg demo predictions (mask mAP) with HTML overlays.",
+          "command": "python3 tools/yolozu.py eval-instance-seg --dataset examples/instance_seg_demo/dataset --split val2017 --predictions examples/instance_seg_demo/predictions/instance_seg_predictions.json --pred-root examples/instance_seg_demo/predictions --classes examples/instance_seg_demo/classes.txt --html reports/instance_seg_demo_eval.html --overlays-dir reports/instance_seg_demo_overlays --max-overlays 10"
+        },
+        {
+          "description": "Run a sweep config (dry-run).",
+          "command": "python3 tools/yolozu.py sweep --config docs/hpo_sweep_example.json --dry-run"
+        }
+      ],
+      "docs": ["docs/tools_index.md"]
+    },
+    {
+      "id": "validate_predictions",
+      "entrypoint": "tools/validate_predictions.py",
+      "runner": "python3",
+      "summary": "Validate YOLOZU predictions JSON schema (permissive by default; strict optional).",
+      "tags": ["predictions", "validation"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "contracts": { "consumes": ["predictions_json"] },
+      "inputs": [{ "name": "predictions", "kind": "file", "required": true, "description": "Predictions JSON path." }],
+      "outputs": [{ "name": "stdout", "kind": "stdout", "description": "OK/WARN lines." }],
+      "examples": [
+        { "description": "Strict schema validation.", "command": "python3 tools/validate_predictions.py reports/predictions.json --strict" }
+      ]
+    },
+    {
+      "id": "validate_segmentation_predictions",
+      "entrypoint": "tools/validate_segmentation_predictions.py",
+      "runner": "python3",
+      "summary": "Validate YOLOZU segmentation predictions JSON (id→mask path mapping; meta optional).",
+      "tags": ["segmentation", "predictions", "validation"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "contracts": { "consumes": ["segmentation_predictions_json"] },
+      "inputs": [{ "name": "predictions", "kind": "file", "required": true, "description": "Segmentation predictions JSON path." }],
+      "outputs": [{ "name": "stdout", "kind": "stdout", "description": "OK/WARN lines." }],
+      "examples": [
+        {
+          "description": "Validate a segmentation predictions artifact.",
+          "command": "python3 tools/validate_segmentation_predictions.py reports/seg_predictions.json"
+        }
+      ]
+    },
+    {
+      "id": "validate_instance_segmentation_predictions",
+      "entrypoint": "tools/validate_instance_segmentation_predictions.py",
+      "runner": "python3",
+      "summary": "Validate YOLOZU instance segmentation predictions JSON (per-image instances; PNG masks).",
+      "tags": ["instance_segmentation", "predictions", "validation"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "contracts": { "consumes": ["instance_segmentation_predictions_json"] },
+      "inputs": [{ "name": "predictions", "kind": "file", "required": true, "description": "Instance segmentation predictions JSON path." }],
+      "outputs": [{ "name": "stdout", "kind": "stdout", "description": "OK/WARN lines." }],
+      "examples": [
+        {
+          "description": "Validate an instance segmentation predictions artifact.",
+          "command": "python3 tools/validate_instance_segmentation_predictions.py reports/instance_seg_predictions.json"
+        }
+      ]
+    },
+    {
+      "id": "normalize_predictions",
+      "entrypoint": "tools/normalize_predictions.py",
+      "runner": "python3",
+      "summary": "Normalize prediction class ids (category_id↔class_id) and optionally wrap with meta.",
+      "tags": ["predictions", "transform"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "contracts": { "consumes": ["predictions_json"], "produces": ["predictions_json"] },
+      "inputs": [
+        { "name": "input", "kind": "file", "required": true, "flag": "--input" },
+        { "name": "output", "kind": "file", "required": true, "flag": "--output" },
+        { "name": "classes", "kind": "file", "required": false, "flag": "--classes" }
+      ],
+      "outputs": [{ "name": "predictions_json", "kind": "file", "description": "Normalized predictions JSON at --output." }],
+      "examples": [
+        {
+          "description": "Remap COCO category_id -> contiguous class_id and wrap output.",
+          "command": "python3 tools/normalize_predictions.py --input reports/predictions.json --output reports/predictions_norm.json --classes data/coco-yolo/labels/val2017/classes.json --wrap"
+        }
+      ]
+    },
+    {
+      "id": "eval_segmentation",
+      "entrypoint": "tools/eval_segmentation.py",
+      "runner": "python3",
+      "summary": "Evaluate semantic segmentation predictions (mIoU / per-class IoU) with ignore_index support and optional HTML/overlays.",
+      "tags": ["eval", "segmentation"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "contracts": {
+        "consumes": ["seg_dataset_json", "segmentation_predictions_json"],
+        "produces": ["seg_eval_report_json"]
+      },
+      "inputs": [
+        { "name": "dataset_json", "kind": "file", "required": true, "flag": "--dataset-json" },
+        { "name": "predictions", "kind": "file", "required": true, "flag": "--predictions" },
+        { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/seg_eval.json" }
+      ],
+      "outputs": [{ "name": "seg_eval_json", "kind": "file", "default": "reports/seg_eval.json" }],
+      "examples": [
+        {
+          "description": "Evaluate segmentation predictions and write a JSON report.",
+          "command": "python3 tools/eval_segmentation.py --dataset-json data/cityscapes_seg/dataset.json --predictions reports/seg_predictions.json --output reports/seg_eval.json"
+        }
+      ]
+    },
+    {
+      "id": "eval_instance_segmentation",
+      "entrypoint": "tools/eval_instance_segmentation.py",
+      "runner": "python3",
+      "summary": "Evaluate instance segmentation predictions (mask mAP) from binary PNG masks with optional HTML/overlays.",
+      "tags": ["eval", "instance_segmentation", "segmentation"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "contracts": {
+        "consumes": ["instance_segmentation_predictions_json"],
+        "produces": ["instance_seg_eval_report_json"]
+      },
+      "inputs": [
+        { "name": "dataset", "kind": "dir", "required": true, "flag": "--dataset" },
+        { "name": "predictions", "kind": "file", "required": true, "flag": "--predictions" },
+        { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/instance_seg_eval.json" }
+      ],
+      "outputs": [{ "name": "instance_seg_eval_json", "kind": "file", "default": "reports/instance_seg_eval.json" }],
+      "examples": [
+        {
+          "description": "Evaluate instance segmentation predictions and write a JSON report.",
+          "command": "python3 tools/eval_instance_segmentation.py --dataset data/coco-yolo --predictions reports/instance_seg_predictions.json --output reports/instance_seg_eval.json"
+        }
+      ]
+    },
+    {
+      "id": "eval_keypoints",
+      "entrypoint": "tools/eval_keypoints.py",
+      "runner": "python3",
+      "summary": "Evaluate keypoint predictions using PCK (bbox-normalized distance) with optional COCO OKS mAP, HTML, and overlays.",
+      "tags": ["eval", "keypoints", "pose"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "contracts": { "consumes": ["predictions_json"], "produces": ["metrics_report_json"] },
+      "inputs": [
+        { "name": "dataset", "kind": "dir", "required": true, "flag": "--dataset" },
+        { "name": "predictions", "kind": "file", "required": true, "flag": "--predictions" },
+        { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/keypoints_eval.json" }
+      ],
+      "outputs": [{ "name": "keypoints_eval_json", "kind": "file", "default": "reports/keypoints_eval.json" }],
+      "examples": [
+        {
+          "description": "Evaluate keypoint predictions and write a JSON report.",
+          "command": "python3 tools/eval_keypoints.py --dataset data/coco128 --predictions reports/predictions.json --output reports/keypoints_eval.json"
+        },
+        {
+          "description": "Evaluate keypoints with COCO OKS mAP (requires pycocotools).",
+          "command": "python3 tools/eval_keypoints.py --dataset data/coco128 --predictions reports/predictions.json --oks --output reports/keypoints_eval_oks.json"
+        }
+      ]
+    },
+    {
+      "id": "eval_coco",
+      "entrypoint": "tools/eval_coco.py",
+      "runner": "python3",
+      "summary": "Evaluate predictions on a YOLO-format dataset using COCOeval (or dry-run convert/validate).",
+      "tags": ["eval", "coco"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "contracts": { "consumes": ["predictions_json"], "produces": ["coco_eval_report_json"] },
+      "inputs": [
+        { "name": "dataset", "kind": "dir", "required": true, "flag": "--dataset" },
+        { "name": "predictions", "kind": "file", "required": true, "flag": "--predictions" },
+        { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/coco_eval.json" }
+      ],
+      "outputs": [{ "name": "coco_eval_json", "kind": "file", "default": "reports/coco_eval.json" }],
+      "examples": [
+        {
+          "description": "Dry-run conversion/validation without pycocotools.",
+          "command": "python3 tools/eval_coco.py --dataset data/coco128 --predictions reports/predictions.json --dry-run --output reports/coco_eval_dry.json"
+        }
+      ]
+    },
+    {
+      "id": "eval_suite",
+      "entrypoint": "tools/eval_suite.py",
+      "runner": "python3",
+      "summary": "Evaluate a set of bucketed prediction JSONs (glob) and write a single suite report JSON.",
+      "tags": ["eval", "suite", "yolo26"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "contracts": { "consumes": ["predictions_json"], "produces": ["eval_suite_report_json"] },
+      "inputs": [
+        { "name": "predictions_glob", "kind": "string", "required": true, "flag": "--predictions-glob" },
+        { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/eval_suite.json" }
+      ],
+      "outputs": [{ "name": "eval_suite_json", "kind": "file", "default": "reports/eval_suite.json" }],
+      "examples": [
+        {
+          "description": "Evaluate all YOLO26 bucket predictions (no COCOeval) on coco128.",
+          "command": "python3 tools/eval_suite.py --protocol yolo26 --dataset data/coco128 --predictions-glob 'reports/pred_yolo26*.json' --dry-run --output reports/eval_suite.json"
+        }
+      ],
+      "docs": ["docs/yolo26_eval_protocol.md"]
+    },
+    {
+      "id": "validate_map_targets",
+      "entrypoint": "tools/validate_map_targets.py",
+      "runner": "python3",
+      "summary": "Validate the mAP target table file (baselines/yolo26_targets.json).",
+      "tags": ["eval", "targets", "yolo26"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "inputs": [{ "name": "targets", "kind": "file", "required": false, "flag": "--targets", "default": "baselines/yolo26_targets.json" }],
+      "outputs": [{ "name": "stdout", "kind": "stdout", "description": "OK or error details." }],
+      "examples": [
+        { "description": "Validate targets JSON.", "command": "python3 tools/validate_map_targets.py --targets baselines/yolo26_targets.json" }
+      ]
+    },
+    {
+      "id": "check_map_targets",
+      "entrypoint": "tools/check_map_targets.py",
+      "runner": "python3",
+      "summary": "Compare eval_suite results against a target table and exit non-zero on failure.",
+      "tags": ["eval", "targets", "gates", "yolo26"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "inputs": [
+        { "name": "suite", "kind": "file", "required": false, "flag": "--suite", "default": "reports/eval_suite.json" },
+        { "name": "targets", "kind": "file", "required": false, "flag": "--targets", "default": "baselines/yolo26_targets.json" }
+      ],
+      "outputs": [{ "name": "stdout", "kind": "stdout", "description": "JSON report with ok/failures." }],
+      "examples": [
+        { "description": "Gate a suite run vs targets.", "command": "python3 tools/check_map_targets.py --suite reports/eval_suite.json --targets baselines/yolo26_targets.json --key map50_95" }
+      ]
+    },
+    {
+      "id": "calibrate_scores",
+      "entrypoint": "tools/calibrate_scores.py",
+      "runner": "python3",
+      "summary": "Temperature-scale detection scores to improve mAP proxy on a fixed subset (no NMS).",
+      "tags": ["predictions", "calibration"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "contracts": { "consumes": ["predictions_json"], "produces": ["predictions_json", "metrics_report_json"] },
+      "inputs": [
+        { "name": "dataset", "kind": "dir", "required": true, "flag": "--dataset" },
+        { "name": "predictions", "kind": "file", "required": true, "flag": "--predictions" }
+      ],
+      "outputs": [
+        { "name": "predictions_calibrated", "kind": "file", "default": "reports/predictions_calibrated.json" },
+        { "name": "report_json", "kind": "file", "default": "reports/calibration_report.json" }
+      ],
+      "examples": [
+        {
+          "description": "Calibrate scores on coco128 subset.",
+          "command": "python3 tools/calibrate_scores.py --dataset data/coco128 --predictions reports/predictions.json --output reports/predictions_calibrated.json --output-report reports/calibration_report.json"
+        }
+      ],
+      "docs": ["docs/score_calibration.md"]
+    },
+    {
+      "id": "distill_predictions",
+      "entrypoint": "tools/distill_predictions.py",
+      "runner": "python3",
+      "summary": "Blend teacher predictions into student predictions and write a distillation report.",
+      "tags": ["predictions", "distillation"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "contracts": { "consumes": ["predictions_json"], "produces": ["predictions_json", "metrics_report_json"] },
+      "inputs": [
+        { "name": "student", "kind": "file", "required": true, "flag": "--student" },
+        { "name": "teacher", "kind": "file", "required": true, "flag": "--teacher" }
+      ],
+      "outputs": [
+        { "name": "predictions_distilled", "kind": "file", "default": "reports/predictions_distilled.json" },
+        { "name": "report_json", "kind": "file", "default": "reports/distill_report.json" }
+      ],
+      "examples": [
+        {
+          "description": "Distill scores and evaluate proxy metrics on coco128.",
+          "command": "python3 tools/distill_predictions.py --student reports/predictions_student.json --teacher reports/predictions_teacher.json --dataset data/coco128 --output reports/predictions_distilled.json --output-report reports/distill_report.json --add-missing"
+        }
+      ],
+      "docs": ["docs/distillation.md"]
+    },
+    {
+      "id": "hpo_sweep",
+      "entrypoint": "tools/hpo_sweep.py",
+      "runner": "python3",
+      "summary": "Run a configurable parameter sweep (grid or list) and emit JSONL/CSV/MD results.",
+      "tags": ["sweep", "hpo"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "inputs": [{ "name": "config", "kind": "file", "required": true, "flag": "--config" }],
+      "outputs": [
+        { "name": "result_jsonl", "kind": "file", "default": "reports/hpo_sweep.jsonl" },
+        { "name": "result_csv", "kind": "file", "default": "reports/hpo_sweep.csv" },
+        { "name": "result_md", "kind": "file", "default": "reports/hpo_sweep.md" }
+      ],
+      "examples": [
+        {
+          "description": "Dry-run example sweep.",
+          "command": "python3 tools/hpo_sweep.py --config docs/hpo_sweep_example.json --dry-run"
+        }
+      ],
+      "docs": ["docs/hpo_sweep.md"]
+    },
+    {
+      "id": "tune_gate_weights",
+      "entrypoint": "tools/tune_gate_weights.py",
+      "runner": "python3",
+      "summary": "Offline grid-search for inference-time score-fusion weights (CPU-only, simple mAP proxy).",
+      "tags": ["predictions", "gates", "tuning"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "contracts": { "consumes": ["predictions_json"], "produces": ["metrics_report_json"] },
+      "inputs": [
+        { "name": "dataset", "kind": "dir", "required": true, "flag": "--dataset" },
+        { "name": "predictions", "kind": "file", "required": true, "flag": "--predictions" }
+      ],
+      "outputs": [{ "name": "report_json", "kind": "file", "default": "reports/gate_tuning_report.json" }],
+      "examples": [
+        {
+          "description": "Tune weights on a small coco128 slice.",
+          "command": "python3 tools/tune_gate_weights.py --dataset data/coco128 --predictions reports/predictions.json --metric map50_95 --grid-det 1.0 --grid-tmp 0.0,0.5,1.0 --grid-unc 0.0,0.5,1.0 --output-report reports/gate_tuning_report.json"
+        }
+      ],
+      "docs": ["docs/gate_weight_tuning.md"]
+    },
+    {
+      "id": "check_predictions_parity",
+      "entrypoint": "tools/check_predictions_parity.py",
+      "runner": "python3",
+      "summary": "Compare two prediction JSONs and report mismatches (IoU/tolerance-based).",
+      "tags": ["predictions", "parity"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "contracts": { "consumes": ["predictions_json"] },
+      "inputs": [
+        { "name": "reference", "kind": "file", "required": true, "flag": "--reference" },
+        { "name": "candidate", "kind": "file", "required": true, "flag": "--candidate" }
+      ],
+      "outputs": [{ "name": "stdout", "kind": "stdout", "description": "Mismatch report (JSON/text) and exit status." }],
+      "examples": [
+        {
+          "description": "Parity check without reading image files (fixed image size).",
+          "command": "python3 tools/check_predictions_parity.py --reference reports/pred_ref.json --candidate reports/pred_cand.json --image-size 640 --iou-thresh 0.99 --score-atol 1e-4 --bbox-atol 1e-4"
+        }
+      ],
+      "docs": ["docs/onnx_export_parity.md"]
+    },
+    {
+      "id": "check_keypoints_parity",
+      "entrypoint": "tools/check_keypoints_parity.py",
+      "runner": "python3",
+      "summary": "Compare two keypoints prediction JSONs and report mismatches (IoU/tolerance-based).",
+      "tags": ["predictions", "parity", "keypoints", "pose"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "contracts": { "consumes": ["predictions_json"] },
+      "inputs": [
+        { "name": "reference", "kind": "file", "required": true, "flag": "--reference" },
+        { "name": "candidate", "kind": "file", "required": true, "flag": "--candidate" }
+      ],
+      "outputs": [{ "name": "stdout", "kind": "stdout", "description": "Mismatch report (JSON/text) and exit status." }],
+      "examples": [
+        {
+          "description": "Parity check for keypoints in normalized coords.",
+          "command": "python3 tools/check_keypoints_parity.py --reference reports/pred_ref.json --candidate reports/pred_cand.json --iou-thresh 0.99 --kp-atol 1e-4 --score-atol 1e-4 --bbox-atol 1e-4"
+        }
+      ],
+      "docs": ["docs/onnx_export_parity.md"]
+    },
+    {
+      "id": "refine_predictions_hessian",
+      "entrypoint": "tools/refine_predictions_hessian.py",
+      "runner": "python3",
+      "summary": "Refine pose-related prediction fields with a safe Newton/finite-diff Hessian stepper (experimental).",
+      "tags": ["predictions", "refine", "hessian", "pose"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "requires": { "python_packages": ["torch"] },
+      "contracts": { "consumes": ["predictions_json"], "produces": ["predictions_json"] },
+      "inputs": [
+        { "name": "predictions", "kind": "file", "required": true, "flag": "--predictions" },
+        { "name": "output", "kind": "file", "required": true, "flag": "--output" }
+      ],
+      "outputs": [{ "name": "predictions_json", "kind": "file", "description": "Refined predictions JSON written to --output." }],
+      "examples": [
+        {
+          "description": "Refine offsets in-place (CPU default).",
+          "command": "python3 tools/refine_predictions_hessian.py --predictions reports/predictions.json --refine-offsets --steps 5 --output reports/predictions_refined.json --wrap"
+        }
+      ]
+    },
+    {
+      "id": "export_predictions_onnxrt",
+      "entrypoint": "tools/export_predictions_onnxrt.py",
+      "runner": "python3",
+      "summary": "Run ONNXRuntime inference and export YOLOZU predictions JSON (requires onnxruntime + numpy + opencv).",
+      "tags": ["predictions", "onnxruntime"],
+      "platform": {
+        "cpu_ok": true,
+        "gpu_required": false,
+        "macos_ok": true,
+        "linux_ok": true,
+        "notes": "ONNXRuntime execution provider depends on your environment."
+      },
+      "requires": { "python_packages": ["onnxruntime", "numpy", "opencv-python"] },
+      "contracts": { "produces": ["predictions_json"] },
+      "examples": [
+        {
+          "description": "Export ONNXRuntime predictions (dry-run mode exists).",
+          "command": "python3 tools/export_predictions_onnxrt.py --dataset data/coco128 --onnx /abs/path/model.onnx --combined-output output0 --combined-format xyxy_score_class --boxes-scale abs --min-score 0.0 --wrap --output reports/pred_onnxrt.json"
+        }
+      ],
+      "docs": ["docs/onnx_export_parity.md"]
+    },
+    {
+      "id": "build_trt_engine",
+      "entrypoint": "tools/build_trt_engine.py",
+      "runner": "python3",
+      "summary": "Build a TensorRT engine from ONNX using trtexec and write a reproducible meta JSON.",
+      "tags": ["tensorrt", "engine"],
+      "platform": {
+        "cpu_ok": true,
+        "gpu_required": true,
+        "macos_ok": false,
+        "linux_ok": true,
+        "notes": "Typically requires Linux + NVIDIA + TensorRT (trtexec)."
+      },
+      "requires": { "system": ["trtexec"] },
+      "examples": [
+        {
+          "description": "Build FP16 engine (Linux/NVIDIA).",
+          "command": "python3 tools/build_trt_engine.py --onnx yolo26n.onnx --engine engines/yolo26n_fp16.plan --precision fp16 --input-name images --min-shape 1x3x640x640 --opt-shape 1x3x640x640 --max-shape 1x3x640x640 --timing-cache engines/timing.cache --meta-output reports/trt_engine_yolo26n_fp16.json"
+        }
+      ],
+      "docs": ["docs/tensorrt_pipeline.md"]
+    },
+    {
+      "id": "export_trt",
+      "entrypoint": "tools/export_trt.py",
+      "runner": "python3",
+      "summary": "Canonical PyTorch → ONNX → TensorRT export route for in-repo rtdetr_pose models.",
+      "tags": ["export", "onnx", "tensorrt", "rtdetr_pose"],
+      "platform": {
+        "cpu_ok": true,
+        "gpu_required": false,
+        "macos_ok": true,
+        "linux_ok": true,
+        "notes": "ONNX export can run on CPU; engine build requires Linux+NVIDIA+trtexec unless --skip-engine is set."
+      },
+      "requires": { "python_packages": ["torch", "onnx"], "system": ["trtexec (optional, for engine build)"] },
+      "examples": [
+        {
+          "description": "Export ONNX and build a FP16 engine (Linux/NVIDIA).",
+          "command": "python3 tools/export_trt.py --config rtdetr_pose/configs/base.json --checkpoint /path/to/checkpoint.pt --image-size 320 --onnx models/rtdetr_pose.onnx --dynamic-hw --engine engines/rtdetr_pose_fp16.plan --precision fp16 --min-shape 1x3x320x320 --opt-shape 1x3x640x640 --max-shape 1x3x960x960"
+        }
+      ],
+      "docs": ["docs/tensorrt_pipeline.md"]
+    },
+    {
+      "id": "rtdetr_pose_backend_suite",
+      "entrypoint": "tools/rtdetr_pose_backend_suite.py",
+      "runner": "python3",
+      "summary": "Backend parity + benchmark suite for rtdetr_pose (torch vs onnxruntime vs tensorrt).",
+      "tags": ["rtdetr_pose", "parity", "benchmark"],
+      "platform": {
+        "cpu_ok": true,
+        "gpu_required": false,
+        "macos_ok": true,
+        "linux_ok": true,
+        "notes": "torch/onnxrt can run on CPU; TensorRT requires Linux+NVIDIA+tensorrt and a built engine plan."
+      },
+      "requires": { "python_packages": ["torch", "numpy"] },
+      "inputs": [
+        { "name": "config", "kind": "file", "required": true, "flag": "--config" },
+        { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/rtdetr_pose_backend_suite.json" }
+      ],
+      "outputs": [{ "name": "report_json", "kind": "file", "default": "reports/rtdetr_pose_backend_suite.json" }],
+      "examples": [
+        {
+          "description": "Torch ↔ ONNXRuntime parity + benchmark (CPU).",
+          "command": "python3 tools/rtdetr_pose_backend_suite.py --config rtdetr_pose/configs/base.json --checkpoint /path/to/checkpoint.pt --onnx models/rtdetr_pose.onnx --backends torch,onnxrt --device cpu --image-size 320 --samples 2 --warmup 20 --iterations 200 --output reports/rtdetr_pose_backend_suite.json"
+        }
+      ],
+      "docs": ["docs/real_model_interface.md", "docs/tensorrt_pipeline.md"]
+    },
+    {
+      "id": "run_rtdetr_pose_backend_suite",
+      "entrypoint": "tools/run_rtdetr_pose_backend_suite.py",
+      "runner": "python3",
+      "summary": "End-to-end runner for rtdetr_pose: export (PyTorch→ONNX→TRT) + backend parity/benchmark suite.",
+      "tags": ["rtdetr_pose", "tensorrt", "parity", "benchmark", "runpod"],
+      "platform": {
+        "cpu_ok": true,
+        "gpu_required": false,
+        "macos_ok": true,
+        "linux_ok": true,
+        "notes": "Dry-run works anywhere; full export+TRT engine build requires Linux+NVIDIA+tensorrt and trtexec."
+      },
+      "requires": { "python_packages": ["torch", "numpy"] },
+      "inputs": [
+        { "name": "config", "kind": "file", "required": false, "flag": "--config", "default": "rtdetr_pose/configs/base.json" },
+        { "name": "checkpoint", "kind": "file", "required": false, "flag": "--checkpoint" },
+        { "name": "run_dir", "kind": "file", "required": false, "flag": "--run-dir" }
+      ],
+      "outputs": [{ "name": "suite_report", "kind": "file", "default": "runs/rtdetr_pose_backend_suite/<timestamp>/backend_suite.json" }],
+      "examples": [
+        {
+          "description": "Run export_trt + backend suite (GPU).",
+          "command": "python3 tools/run_rtdetr_pose_backend_suite.py --config rtdetr_pose/configs/base.json --checkpoint /path/to/checkpoint.pt --device cuda --precision fp16 --dynamic-hw --export-image-size 320 --suite-image-size 640"
+        }
+      ],
+      "docs": ["docs/tensorrt_pipeline.md"]
+    },
+    {
+      "id": "export_predictions_trt",
+      "entrypoint": "tools/export_predictions_trt.py",
+      "runner": "python3",
+      "summary": "Run TensorRT engine inference and export YOLOZU predictions JSON (requires tensorrt + CUDA bindings).",
+      "tags": ["predictions", "tensorrt"],
+      "platform": { "cpu_ok": false, "gpu_required": true, "macos_ok": false, "linux_ok": true },
+      "requires": { "python_packages": ["tensorrt", "numpy", "opencv-python"], "system": ["CUDA bindings (pycuda or cuda-python)"] },
+      "contracts": { "produces": ["predictions_json"] },
+      "examples": [
+        {
+          "description": "Export TensorRT predictions (engine must exist).",
+          "command": "python3 tools/export_predictions_trt.py --dataset /path/to/coco-yolo --engine engines/yolo26n_fp16.plan --combined-output output0 --boxes-scale abs --wrap --output reports/pred_trt_yolo26n.json"
+        }
+      ],
+      "docs": ["docs/tensorrt_pipeline.md"]
+    },
+    {
+      "id": "measure_trt_latency",
+      "entrypoint": "tools/measure_trt_latency.py",
+      "runner": "python3",
+      "summary": "Measure a TensorRT engine's latency/FPS and write a metrics report JSON.",
+      "tags": ["benchmark", "tensorrt"],
+      "platform": { "cpu_ok": true, "gpu_required": true, "macos_ok": false, "linux_ok": true },
+      "requires": { "python_packages": ["tensorrt", "numpy"], "system": ["CUDA bindings (pycuda or cuda-python)"] },
+      "contracts": { "produces": ["metrics_report_json"] },
+      "inputs": [
+        { "name": "engine", "kind": "file", "required": false, "flag": "--engine" },
+        { "name": "iterations", "kind": "number", "required": false, "flag": "--iterations", "default": 200 },
+        { "name": "warmup", "kind": "number", "required": false, "flag": "--warmup", "default": 20 },
+        { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/latency_trt.json" }
+      ],
+      "outputs": [{ "name": "report_json", "kind": "file", "default": "reports/latency_trt.json" }],
+      "examples": [
+        {
+          "description": "Measure latency (Linux/NVIDIA).",
+          "command": "python3 tools/measure_trt_latency.py --engine engines/yolo26n_fp16.plan --shape 1x3x640x640 --iterations 200 --warmup 20 --output reports/latency_yolo26n.json"
+        }
+      ],
+      "docs": ["docs/benchmark_latency.md", "docs/tensorrt_pipeline.md"]
+    },
+    {
+      "id": "run_trt_pipeline",
+      "entrypoint": "tools/run_trt_pipeline.py",
+      "runner": "python3",
+      "summary": "Orchestrate the YOLO26 TensorRT pipeline (engine build → predictions export → parity → eval_suite → latency report).",
+      "tags": ["deploy", "pipeline", "tensorrt", "yolo26"],
+      "platform": {
+        "cpu_ok": true,
+        "gpu_required": true,
+        "macos_ok": false,
+        "linux_ok": true,
+        "notes": "Designed for Linux+NVIDIA (Runpod). Use --dry-run to generate schema-correct artifacts without GPU."
+      },
+      "contracts": { "produces": ["predictions_json", "eval_suite_report_json", "metrics_report_json"] },
+      "inputs": [
+        { "name": "dataset", "kind": "dir", "required": true, "flag": "--dataset" },
+        { "name": "onnx_template", "kind": "string", "required": true, "flag": "--onnx-template" }
+      ],
+      "outputs": [{ "name": "run_dir", "kind": "dir", "description": "Run folder containing run.json and copied artifacts." }],
+      "examples": [
+        {
+          "description": "Run full TRT pipeline (Runpod/Linux).",
+          "command": "python3 tools/run_trt_pipeline.py --dataset /data/coco-yolo --onnx-template /data/models/{bucket}.onnx --precision fp16 --combined-output output0 --boxes-scale abs --min-score 0.0 --topk 300 --max-images 500"
+        }
+      ],
+      "docs": ["deploy/runpod/README.md", "docs/tensorrt_pipeline.md"]
+    },
+    {
+      "id": "benchmark_latency",
+      "entrypoint": "tools/benchmark_latency.py",
+      "runner": "python3",
+      "summary": "Latency/FPS benchmark harness producing stable JSON reports and optional JSONL history.",
+      "tags": ["benchmark", "realtime"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "contracts": { "produces": ["metrics_report_json"] },
+      "inputs": [
+        { "name": "config", "kind": "file", "required": false, "flag": "--config" },
+        { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/benchmark_latency.json" }
+      ],
+      "outputs": [
+        { "name": "report_json", "kind": "file", "default": "reports/benchmark_latency.json" },
+        { "name": "history_jsonl", "kind": "file", "description": "Optional JSONL history when --history is set." }
+      ],
+      "examples": [
+        {
+          "description": "Synthetic benchmark (no inference) to validate harness.",
+          "command": "python3 tools/benchmark_latency.py --iterations 200 --warmup 20 --output reports/benchmark_latency.json --history reports/benchmark_latency.jsonl --notes \"baseline on target HW\""
+        }
+      ],
+      "docs": ["docs/benchmark_latency.md"]
+    },
+    {
+      "id": "benchmark_keypoints_eval",
+      "entrypoint": "tools/benchmark_keypoints_eval.py",
+      "runner": "python3",
+      "summary": "Benchmark keypoints evaluation runtime (PCK + optional OKS mAP) and write a stable JSON report.",
+      "tags": ["benchmark", "keypoints", "pose", "eval"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "contracts": { "consumes": ["predictions_json"], "produces": ["metrics_report_json"] },
+      "inputs": [
+        { "name": "dataset", "kind": "dir", "required": true, "flag": "--dataset" },
+        { "name": "predictions", "kind": "file", "required": true, "flag": "--predictions" },
+        { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/benchmark_keypoints_eval.json" }
+      ],
+      "outputs": [{ "name": "report_json", "kind": "file", "default": "reports/benchmark_keypoints_eval.json" }],
+      "examples": [
+        {
+          "description": "Quick PCK eval benchmark on a small slice.",
+          "command": "python3 tools/benchmark_keypoints_eval.py --dataset data/coco128 --predictions reports/predictions.json --max-images 50 --warmup 1 --iterations 5 --output reports/benchmark_keypoints_eval.json"
+        }
+      ]
+    },
+    {
+      "id": "run_scenarios",
+      "entrypoint": "tools/run_scenarios.py",
+      "runner": "python3",
+      "summary": "Run the scenario suite pipeline (adapter + constraints utilities) and write a report JSON.",
+      "tags": ["scenarios", "pipeline"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "examples": [
+        { "description": "Run a basic dummy scenario pass.", "command": "python3 tools/run_scenarios.py --adapter dummy --dataset data/coco128 --max-images 50" }
+      ]
+    },
+    {
+      "id": "check_license_policy",
+      "entrypoint": "tools/check_license_policy.py",
+      "runner": "python3",
+      "summary": "Enforce Apache-2.0-only constraints (denylist + no vendored GPL/AGPL license texts).",
+      "tags": ["policy", "license"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "outputs": [{ "name": "stdout", "kind": "stdout", "description": "OK or failure reason." }],
+      "examples": [{ "description": "Run policy checks.", "command": "python3 tools/check_license_policy.py" }],
+      "docs": ["docs/license_policy.md"]
+    },
+    {
+      "id": "report_dependency_licenses",
+      "entrypoint": "tools/report_dependency_licenses.py",
+      "runner": "python3",
+      "summary": "Generate a best-effort dependency license report from installed Python packages (not legal advice).",
+      "tags": ["policy", "license"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "inputs": [
+        { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/dependency_licenses.json" }
+      ],
+      "outputs": [{ "name": "dependency_licenses_json", "kind": "file", "default": "reports/dependency_licenses.json" }],
+      "examples": [
+        {
+          "description": "Write a dependency license report for the current environment.",
+          "command": "python3 tools/report_dependency_licenses.py --output reports/dependency_licenses.json"
+        }
+      ],
+      "docs": ["docs/license_policy.md"]
+    },
+    {
+      "id": "rtdetr_pose_train_continual",
+      "entrypoint": "rtdetr_pose/tools/train_continual.py",
+      "runner": "python3",
+      "summary": "Continual fine-tuning runner for rtdetr_pose (replay + self-distill, optional LoRA).",
+      "tags": ["rtdetr_pose", "continual", "train", "replay", "distill", "lora"],
+      "platform": {
+        "cpu_ok": true,
+        "gpu_required": false,
+        "macos_ok": true,
+        "linux_ok": true,
+        "notes": "CPU works for smoke runs; GPU is recommended for real training."
+      },
+      "requires": { "python_packages": ["torch", "PyYAML"] },
+      "inputs": [
+        { "name": "config", "kind": "file", "required": true, "flag": "--config" },
+        { "name": "run_dir", "kind": "dir", "required": false, "flag": "--run-dir" },
+        { "name": "replay_size", "kind": "number", "required": false, "flag": "--replay-size" },
+        { "name": "replay_fraction", "kind": "number", "required": false, "flag": "--replay-fraction" },
+        { "name": "replay_per_task_cap", "kind": "number", "required": false, "flag": "--replay-per-task-cap" }
+      ],
+      "outputs": [{ "name": "run_json", "kind": "file", "description": "continual_run.json under the run dir." }],
+      "examples": [
+        {
+          "description": "Domain-incremental continual fine-tuning (example config).",
+          "command": "python3 rtdetr_pose/tools/train_continual.py --config configs/continual/rtdetr_pose_domain_inc_example.yaml"
+        }
+      ],
+      "docs": ["docs/continual_learning.md", "rtdetr_pose/README.md"]
+    },
+    {
+      "id": "eval_continual",
+      "entrypoint": "tools/eval_continual.py",
+      "runner": "python3",
+      "summary": "Evaluate a continual learning run (simple mAP proxy or pose metrics + forgetting) and write JSON+HTML.",
+      "tags": ["continual", "eval", "report"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "requires": { "python_packages": ["torch", "Pillow"] },
+      "inputs": [
+        { "name": "run_json", "kind": "file", "required": true, "flag": "--run-json" },
+        { "name": "metric", "kind": "string", "required": false, "flag": "--metric" },
+        { "name": "metric_key", "kind": "string", "required": false, "flag": "--metric-key" },
+        { "name": "output", "kind": "file", "required": false, "flag": "--output" },
+        { "name": "html", "kind": "file", "required": false, "flag": "--html" }
+      ],
+      "outputs": [
+        { "name": "eval_json", "kind": "file", "description": "<run_dir>/continual_eval.json by default." },
+        { "name": "eval_html", "kind": "file", "description": "<run_dir>/continual_eval.html by default." }
+      ],
+      "examples": [
+        {
+          "description": "Evaluate and summarize forgetting.",
+          "command": "python3 tools/eval_continual.py --run-json runs/continual/<run>/continual_run.json --device cpu --max-images 50"
+        }
+      ],
+      "docs": ["docs/continual_learning.md"]
+    }
+  ]
+}
