@@ -21,8 +21,12 @@ jobs:
         include:
           - image: yolozu
             dockerfile: deploy/docker/Dockerfile
+            title: YOLOZU
+            description: YOLOZU CLI + packaged resources (CPU minimal; no torch).
           - image: yolozu-demo
             dockerfile: deploy/docker/Dockerfile.demo
+            title: YOLOZU demo
+            description: YOLOZU demo image (includes torch extra; CPU OK).
     steps:
       - uses: actions/checkout@v4
 
@@ -71,6 +75,9 @@ jobs:
           push: true
           tags: ${{ steps.tags.outputs.tags }}
           labels: |
+            org.opencontainers.image.title=${{ matrix.title }}
+            org.opencontainers.image.description=${{ matrix.description }}
+            org.opencontainers.image.licenses=Apache-2.0
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha
@@ -88,8 +95,12 @@ jobs:
         include:
           - image: yolozu-trt
             dockerfile: deploy/runpod/Dockerfile
+            title: YOLOZU TRT tools
+            description: YOLOZU tooling image for TensorRT/ONNXRuntime exporters (Linux + NVIDIA stack).
           - image: yolozu-rtdetr-pose
             dockerfile: deploy/runpod/Dockerfile.rtdetr_pose
+            title: YOLOZU RTDETRPose
+            description: YOLOZU RTDETRPose backend suite image (torch + onnxruntime-gpu).
     steps:
       - uses: actions/checkout@v4
 
@@ -145,6 +156,9 @@ jobs:
           push: true
           tags: ${{ steps.tags.outputs.tags }}
           labels: |
+            org.opencontainers.image.title=${{ matrix.title }}
+            org.opencontainers.image.description=${{ matrix.description }}
+            org.opencontainers.image.licenses=Apache-2.0
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha

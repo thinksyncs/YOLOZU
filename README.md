@@ -184,6 +184,12 @@ docker run --rm ghcr.io/<owner>/yolozu:0.1.0 doctor --output -
 docker run --rm ghcr.io/<owner>/yolozu-demo:0.1.0 demo continual --method ewc_replay
 ```
 
+Publish trigger:
+- Push a tag `vX.Y.Z` to run `.github/workflows/container.yml`.
+- If the tag existed before the workflow was added, run it manually via GitHub Actions (workflow_dispatch) or cut a new tag.
+
+Details: [deploy/docker/README.md](deploy/docker/README.md)
+
 2) Fetch the tiny dataset (once):
 
 ```bash
