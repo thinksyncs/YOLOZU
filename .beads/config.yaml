@@ -42,8 +42,9 @@ issue-prefix: "YOLOZU"
 sync-branch: "beads-sync"
 repos:
   primary: "."
-  additional:
-    - "/root/.beads-planning"
+  # NOTE: Do not add machine-specific paths here. If you want to hydrate from an
+  # additional planning repo, configure it locally (e.g., via BD_* env var or
+  # your own untracked config), not in this tracked repository file.
 
 # Multi-repo configuration (experimental - bd-307)
 # Allows hydrating from multiple repositories and routing writes to the correct JSONL
