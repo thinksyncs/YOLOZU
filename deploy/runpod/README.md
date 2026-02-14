@@ -105,3 +105,21 @@ bash deploy/runpod/run_compliance.sh
 This writes:
 - `reports/doctor.json`
 - `reports/dependency_licenses.json`
+
+## Beads (bd) sync on RunPod (fix for stale `bd list`)
+
+If the RunPod repo was cloned with `git clone --single-branch`, `git fetch origin beads-sync` may update only
+`FETCH_HEAD` and *not* update `refs/remotes/origin/beads-sync`, leaving `bd list` stale.
+
+Use the helper (recommended):
+
+```bash
+bash deploy/runpod/refresh_beads_sync.sh
+```
+
+One-time alternative: teach `origin` to track `beads-sync`, then `git fetch origin` will keep it fresh:
+
+```bash
+git remote set-branches --add origin beads-sync
+git fetch origin
+```
