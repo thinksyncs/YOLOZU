@@ -92,7 +92,7 @@ for ep in "${epochs_arr[@]}"; do
     --iou-threshold 0.5 \
     --max-images "${MAX_IMAGES}" >/dev/null
 
-  python3 -c "import json; from pathlib import Path; obj=json.loads(Path(r'${run_dir}/pose_eval.json').read_text()); m=obj.get('metrics',{}); print('rot_deg_median', m.get('rot_deg_median')); print('depth_abs_median', m.get('depth_abs_median')); print('success_pose', m.get('success_pose'))"
+  python3 -c "import json; from pathlib import Path; obj=json.loads(Path(r'${run_dir}/pose_eval.json').read_text()); m=obj.get('metrics',{}); print('rot_deg_median', m.get('rot_deg_median')); print('depth_abs_median', m.get('depth_abs_median')); print('pose_success', m.get('pose_success')); print('rot_success', m.get('rot_success')); print('trans_success', m.get('trans_success'))"
 done
 
 echo
