@@ -11,6 +11,8 @@ MAX_IMAGES="${MAX_IMAGES:-200}"
 IMAGE_SIZE="${IMAGE_SIZE:-320}"
 EPOCHS="${EPOCHS:-5}"
 MAX_STEPS="${MAX_STEPS:-500}"
+LR="${LR:-0.0001}"
+BATCH_SIZE="${BATCH_SIZE:-2}"
 DEVICE="${DEVICE:-cuda}"
 
 CONFIG_PATH="${CONFIG_PATH:-rtdetr_pose/configs/coco_keypoints_smoke.json}"
@@ -38,6 +40,8 @@ python3 rtdetr_pose/tools/train_minimal.py \
   --real-images \
   --image-size "${IMAGE_SIZE}" \
   --epochs "${EPOCHS}" \
+  --lr "${LR}" \
+  --batch-size "${BATCH_SIZE}" \
   --max-steps "${MAX_STEPS}" \
   --device "${DEVICE}" \
   --run-dir "${RUN_DIR}"
