@@ -11,6 +11,13 @@ sys.path.insert(0, str(repo_root))
 
 from yolozu.adapter import DummyAdapter, PrecomputedAdapter, RTDETRPoseAdapter
 from yolozu.boxes import iou_xyxy_abs
+from yolozu.cli_args import (
+    require_float_in_range,
+    require_non_negative_int,
+    require_positive_int,
+    resolve_input_path,
+    resolve_output_path,
+)
 from yolozu.dataset import build_manifest
 from yolozu.image_keys import add_image_aliases, lookup_image_alias
 from yolozu.scenario_suite import build_report
@@ -233,18 +240,36 @@ def _summary_metrics(records, predictions, iou_thr):
 def main(argv=None):
     args = _parse_args(sys.argv[1:] if argv is None else argv)
 
-    dataset_root = Path(args.dataset) if args.dataset else (repo_root / "data" / "coco128")
+    try:
+        max_images = require_non_negative_int(args.max_images, flag_name="--max-images")
+        max_detections = require_positive_int(args.max_detections, flag_name="--max-detections")
+        iou_threshold = require_float_in_range(args.iou_threshold, flag_name="--iou-threshold", minimum=0.0, maximum=1.0)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+
+    cwd = Path.cwd()
+    dataset_root = (
+        resolve_input_path(args.dataset, cwd=cwd, repo_root=repo_root)
+        if args.dataset
+        else resolve_input_path("data/coco128", cwd=cwd, repo_root=repo_root)
+    )
     manifest = build_manifest(dataset_root, split=args.split)
     records = manifest["images"]
-    if args.max_images is not None:
-        records = records[: args.max_images]
+    if max_images is not None:
+        records = records[: int(max_images)]
 
+    precomputed_path: Path | None = None
+    config_path = resolve_input_path(args.config, cwd=cwd, repo_root=repo_root)
+    checkpoint_path = (
+        resolve_input_path(args.checkpoint, cwd=cwd, repo_root=repo_root) if args.checkpoint else None
+    )
     if args.adapter == "dummy":
         adapter = DummyAdapter()
     elif args.adapter == "precomputed":
         if not args.predictions:
             raise SystemExit("--predictions is required for --adapter precomputed")
-        adapter = PrecomputedAdapter(predictions_path=args.predictions)
+        precomputed_path = resolve_input_path(args.predictions, cwd=cwd, repo_root=repo_root)
+        adapter = PrecomputedAdapter(predictions_path=str(precomputed_path))
     else:
         image_size = None
         if args.image_size:
@@ -255,12 +280,12 @@ def main(argv=None):
             else:
                 raise SystemExit("--image-size expects 1 or 2 integers")
         adapter = RTDETRPoseAdapter(
-            config_path=args.config,
-            checkpoint_path=args.checkpoint,
+            config_path=str(config_path),
+            checkpoint_path=(str(checkpoint_path) if checkpoint_path is not None else None),
             device=args.device,
             image_size=image_size or (320, 320),
             score_threshold=args.score_threshold,
-            max_detections=args.max_detections,
+            max_detections=int(max_detections or 1),
         )
 
     started_utc = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
@@ -270,7 +295,7 @@ def main(argv=None):
     fps = (len(records) / elapsed) if elapsed > 0 else float("inf")
     finished_utc = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
-    summary = _summary_metrics(records, predictions, args.iou_threshold)
+    summary = _summary_metrics(records, predictions, float(iou_threshold or 0.0))
     scenario_report = None
     if not bool(args.no_scenarios):
         scenario_report = build_report()
@@ -297,7 +322,7 @@ def main(argv=None):
     else:
         coco_section = {"enabled": False}
 
-    output_path = repo_root / args.output
+    output_path = resolve_output_path(args.output, cwd=cwd)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     baseline = {
         "schema_version": 1,
@@ -309,12 +334,12 @@ def main(argv=None):
             "dataset": str(dataset_root),
             "split": str(manifest.get("split")),
             "adapter": str(args.adapter),
-            "predictions_in": str(args.predictions) if args.predictions else None,
-            "config": str(args.config),
-            "checkpoint": args.checkpoint,
+            "predictions_in": str(precomputed_path) if precomputed_path is not None else None,
+            "config": str(config_path),
+            "checkpoint": str(checkpoint_path) if checkpoint_path is not None else None,
             "device": str(args.device),
             "image_size": list(image_size or (320, 320)) if args.adapter == "rtdetr_pose" else None,
-            "iou_threshold": float(args.iou_threshold),
+            "iou_threshold": float(iou_threshold or 0.0),
         },
         "speed": {
             "images": int(len(records)),
@@ -342,7 +367,7 @@ def main(argv=None):
                     "images": len(records),
                 },
             }
-        pred_path = repo_root / args.predictions_out
+        pred_path = resolve_output_path(args.predictions_out, cwd=cwd)
         pred_path.parent.mkdir(parents=True, exist_ok=True)
         pred_path.write_text(json.dumps(payload, indent=2, sort_keys=True))
 

@@ -77,6 +77,13 @@ Minimal example:
 }
 ```
 
+### Precedence and path resolution
+
+- Priority: **CLI flags > config file > built-in defaults**.
+- Relative paths passed via CLI are resolved from your current working directory.
+- Relative paths inside `--config` are resolved from that config file’s directory.
+- For backward compatibility, repo-root fallback is still applied for input paths.
+
 ## Why this is useful on macOS
 
 You can do:
@@ -85,4 +92,3 @@ You can do:
 - regression tracking (JSONL history)
 
 …and keep GPU/TensorRT build + real FPS measurement for Linux/Runpod.
-

@@ -9,6 +9,7 @@ repo_root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(repo_root))
 
 from yolozu.boxes import cxcywh_norm_to_xyxy_abs, iou_xyxy_abs
+from yolozu.cli_args import parse_image_size_arg, require_non_negative_int, resolve_input_path
 from yolozu.image_keys import add_image_aliases
 from yolozu.image_size import get_image_size
 from yolozu.predictions import load_predictions_entries
@@ -41,19 +42,6 @@ def _parse_args(argv):
         help="Optional fixed image size (e.g. 640 or 640,640) to avoid reading image files.",
     )
     return p.parse_args(argv)
-
-
-def _parse_image_size(value: str | None) -> tuple[int, int] | None:
-    if not value:
-        return None
-    raw = value.replace("x", ",")
-    parts = [p.strip() for p in raw.split(",") if p.strip()]
-    if len(parts) == 1:
-        size = int(parts[0])
-        return size, size
-    if len(parts) == 2:
-        return int(parts[0]), int(parts[1])
-    raise ValueError("--image-size expects 'N' or 'W,H'")
 
 
 def _load_index(path: str) -> dict[str, list[_Det]]:
@@ -173,14 +161,21 @@ def _match_image(
 def main(argv=None):
     args = _parse_args(sys.argv[1:] if argv is None else argv)
 
-    image_size = _parse_image_size(args.image_size)
+    try:
+        image_size = parse_image_size_arg(args.image_size, flag_name="--image-size")
+        max_images = require_non_negative_int(args.max_images, flag_name="--max-images")
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
 
-    ref_idx = _load_index(args.reference)
-    cand_idx = _load_index(args.candidate)
+    ref_path = resolve_input_path(args.reference, cwd=Path.cwd(), repo_root=repo_root)
+    cand_path = resolve_input_path(args.candidate, cwd=Path.cwd(), repo_root=repo_root)
+
+    ref_idx = _load_index(str(ref_path))
+    cand_idx = _load_index(str(cand_path))
 
     images = sorted({k for k in ref_idx.keys() if "/" in k or Path(k).exists()})
-    if args.max_images is not None:
-        images = images[: max(0, int(args.max_images))]
+    if max_images is not None:
+        images = images[: int(max_images)]
     if not images:
         raise SystemExit("no comparable images found in reference predictions (need absolute paths or existing files)")
 
@@ -202,8 +197,8 @@ def main(argv=None):
         ok = ok and bool(result["ok"])
 
     report = {
-        "reference": args.reference,
-        "candidate": args.candidate,
+        "reference": str(ref_path),
+        "candidate": str(cand_path),
         "bbox_format": args.bbox_format,
         "iou_thresh": args.iou_thresh,
         "score_atol": args.score_atol,

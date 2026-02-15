@@ -11,6 +11,14 @@ from typing import Any
 repo_root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(repo_root))
 
+from yolozu.cli_args import (
+    require_float_in_range,
+    require_non_negative_float,
+    require_non_negative_int,
+    require_positive_int,
+    resolve_input_path,
+    resolve_output_path,
+)
 from yolozu.dataset import build_manifest
 from yolozu.image_keys import image_key_aliases
 from yolozu.metrics_report import build_report, write_json
@@ -125,21 +133,22 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     return p.parse_args(argv)
 
 
-def _load_config(path: str | None) -> dict[str, Any]:
+def _load_config(path: str | None) -> tuple[dict[str, Any], Path | None]:
     if not path:
-        return {}
-    cfg_path = Path(path)
-    if not cfg_path.is_absolute():
-        cfg_path = repo_root / cfg_path
+        return {}, None
+    cfg_path = resolve_input_path(path, cwd=Path.cwd(), repo_root=repo_root)
     if not cfg_path.exists():
         raise SystemExit(f"config not found: {cfg_path}")
-    data = json.loads(cfg_path.read_text())
-    return data if isinstance(data, dict) else {}
+    data = json.loads(cfg_path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        return {}, cfg_path.parent
+    return data, cfg_path.parent
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(sys.argv[1:] if argv is None else argv)
-    cfg = _load_config(args.config)
+    cfg, cfg_dir = _load_config(args.config)
+    cwd = Path.cwd()
 
     # Defaults (overridden by config, then CLI).
     defaults: dict[str, Any] = {
@@ -182,21 +191,38 @@ def main(argv: list[str] | None = None) -> int:
         if "tau" in tg:
             cfg.setdefault("tau", tg.get("tau"))
 
-    def pick(name: str, cli_value: Any) -> Any:
+    def pick_with_source(name: str, cli_value: Any) -> tuple[Any, str]:
         if cli_value is not None:
-            return cli_value
+            return cli_value, "cli"
         if name in cfg and cfg[name] is not None:
-            return cfg[name]
-        return defaults.get(name)
+            return cfg[name], "config"
+        return defaults.get(name), "default"
 
-    dataset = pick("dataset", args.dataset)
-    if not dataset:
+    def pick(name: str, cli_value: Any) -> Any:
+        return pick_with_source(name, cli_value)[0]
+
+    def resolve_input_from_source(value: Any, *, source: str) -> Path:
+        if source == "config" and cfg_dir is not None:
+            return resolve_input_path(value, cwd=cwd, repo_root=repo_root, config_dir=cfg_dir)
+        return resolve_input_path(value, cwd=cwd, repo_root=repo_root)
+
+    def resolve_output_from_source(value: Any, *, source: str) -> Path:
+        path = Path(str(value)).expanduser()
+        if path.is_absolute():
+            return path
+        if source == "config" and cfg_dir is not None:
+            return Path(cfg_dir) / path
+        return resolve_output_path(path, cwd=cwd)
+
+    dataset_raw, dataset_source = pick_with_source("dataset", args.dataset)
+    if not dataset_raw:
         raise SystemExit("--dataset is required (or set it in --config)")
-    predictions_path = pick("predictions", args.predictions)
-    if not predictions_path:
+    predictions_raw, predictions_source = pick_with_source("predictions", args.predictions)
+    if not predictions_raw:
         raise SystemExit("--predictions is required (or set it in --config)")
+    dataset = resolve_input_from_source(dataset_raw, source=dataset_source)
+    predictions_path = resolve_input_from_source(predictions_raw, source=predictions_source)
 
-    output_report = pick("output_report", args.output_report)
     metric = pick("metric", args.metric)
     det_score_key = pick("det_score_key", args.det_score_key)
     template_score_key = pick("template_score_key", args.template_score_key)
@@ -219,10 +245,22 @@ def main(argv: list[str] | None = None) -> int:
     topk_per_image = pick("topk_per_image", args.topk_per_image)
     wrap_output = bool(pick("wrap_output", args.wrap_output))
 
+    try:
+        max_images = require_non_negative_int(max_images, flag_name="--max-images")
+        min_score = require_non_negative_float(min_score, flag_name="--min-score")
+        topk_per_image = require_positive_int(topk_per_image, flag_name="--topk-per-image")
+        tau = require_non_negative_float(tau, flag_name="--tau")
+        for idx, tau_value in enumerate(grid_tau):
+            require_non_negative_float(float(tau_value), flag_name=f"--grid-tau[{idx}]")
+        if str(metric) not in ("map50", "map50_95"):
+            raise ValueError("--metric must be map50 or map50_95")
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+
     manifest = build_manifest(dataset, split=pick("split", args.split))
     records = manifest["images"]
     if max_images is not None:
-        records = records[: max(0, int(max_images))]
+        records = records[: int(max_images)]
 
     allowed_keys = _allowed_image_keys(records)
     base_entries = load_predictions_entries(predictions_path)
@@ -281,10 +319,16 @@ def main(argv: list[str] | None = None) -> int:
     meta = {
         "run_id": _now_utc().replace(":", "-"),
         "git_head": _git_head(),
+        "config": str(resolve_input_path(args.config, cwd=cwd, repo_root=repo_root)) if args.config else None,
         "dataset": str(dataset),
         "split": manifest.get("split"),
         "max_images": None if max_images is None else int(max_images),
         "predictions": str(predictions_path),
+        "path_resolution": {
+            "cli_relative": "cwd",
+            "config_relative": "config_file_dir",
+            "repo_fallback": True,
+        },
         "metric": str(metric),
         "iou_thresholds": thresholds,
         "keys": {
@@ -308,13 +352,17 @@ def main(argv: list[str] | None = None) -> int:
         "python": sys.version,
     }
     report = build_report(metrics={"tuning": metrics, "results": results}, meta=meta)
-    report_path = Path(output_report)
-    if not report_path.is_absolute():
-        report_path = repo_root / report_path
+    output_report_value, output_report_source = pick_with_source("output_report", args.output_report)
+    report_path = resolve_output_from_source(output_report_value, source=output_report_source)
     write_json(report_path, report)
     print(report_path)
 
-    output_predictions = pick("output_predictions", args.output_predictions)
+    output_predictions_value, output_predictions_source = pick_with_source("output_predictions", args.output_predictions)
+    output_predictions = (
+        resolve_output_from_source(output_predictions_value, source=output_predictions_source)
+        if output_predictions_value
+        else None
+    )
     if output_predictions and best_weights is not None:
         tuned = fuse_detection_scores(
             base_entries,
@@ -333,9 +381,7 @@ def main(argv: list[str] | None = None) -> int:
         payload: Any = tuned.entries
         if wrap_output:
             payload = {"predictions": tuned.entries, "meta": {"best": best, "best_weights": best_weights, "source": meta}}
-        out_path = Path(output_predictions)
-        if not out_path.is_absolute():
-            out_path = repo_root / out_path
+        out_path = output_predictions
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(json.dumps(payload, indent=2, sort_keys=True))
         print(out_path)

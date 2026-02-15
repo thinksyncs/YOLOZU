@@ -9,6 +9,7 @@ repo_root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(repo_root))
 
 from yolozu.boxes import iou_cxcywh_norm_dict
+from yolozu.cli_args import require_non_negative_int, resolve_input_path
 from yolozu.image_keys import add_image_aliases
 from yolozu.keypoints import normalize_keypoints
 from yolozu.predictions import load_predictions_entries
@@ -174,10 +175,18 @@ def _match_image(
 def main(argv=None):
     args = _parse_args(sys.argv[1:] if argv is None else argv)
 
-    images, ref_idx = _load_index(args.reference)
-    _, cand_idx = _load_index(args.candidate)
-    if args.max_images is not None:
-        images = images[: max(0, int(args.max_images))]
+    try:
+        max_images = require_non_negative_int(args.max_images, flag_name="--max-images")
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+
+    ref_path = resolve_input_path(args.reference, cwd=Path.cwd(), repo_root=repo_root)
+    cand_path = resolve_input_path(args.candidate, cwd=Path.cwd(), repo_root=repo_root)
+
+    images, ref_idx = _load_index(str(ref_path))
+    _, cand_idx = _load_index(str(cand_path))
+    if max_images is not None:
+        images = images[: int(max_images)]
     if not images:
         raise SystemExit("no images found in reference predictions")
 
@@ -199,8 +208,8 @@ def main(argv=None):
         ok = ok and bool(result["ok"])
 
     report = {
-        "reference": args.reference,
-        "candidate": args.candidate,
+        "reference": str(ref_path),
+        "candidate": str(cand_path),
         "iou_thresh": args.iou_thresh,
         "score_atol": args.score_atol,
         "bbox_atol": args.bbox_atol,

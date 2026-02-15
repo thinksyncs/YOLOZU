@@ -226,6 +226,11 @@ Dev-only commands (source checkout): `yolozu dev train`, `yolozu dev test` (alia
 
 The “power-user” unified CLI lives in-repo: `python3 tools/yolozu.py --help`.
 
+Path behavior in tool CLIs:
+- Relative input paths are resolved from the current working directory (with repo-root fallback for compatibility).
+- Relative output paths are written under the current working directory.
+- For config-driven tools such as `tools/tune_gate_weights.py`, relative paths in the config are resolved from the config file directory.
+
 ## Container images (GHCR)
 
 YOLOZU can publish Docker images to GitHub Container Registry (GHCR) on tags `vX.Y.Z`.

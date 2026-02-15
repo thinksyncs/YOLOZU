@@ -51,6 +51,16 @@ When adding a new tool, prefer:
 2) writing outputs to a deterministic path (default under `reports/`)
 3) printing the output path to stdout
 
+## CLI path behavior (consistency)
+
+For user-facing tools (`eval_*`, parity checkers, baseline/tuning scripts), path handling is:
+
+- CLI relative input paths: resolved from the current working directory first, then repo-root fallback.
+- Config-file relative input paths (where supported): resolved from the config file directory first.
+- Relative output paths: written under the current working directory.
+
+This keeps local CUI runs predictable while preserving backwards compatibility with repo-root workflows.
+
 ## Adding a new tool (checklist)
 
 - Add the script under `tools/` (thin CLI; keep logic in `yolozu/` when possible)

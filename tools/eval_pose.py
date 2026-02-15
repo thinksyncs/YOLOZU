@@ -7,6 +7,13 @@ from pathlib import Path
 repo_root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(repo_root))
 
+from yolozu.cli_args import (  # noqa: E402
+    require_float_in_range,
+    require_non_negative_float,
+    require_non_negative_int,
+    resolve_input_path,
+    resolve_output_path,
+)
 from yolozu.dataset import build_manifest  # noqa: E402
 from yolozu.pose_eval import evaluate_pose  # noqa: E402
 from yolozu.predictions import load_predictions_entries  # noqa: E402
@@ -34,36 +41,41 @@ def _now_utc() -> str:
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(sys.argv[1:] if argv is None else argv)
 
-    dataset_root = Path(str(args.dataset))
-    if not dataset_root.is_absolute():
-        dataset_root = repo_root / dataset_root
+    try:
+        max_images = require_non_negative_int(args.max_images, flag_name="--max-images")
+        keep_per_image = require_non_negative_int(args.keep_per_image, flag_name="--keep-per-image")
+        iou_threshold = require_float_in_range(args.iou_threshold, flag_name="--iou-threshold", minimum=0.0, maximum=1.0)
+        min_score = require_non_negative_float(args.min_score, flag_name="--min-score")
+        success_rot_deg = require_non_negative_float(args.success_rot_deg, flag_name="--success-rot-deg")
+        success_trans = require_non_negative_float(args.success_trans, flag_name="--success-trans")
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+
+    cwd = Path.cwd()
+    dataset_root = resolve_input_path(args.dataset, cwd=cwd, repo_root=repo_root)
 
     manifest = build_manifest(dataset_root, split=args.split)
     records = manifest.get("images") or []
     if not isinstance(records, list):
         records = []
 
-    if args.max_images is not None:
-        records = records[: int(args.max_images)]
+    if max_images is not None:
+        records = records[: int(max_images)]
 
-    pred_path = Path(str(args.predictions))
-    if not pred_path.is_absolute():
-        pred_path = repo_root / pred_path
+    pred_path = resolve_input_path(args.predictions, cwd=cwd, repo_root=repo_root)
 
     entries = load_predictions_entries(pred_path)
     result = evaluate_pose(
         records,
         entries,
-        iou_threshold=float(args.iou_threshold),
-        min_score=float(args.min_score),
-        success_rot_deg=float(args.success_rot_deg),
-        success_trans=float(args.success_trans),
-        keep_per_image=int(args.keep_per_image),
+        iou_threshold=float(iou_threshold or 0.0),
+        min_score=float(min_score or 0.0),
+        success_rot_deg=float(success_rot_deg or 0.0),
+        success_trans=float(success_trans or 0.0),
+        keep_per_image=int(keep_per_image or 0),
     )
 
-    out_path = Path(str(args.output))
-    if not out_path.is_absolute():
-        out_path = repo_root / out_path
+    out_path = resolve_output_path(args.output, cwd=cwd)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     payload = {
@@ -83,4 +95,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

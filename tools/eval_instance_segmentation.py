@@ -8,6 +8,14 @@ from typing import Any
 repo_root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(repo_root))
 
+from yolozu.cli_args import (  # noqa: E402
+    require_float_in_range,
+    require_non_negative_float,
+    require_non_negative_int,
+    require_positive_int,
+    resolve_input_path,
+    resolve_output_path,
+)
 from yolozu.dataset import build_manifest  # noqa: E402
 from yolozu.image_keys import image_basename, image_key_aliases, lookup_image_alias  # noqa: E402
 from yolozu.instance_segmentation_eval import extract_gt_instances_from_record, load_mask_bool  # noqa: E402
@@ -279,45 +287,48 @@ def _write_html(*, html_path: Path, title: str, report: dict[str, Any], overlays
 def main(argv: list[str] | None = None) -> None:
     args = _parse_args(sys.argv[1:] if argv is None else argv)
 
-    dataset_root = Path(args.dataset)
-    if not dataset_root.is_absolute():
-        dataset_root = repo_root / dataset_root
+    try:
+        max_images = require_non_negative_int(args.max_images, flag_name="--max-images")
+        max_overlays = require_non_negative_int(args.max_overlays, flag_name="--max-overlays")
+        per_image_limit = require_non_negative_int(args.per_image_limit, flag_name="--per-image-limit")
+        overlay_max_size = require_positive_int(args.overlay_max_size, flag_name="--overlay-max-size")
+        overlay_alpha = require_float_in_range(args.overlay_alpha, flag_name="--overlay-alpha", minimum=0.0, maximum=1.0)
+        min_score = require_non_negative_float(args.min_score, flag_name="--min-score")
+        diag_iou = require_float_in_range(args.diag_iou, flag_name="--diag-iou", minimum=0.0, maximum=1.0)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
 
-    pred_json_path = Path(args.predictions)
-    if not pred_json_path.is_absolute():
-        pred_json_path = repo_root / pred_json_path
+    cwd = Path.cwd()
+    dataset_root = resolve_input_path(args.dataset, cwd=cwd, repo_root=repo_root)
+    pred_json_path = resolve_input_path(args.predictions, cwd=cwd, repo_root=repo_root)
 
-    pred_root = Path(args.pred_root) if args.pred_root else pred_json_path.parent
-    if not pred_root.is_absolute():
-        pred_root = repo_root / pred_root
+    pred_root = (
+        resolve_input_path(args.pred_root, cwd=cwd, repo_root=repo_root) if args.pred_root else pred_json_path.parent
+    )
 
     class_names: dict[int, str] = {}
     classes_path: Path | None = None
     if args.classes:
-        classes_path = Path(args.classes)
-        if not classes_path.is_absolute():
-            classes_path = repo_root / classes_path
+        classes_path = resolve_input_path(args.classes, cwd=cwd, repo_root=repo_root)
         class_names = _load_class_id_to_name(classes_path)
 
-    output_path = Path(args.output)
-    if not output_path.is_absolute():
-        output_path = repo_root / output_path
+    output_path = resolve_output_path(args.output, cwd=cwd)
 
     manifest = build_manifest(dataset_root, split=args.split)
     records = manifest["images"]
-    if args.max_images is not None:
-        records = records[: int(args.max_images)]
+    if max_images is not None:
+        records = records[: int(max_images)]
 
     entries, pred_meta = load_instance_segmentation_predictions_entries(pred_json_path)
 
     result = evaluate_instance_map(
         records=records,
         predictions_entries=entries,
-        min_score=float(args.min_score),
+        min_score=float(min_score or 0.0),
         pred_root=pred_root,
         allow_rgb_masks=bool(args.allow_rgb_masks),
         return_per_image=True,
-        diagnostics_iou=float(args.diag_iou),
+        diagnostics_iou=float(diag_iou or 0.0),
     )
 
     per_class_rows: list[dict[str, Any]] = []
@@ -351,9 +362,9 @@ def main(argv: list[str] | None = None) -> None:
             "classes": str(classes_path) if classes_path is not None else None,
             "output_json": str(output_path),
             "images_evaluated": int(len(records)),
-            "min_score": float(args.min_score),
-            "diag_iou": float(args.diag_iou),
-            "per_image_limit": int(args.per_image_limit),
+            "min_score": float(min_score or 0.0),
+            "diag_iou": float(diag_iou or 0.0),
+            "per_image_limit": int(per_image_limit or 0),
             "overlay_sort": str(args.overlay_sort),
             "allow_rgb_masks": bool(args.allow_rgb_masks),
             "predictions_meta": pred_meta,
@@ -370,23 +381,21 @@ def main(argv: list[str] | None = None) -> None:
             float(d.get("mean_iou") if d.get("mean_iou") is not None else 0.0),
         )
     )
-    report["meta"]["per_image_top"] = per_image[: max(0, int(args.per_image_limit))]
+    report["meta"]["per_image_top"] = per_image[: int(per_image_limit or 0)]
     write_json(output_path, report)
     print(output_path)
 
     overlays_index: list[dict[str, Any]] | None = None
     if args.html:
         overlays_index = []
-        if args.overlays_dir and int(args.max_overlays) > 0:
+        if args.overlays_dir and int(max_overlays or 0) > 0:
             try:
                 import numpy as np
                 from PIL import Image
             except Exception as exc:  # pragma: no cover
                 raise SystemExit(f"numpy + Pillow required for overlays: {exc}") from exc
 
-            overlays_dir = Path(args.overlays_dir)
-            if not overlays_dir.is_absolute():
-                overlays_dir = repo_root / overlays_dir
+            overlays_dir = resolve_output_path(args.overlays_dir, cwd=cwd)
             overlays_dir.mkdir(parents=True, exist_ok=True)
 
             # Build a lightweight prediction index: image key -> instances.
@@ -399,7 +408,7 @@ def main(argv: list[str] | None = None) -> None:
                     score = float(inst.get("score", 1.0))
                 except Exception:
                     score = 1.0
-                if score < float(args.min_score):
+                if score < float(min_score or 0.0):
                     continue
                 mask = inst.get("mask")
                 if isinstance(mask, (str, Path)):
@@ -444,7 +453,7 @@ def main(argv: list[str] | None = None) -> None:
                 ordered_records.sort(key=_sort_key)
 
             for idx, rec in enumerate(ordered_records):
-                if len(overlays_index) >= int(args.max_overlays):
+                if len(overlays_index) >= int(max_overlays or 0):
                     break
                 image_path = rec.get("image")
                 if not isinstance(image_path, str) or not image_path:
@@ -461,7 +470,7 @@ def main(argv: list[str] | None = None) -> None:
                     continue
 
                 # Downscale image for overlays only.
-                img_r = _resize_max(img, max_size=int(args.overlay_max_size))
+                img_r = _resize_max(img, max_size=int(overlay_max_size or 1))
                 scale_x = float(img_r.size[0]) / float(img.size[0]) if img.size[0] else 1.0
                 scale_y = float(img_r.size[1]) / float(img.size[1]) if img.size[1] else 1.0
 
@@ -506,8 +515,20 @@ def main(argv: list[str] | None = None) -> None:
                         }
                     )
 
-                ov_gt = _overlay_instances(img_r, gt_r, colors=colors, alpha=float(args.overlay_alpha), allow_rgb_masks=bool(args.allow_rgb_masks))
-                ov_pred = _overlay_instances(img_r, pred_r, colors=colors, alpha=float(args.overlay_alpha), allow_rgb_masks=bool(args.allow_rgb_masks))
+                ov_gt = _overlay_instances(
+                    img_r,
+                    gt_r,
+                    colors=colors,
+                    alpha=float(overlay_alpha or 0.0),
+                    allow_rgb_masks=bool(args.allow_rgb_masks),
+                )
+                ov_pred = _overlay_instances(
+                    img_r,
+                    pred_r,
+                    colors=colors,
+                    alpha=float(overlay_alpha or 0.0),
+                    allow_rgb_masks=bool(args.allow_rgb_masks),
+                )
 
                 combined = _concat_h([img_r, ov_gt, ov_pred])
                 stem = Path(image_path).stem
@@ -531,9 +552,7 @@ def main(argv: list[str] | None = None) -> None:
                     }
                 )
 
-        html_path = Path(args.html)
-        if not html_path.is_absolute():
-            html_path = repo_root / html_path
+        html_path = resolve_output_path(args.html, cwd=cwd)
         _write_html(html_path=html_path, title=str(args.title), report=report, overlays=overlays_index if overlays_index else None)
         print(html_path)
 

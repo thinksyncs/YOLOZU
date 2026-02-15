@@ -14,6 +14,14 @@ from yolozu.coco_keypoints_eval import (  # noqa: E402
     evaluate_coco_oks_map,
     predictions_to_coco_keypoints,
 )
+from yolozu.cli_args import (  # noqa: E402
+    require_float_in_range,
+    require_non_negative_float,
+    require_non_negative_int,
+    require_positive_int,
+    resolve_input_path,
+    resolve_output_path,
+)
 from yolozu.dataset import build_manifest  # noqa: E402
 from yolozu.image_keys import add_image_aliases, lookup_image_alias  # noqa: E402
 from yolozu.keypoints import keypoints_to_pixels, normalize_keypoints  # noqa: E402
@@ -64,13 +72,6 @@ def _now_utc() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
-def _resolve(value: str) -> Path:
-    p = Path(value)
-    if p.is_absolute():
-        return p
-    return repo_root / p
-
-
 def _parse_oks_sigmas(value: str) -> list[float]:
     raw = value.strip().lower()
     if raw in ("coco", "coco17", "coco-17"):
@@ -79,12 +80,17 @@ def _parse_oks_sigmas(value: str) -> list[float]:
     return [float(p) for p in parts]
 
 
-def _resolve_oks_sigmas(args: argparse.Namespace, *, keypoints_count: int) -> list[float] | None:
+def _resolve_oks_sigmas(
+    args: argparse.Namespace,
+    *,
+    keypoints_count: int,
+    cwd: Path,
+) -> list[float] | None:
     if not bool(args.oks):
         return None
 
     if args.oks_sigmas_file:
-        path = _resolve(str(args.oks_sigmas_file))
+        path = resolve_input_path(str(args.oks_sigmas_file), cwd=cwd, repo_root=repo_root)
         payload = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(payload, list):
             raise ValueError("--oks-sigmas-file must contain a JSON list")
@@ -326,23 +332,38 @@ def _render_overlay(
 def main(argv: list[str] | None = None) -> None:
     args = _parse_args(sys.argv[1:] if argv is None else argv)
 
-    dataset_root = _resolve(args.dataset)
+    try:
+        max_images = require_non_negative_int(args.max_images, flag_name="--max-images")
+        per_image_limit = require_non_negative_int(args.per_image_limit, flag_name="--per-image-limit")
+        max_overlays = require_non_negative_int(args.max_overlays, flag_name="--max-overlays")
+        overlay_max_size = require_positive_int(args.overlay_max_size, flag_name="--overlay-max-size")
+        kp_radius = require_positive_int(args.kp_radius, flag_name="--kp-radius")
+        oks_max_dets = require_positive_int(args.oks_max_dets, flag_name="--oks-max-dets")
+        iou_threshold = require_float_in_range(args.iou_threshold, flag_name="--iou-threshold", minimum=0.0, maximum=1.0)
+        pck_threshold = require_non_negative_float(args.pck_threshold, flag_name="--pck-threshold")
+        min_score = require_non_negative_float(args.min_score, flag_name="--min-score")
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+
+    cwd = Path.cwd()
+    dataset_root = resolve_input_path(args.dataset, cwd=cwd, repo_root=repo_root)
+    predictions_path = resolve_input_path(args.predictions, cwd=cwd, repo_root=repo_root)
     manifest = build_manifest(dataset_root, split=args.split)
     records = manifest["images"]
     split_effective = manifest["split"]
-    if args.max_images is not None:
-        records = records[: int(args.max_images)]
+    if max_images is not None:
+        records = records[: int(max_images)]
 
-    pred_index = load_predictions_index(_resolve(args.predictions))
+    pred_index = load_predictions_index(predictions_path)
 
     # If overlays are requested, compute per-image stats for all images first, then truncate in the final report.
-    eval_limit = int(len(records)) if int(args.max_overlays) > 0 else int(args.per_image_limit)
+    eval_limit = int(len(records)) if int(max_overlays or 0) > 0 else int(per_image_limit or 0)
     result = evaluate_keypoints_pck(
         records=records,
         predictions_index=pred_index,
-        iou_threshold=float(args.iou_threshold),
-        pck_threshold=float(args.pck_threshold),
-        min_score=float(args.min_score),
+        iou_threshold=float(iou_threshold or 0.0),
+        pck_threshold=float(pck_threshold or 0.0),
+        min_score=float(min_score or 0.0),
         per_image_limit=eval_limit,
     )
 
@@ -353,21 +374,21 @@ def main(argv: list[str] | None = None) -> None:
         if int(coco_index.keypoints_count) <= 0:
             result.setdefault("warnings", []).append("oks_no_gt_keypoints")
         else:
-            oks_sigmas = _resolve_oks_sigmas(args, keypoints_count=int(coco_index.keypoints_count))
+            oks_sigmas = _resolve_oks_sigmas(args, keypoints_count=int(coco_index.keypoints_count), cwd=cwd)
             image_sizes = {img["id"]: (int(img["width"]), int(img["height"])) for img in gt.get("images", []) or []}
-            preds_entries = load_predictions_entries(_resolve(args.predictions))
+            preds_entries = load_predictions_entries(predictions_path)
             dt = predictions_to_coco_keypoints(
                 preds_entries,
                 coco_index=coco_index,
                 image_sizes=image_sizes,
                 keypoints_format="xy_norm",
-                min_score=float(args.min_score),
+                min_score=float(min_score or 0.0),
             )
             oks = evaluate_coco_oks_map(
                 gt,
                 dt,
                 sigmas=oks_sigmas,
-                max_dets=int(args.oks_max_dets),
+                max_dets=int(oks_max_dets or 1),
             )
             oks_stats = oks.get("stats") if isinstance(oks, dict) else None
             oks_metrics = oks.get("metrics") if isinstance(oks, dict) else None
@@ -378,8 +399,8 @@ def main(argv: list[str] | None = None) -> None:
     per_image = per_image if isinstance(per_image, list) else []
     total_per_image = int(len(per_image))
 
-    kept = per_image[: int(args.per_image_limit)]
-    truncated = bool(total_per_image > int(args.per_image_limit))
+    kept = per_image[: int(per_image_limit or 0)]
+    truncated = bool(total_per_image > int(per_image_limit or 0))
     result["per_image"] = kept
     result["per_image_total"] = total_per_image
     result["per_image_kept"] = int(len(kept))
@@ -390,13 +411,13 @@ def main(argv: list[str] | None = None) -> None:
         meta={
             "dataset": str(args.dataset),
             "split": str(split_effective),
-            "predictions": str(args.predictions),
+            "predictions": str(predictions_path),
             "warnings": result.get("warnings", []) if isinstance(result, dict) else [],
             "oks": {
                 "enabled": bool(args.oks),
                 "keypoints_count": int(coco_index.keypoints_count) if bool(args.oks) else None,
                 "sigmas": oks_sigmas,
-                "max_dets": int(args.oks_max_dets),
+                "max_dets": int(oks_max_dets or 1),
                 "stats": oks_stats,
             },
             "per_keypoint": result.get("per_keypoint"),
@@ -408,13 +429,13 @@ def main(argv: list[str] | None = None) -> None:
         },
     )
 
-    out_path = _resolve(args.output)
+    out_path = resolve_output_path(args.output, cwd=cwd)
     write_json(out_path, report)
     print(out_path)
 
     overlays_index: list[dict[str, Any]] | None = None
-    if int(args.max_overlays) > 0 and args.overlays_dir:
-        overlays_dir = _resolve(args.overlays_dir)
+    if int(max_overlays or 0) > 0 and args.overlays_dir:
+        overlays_dir = resolve_output_path(args.overlays_dir, cwd=cwd)
 
         # Rebuild a candidate list for overlay selection from the full per-image stats.
         # Note: per-image stats in `result` were computed with eval_limit=len(records) above.
@@ -438,7 +459,7 @@ def main(argv: list[str] | None = None) -> None:
             add_image_aliases(record_by_image, str(r.get("image")), r)
 
         overlays_index = []
-        for idx, row in enumerate(candidates[: int(args.max_overlays)]):
+        for idx, row in enumerate(candidates[: int(max_overlays or 0)]):
             image_path = str(row.get("image"))
             record = lookup_image_alias(record_by_image, image_path)
             if record is None:
@@ -455,10 +476,10 @@ def main(argv: list[str] | None = None) -> None:
                 image_path=image_path,
                 record=record,
                 pred_dets=pred_dets,
-                iou_threshold=float(args.iou_threshold),
-                min_score=float(args.min_score),
-                overlay_max_size=int(args.overlay_max_size),
-                kp_radius=int(args.kp_radius),
+                iou_threshold=float(iou_threshold or 0.0),
+                min_score=float(min_score or 0.0),
+                overlay_max_size=int(overlay_max_size or 1),
+                kp_radius=int(kp_radius or 1),
                 kp_line=bool(args.kp_line),
                 out_path=out_img,
             )
@@ -467,7 +488,7 @@ def main(argv: list[str] | None = None) -> None:
                 overlays_index.append(overlay)
 
     if args.html:
-        html_path = _resolve(args.html)
+        html_path = resolve_output_path(args.html, cwd=cwd)
         _write_html(html_path=html_path, title=str(args.title), report=report, overlays=overlays_index)
         print(html_path)
 
