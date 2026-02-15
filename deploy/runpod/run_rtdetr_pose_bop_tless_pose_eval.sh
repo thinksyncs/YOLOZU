@@ -22,7 +22,7 @@ python3 tools/prepare_bop_yolozu.py \
   --split "${BOP_SPLIT}" \
   --out "${DATASET_OUT}" \
   --out-split "${OUT_SPLIT}" \
-  --bbox-source bbox_vis \
+  --bbox-source bbox_visib \
   --visib-fract-min "${VISIB_MIN}" \
   --max-images "${MAX_IMAGES}" \
   --link-images

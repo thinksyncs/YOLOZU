@@ -13,7 +13,12 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     p.add_argument("--split", required=True, help="BOP split folder name (e.g., train_primesense, val, test).")
     p.add_argument("--out", required=True, help="Output dataset root (YOLO images/ + labels/).")
     p.add_argument("--out-split", default="train2017", help="Output split name under images/ and labels/ (default: train2017).")
-    p.add_argument("--bbox-source", choices=("bbox_vis", "bbox_obj"), default="bbox_vis", help="Which BOP bbox field to use.")
+    p.add_argument(
+        "--bbox-source",
+        choices=("bbox_visib", "bbox_obj", "bbox_vis"),
+        default="bbox_visib",
+        help="Which BOP bbox field to use (default: bbox_visib). 'bbox_vis' is a legacy alias for bbox_visib.",
+    )
     p.add_argument("--visib-fract-min", type=float, default=0.0, help="Minimum visibility fraction (default: 0.0).")
     p.add_argument("--max-scenes", type=int, default=None, help="Optional cap for scenes to convert.")
     p.add_argument("--max-images", type=int, default=None, help="Optional cap for images to convert.")
@@ -149,7 +154,10 @@ def main(argv: list[str] | None = None) -> int:
                 if visib is not None and float(visib) < float(args.visib_fract_min):
                     continue
 
-                bbox = info.get(str(args.bbox_source))
+                bbox_key = str(args.bbox_source)
+                if bbox_key == "bbox_vis":
+                    bbox_key = "bbox_visib"
+                bbox = info.get(bbox_key)
                 if not (isinstance(bbox, list) and len(bbox) == 4):
                     continue
                 if float(bbox[2]) <= 1.0 or float(bbox[3]) <= 1.0:
@@ -224,4 +232,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
