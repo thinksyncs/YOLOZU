@@ -118,12 +118,14 @@ def main(argv: list[str] | None = None) -> int:
         for lab in labels:
             if not isinstance(lab, dict):
                 continue
-            bb = lab.get("bbox") or {}
             try:
-                cx = float(bb.get("cx"))
-                cy = float(bb.get("cy"))
-                w = float(bb.get("w"))
-                h = float(bb.get("h"))
+                # YOLOZU label dict uses top-level cx/cy/w/h, but keep bbox dict
+                # fallback for other producers.
+                bb = lab.get("bbox") if isinstance(lab.get("bbox"), dict) else {}
+                cx = float(lab.get("cx", bb.get("cx")))
+                cy = float(lab.get("cy", bb.get("cy")))
+                w = float(lab.get("w", bb.get("w")))
+                h = float(lab.get("h", bb.get("h")))
             except Exception:
                 continue
 
@@ -159,4 +161,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
