@@ -483,6 +483,8 @@ class RTDETRPose(nn.Module):
                 # Resize mask to match neck feature spatial dimensions
                 if feature_mask.ndim == 2:
                     mask_input = feature_mask.unsqueeze(0).unsqueeze(0).float()  # (1, 1, H, W)
+                elif feature_mask.ndim == 3:
+                    mask_input = feature_mask.unsqueeze(1).float()  # (B, 1, H, W)
                 else:
                     mask_input = feature_mask.float()
                 

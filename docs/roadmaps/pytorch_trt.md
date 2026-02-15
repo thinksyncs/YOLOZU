@@ -50,9 +50,9 @@ track tasks in `docs/roadmaps/yolo26_competition.md` and Beads issues.
 
 ### Training / inference / export
 - [x] ONNX export wrapper for the current minimal model (opset 17)
-- [ ] Training pipeline (matcher, augmentation, MIM teacher, staged schedule)
-- [ ] Inference path (translation recovery, template verification, constraints gating)
-- [ ] TensorRT export + engine build + parity tests + benchmarks
+- [x] Training pipeline (matcher, augmentation, MIM teacher, staged schedule)
+- [x] Inference path (translation recovery, template verification, constraints gating)
+- [x] TensorRT export + engine build + parity tests + benchmarks
 
 Status (2026-01-18)
 - Scaffold created in `rtdetr_pose/` with dataset loader, validator, and model stubs.
@@ -60,21 +60,20 @@ Status (2026-01-18)
 - SIM/Blender sidecar schema added (M/D_obj/R_gt/t_gt/K_gt + cad_points) and content checks for mask/depth/bbox/projection.
 - Reports for baseline/gates/scenarios are scaffolded (dummy metrics; no real model yet).
 - rtdetr_pose scaffolding files are tracked in git; generated caches/reports are ignored.
-- Full RT-DETR, training loop, and TensorRT conversion are not implemented yet.
+- Training loop scaffold + ONNX/TRT export/parity tooling are implemented (see `rtdetr_pose/tools/train_minimal.py`, `tools/run_rtdetr_pose_backend_suite.py`).
 - RT-DETR-style backbone/neck/encoder/decoder (CSPResNet + FPN/PAN + transformer encoder/decoder) is in place.
 
 Current priorities (auto)
-1) Stage 1/4 (training-first): make the dataset loader return full GT fields + build a minimal training loop that runs end-to-end.
-2) Stage 2/3: upgrade the model from the current scaffold toward RT-DETR parity while keeping losses/metrics wired.
-3) Stage 5/6 (later): inference path + TensorRT export/parity benchmarks.
+1) Stage 2/3: upgrade the model from the current scaffold toward RT-DETR parity while keeping losses/metrics wired.
+2) Stage 7: CI smoke run on tiny COCO subset.
 
 ### Training-first next steps (recommended order)
 - [x] Dataset returns per-instance GT: `M`, `D_obj`, `R_gt`, `t_gt`, `K_gt` (+ optional `K_gt'`, `cad_points`)
   - [x] Normalize sidecar keys into canonical fields (`R_gt`, `t_gt`, `K_gt`, `M`, `D_obj`)
   - [x] Preserve paths vs inlined arrays without eager decoding
   - [x] Record per-sample availability stats (pose/intrinsics/mask/depth)
-- [ ] Batch collation for variable #instances and masks/depth
-- [ ] Collate keeps per-instance counts (for matcher) and pads/query-aligns labels/bboxes
+- [x] Batch collation for variable #instances and masks/depth
+- [x] Collate keeps per-instance counts (for matcher) and pads/query-aligns labels/bboxes
 - [x] Minimal trainer entrypoint (1 epoch over coco128; logs loss scalars)
 - [x] Trainer prints GT availability summary for debugging
 - [x] Matching (Hungarian) + staged cost terms (start with cls/box, then add z/rot)
@@ -148,7 +147,7 @@ Start next (着手)
 ## Stage 4) Training pipeline (per spec §6, §10, §11)
 - [x] Data augmentation + SIM jitter integration.
 - [x] Hungarian matching with staged cost terms.
-- [ ] MIM teacher + masking + loss schedule.
+- [x] MIM teacher + masking + loss schedule.
 - [x] Staged training: offsets first, then GlobalKHead.
 
 ## Stage 5) Inference + constraints (per spec §2, §8, §9)
@@ -158,9 +157,9 @@ Start next (着手)
 - [x] Low-FP gate via `score_tmp_sym < τ`.
 
 ## Stage 6) TensorRT export + parity
-- [ ] Export to ONNX and build TensorRT engine.
-- [ ] Parity tests: PyTorch vs TensorRT outputs within tolerance.
-- [ ] Benchmark fps and latency vs target (>= 30 fps).
+- [x] Export to ONNX and build TensorRT engine.
+- [x] Parity tests: PyTorch vs TensorRT outputs within tolerance.
+- [x] Benchmark fps and latency vs target (>= 30 fps).
 
 ## Stage 7) Evaluation + scenario suite (per spec §6)
 - [x] Scenario suite run (symmetry, tabletop, depth extremes, jitter).

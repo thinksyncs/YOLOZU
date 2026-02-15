@@ -34,7 +34,7 @@ Constraints:
 ### Datasets
 - [x] Keep debug dataset under `data/coco128`.
 - [x] Convert official COCO JSON to YOLO-format labels: `tools/prepare_coco_yolo.py`.
-- [ ] Add a short “where to put COCO” doc snippet + example paths (under `data/`).
+- [x] Add a short “where to put COCO” doc snippet + example paths (see `docs/training_inference_export.md`).
 
 ### Predictions JSON interoperability
 - [x] Define/validate predictions schema: `tools/validate_predictions.py`.
@@ -47,7 +47,7 @@ Constraints:
 - [x] Multi-file suite evaluation: `tools/eval_suite.py`.
 - [x] Gate vs target thresholds: `tools/check_map_targets.py`.
 - [x] Leaderboard/summary table tool (markdown/tsv): `tools/print_leaderboard.py`.
-- [ ] Repro config capture (write eval settings into output JSON: imgsz, conf, max_det, preprocessing).
+- [x] Repro config capture (eval settings embedded as `export_settings` in `tools/eval_suite.py` output JSON).
 
 ## Model-side (later; requires training/inference env)
 - [ ] Define YOLOZU size buckets matching YOLO26 compute (param/FLOPs envelopes).

@@ -15,6 +15,8 @@ class DatasetConfig:
 class ModelConfig:
     num_classes: int = 80
     num_keypoints: int = 0
+    enable_mim: bool = False
+    mim_geom_channels: int = 2
     hidden_dim: int = 256
     num_queries: int = 300
     use_uncertainty: bool = False

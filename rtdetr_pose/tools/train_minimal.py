@@ -333,10 +333,64 @@ def build_parser() -> argparse.ArgumentParser:
         help="Allow loading mask/depth arrays from paths (.json/.npy) for z-from-dobj; default keeps lazy paths",
     )
     parser.add_argument(
+        "--enable-mim",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Enable masked reconstruction branch (MIM) and related losses (default: false).",
+    )
+    parser.add_argument(
+        "--mim-mask-prob",
+        type=float,
+        default=0.6,
+        help="Block mask probability for MIM feature masking (default: 0.6).",
+    )
+    parser.add_argument(
+        "--mim-patch-size",
+        type=int,
+        default=16,
+        help="Block mask patch size for MIM feature masking (default: 16).",
+    )
+    parser.add_argument(
+        "--mim-start-step",
+        type=int,
+        default=0,
+        help="Start applying MIM/entropy loss weights after this optimizer step (default: 0).",
+    )
+    parser.add_argument(
         "--cost-t",
         type=float,
         default=0.0,
         help="Optional matching cost for translation recovered from (bbox, offsets, z, K')",
+    )
+    parser.add_argument(
+        "--cost-z-start-step",
+        type=int,
+        default=0,
+        help="Enable cost_z in the matcher after this optimizer step (default: 0).",
+    )
+    parser.add_argument(
+        "--cost-rot-start-step",
+        type=int,
+        default=0,
+        help="Enable cost_rot in the matcher after this optimizer step (default: 0).",
+    )
+    parser.add_argument(
+        "--cost-t-start-step",
+        type=int,
+        default=0,
+        help="Enable cost_t in the matcher after this optimizer step (default: 0).",
+    )
+    parser.add_argument(
+        "--stage-off-steps",
+        type=int,
+        default=0,
+        help="Train offsets only for the first N optimizer steps (sets loss weight k=0). Default: 0 (disabled).",
+    )
+    parser.add_argument(
+        "--stage-k-steps",
+        type=int,
+        default=0,
+        help="Then train GlobalKHead only for the next N optimizer steps (sets loss weight off=0). Default: 0 (disabled).",
     )
     parser.add_argument(
         "--debug-losses",
@@ -623,6 +677,161 @@ def compute_linear_schedule(start: float, end: float, step: int, total_steps: in
     return float(start + (end - start) * alpha)
 
 
+def compute_mim_schedule(
+    *,
+    step: int,
+    total_steps: int,
+    mask_start: float,
+    mask_end: float,
+    weight_start: float,
+    weight_end: float,
+    default_mask: float,
+    default_weight: float,
+) -> tuple[float, float]:
+    """Linear schedule for MIM masking ratio and loss weight."""
+
+    steps = int(total_steps)
+    if steps <= 0:
+        return float(default_mask), float(default_weight)
+    s = int(step)
+    s = max(0, min(s, steps - 1))
+    alpha = 0.0 if steps <= 1 else float(s) / float(steps - 1)
+    mask = float(mask_start + (mask_end - mask_start) * alpha)
+    weight = float(weight_start + (weight_end - weight_start) * alpha)
+    return mask, weight
+
+
+def compute_stage_weights(
+    base: dict[str, float],
+    *,
+    global_step: int,
+    stage_off_steps: int = 0,
+    stage_k_steps: int = 0,
+) -> tuple[dict[str, float], str]:
+    """Return per-step loss weights for simple staged training.
+
+    Stages (by optimizer step):
+    - offsets: [0, stage_off_steps)
+    - k: [stage_off_steps, stage_off_steps + stage_k_steps)
+    - full: afterwards
+    """
+
+    out = {str(k): float(v) for k, v in (base or {}).items()}
+    step = int(global_step)
+    off_n = max(0, int(stage_off_steps))
+    k_n = max(0, int(stage_k_steps))
+
+    stage = "full"
+    if off_n > 0 and step < off_n:
+        stage = "offsets"
+        out["k"] = 0.0
+    elif k_n > 0 and step < (off_n + k_n):
+        stage = "k"
+        out["off"] = 0.0
+    return out, stage
+
+
+def compute_stage_costs(
+    base: dict[str, float],
+    *,
+    global_step: int,
+    cost_z_start_step: int = 0,
+    cost_rot_start_step: int = 0,
+    cost_t_start_step: int = 0,
+) -> dict[str, float]:
+    """Return per-step matcher costs for staged matching."""
+
+    out = {str(k): float(v) for k, v in (base or {}).items()}
+    step = int(global_step)
+    if step < int(cost_z_start_step):
+        out["cost_z"] = 0.0
+    if step < int(cost_rot_start_step):
+        out["cost_rot"] = 0.0
+    if step < int(cost_t_start_step):
+        out["cost_t"] = 0.0
+    return out
+
+
+def generate_block_mask(
+    height: int,
+    width: int,
+    *,
+    patch_size: int,
+    mask_prob: float,
+    generator: "torch.Generator",
+) -> "torch.Tensor":
+    if torch is None:  # pragma: no cover
+        raise RuntimeError("torch is required for generate_block_mask")
+
+    h = max(1, int(height))
+    w = max(1, int(width))
+    ps = max(1, int(patch_size))
+    prob = float(mask_prob)
+
+    grid_h = max(1, (h + ps - 1) // ps)
+    grid_w = max(1, (w + ps - 1) // ps)
+    mask_grid = torch.rand((grid_h, grid_w), generator=generator) < prob
+    mask = mask_grid.repeat_interleave(ps, dim=0).repeat_interleave(ps, dim=1)
+    return mask[:h, :w]
+
+
+def create_geom_input_from_bboxes(
+    bboxes_cxcywh_norm: list[list[float]],
+    z_list: list[float] | None,
+    *,
+    height: int,
+    width: int,
+) -> "torch.Tensor":
+    """Create geometry input tensor from bbox rectangles.
+
+    Output channels follow `tools/example_mim_inference.py`:
+    - mask (float32 0/1)
+    - normalized depth: mask * log(D / z_ref)
+    """
+
+    if torch is None:  # pragma: no cover
+        raise RuntimeError("torch is required for create_geom_input_from_bboxes")
+
+    h = max(1, int(height))
+    w = max(1, int(width))
+    mask = torch.zeros((h, w), dtype=torch.float32)
+    depth = torch.ones((h, w), dtype=torch.float32)
+
+    for i, bb in enumerate(bboxes_cxcywh_norm or []):
+        if not (isinstance(bb, (list, tuple)) and len(bb) == 4):
+            continue
+        cx, cy, bw, bh = [float(v) for v in bb]
+        x0 = int(math.floor((cx - bw * 0.5) * w))
+        x1 = int(math.ceil((cx + bw * 0.5) * w))
+        y0 = int(math.floor((cy - bh * 0.5) * h))
+        y1 = int(math.ceil((cy + bh * 0.5) * h))
+        x0 = max(0, min(w - 1, x0))
+        x1 = max(0, min(w, x1))
+        y0 = max(0, min(h - 1, y0))
+        y1 = max(0, min(h, y1))
+        if x1 <= x0:
+            x1 = min(w, x0 + 1)
+        if y1 <= y0:
+            y1 = min(h, y0 + 1)
+        mask[y0:y1, x0:x1] = 1.0
+
+        if z_list is not None and i < len(z_list):
+            try:
+                z_val = float(z_list[i])
+            except Exception:
+                z_val = 1.0
+            if z_val > 0:
+                depth[y0:y1, x0:x1] = torch.minimum(depth[y0:y1, x0:x1], torch.tensor(z_val, dtype=torch.float32))
+
+    eps = 1e-6
+    if bool((mask > 0).any()):
+        z_ref = depth[mask > 0].median()
+    else:
+        z_ref = torch.tensor(1.0, dtype=torch.float32)
+    depth_norm = mask * (torch.log(depth + eps) - torch.log(z_ref + eps))
+    return torch.stack([mask, depth_norm], dim=0)
+
+
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = build_parser()
 
@@ -737,38 +946,42 @@ class ManifestDataset(Dataset):
     def __init__(
         self,
         records,
-        num_queries,
-        num_classes,
-        num_keypoints,
-        image_size,
-        seed,
-        use_matcher,
-        synthetic_pose,
-        z_from_dobj,
-        load_aux,
-        real_images,
-        multiscale,
-        scale_min,
-        scale_max,
-        hflip_prob,
-        intrinsics_jitter,
-        jitter_dfx,
-        jitter_dfy,
-        jitter_dcx,
-        jitter_dcy,
-        sim_jitter,
-        sim_jitter_profile,
-        sim_jitter_extrinsics,
-        extrinsics_jitter,
-        jitter_dx,
-        jitter_dy,
-        jitter_dz,
-        jitter_droll,
-        jitter_dpitch,
-        jitter_dyaw,
-        derpp_enabled,
-        derpp_teacher_key,
-        derpp_keys,
+        *,
+        num_queries=300,
+        num_classes=80,
+        num_keypoints=0,
+        image_size=640,
+        seed=0,
+        use_matcher=False,
+        synthetic_pose=False,
+        z_from_dobj=False,
+        load_aux=False,
+        real_images=False,
+        multiscale=False,
+        scale_min=1.0,
+        scale_max=1.0,
+        hflip_prob=0.0,
+        intrinsics_jitter=False,
+        jitter_dfx=0.0,
+        jitter_dfy=0.0,
+        jitter_dcx=0.0,
+        jitter_dcy=0.0,
+        sim_jitter=False,
+        sim_jitter_profile=None,
+        sim_jitter_extrinsics=False,
+        extrinsics_jitter=False,
+        jitter_dx=0.0,
+        jitter_dy=0.0,
+        jitter_dz=0.0,
+        jitter_droll=0.0,
+        jitter_dpitch=0.0,
+        jitter_dyaw=0.0,
+        mim_mask_prob=0.0,
+        mim_mask_size=16,
+        mim_mask_value=0.0,
+        derpp_enabled=False,
+        derpp_teacher_key="derpp_teacher",
+        derpp_keys=(),
     ):
         self.records = records
         self.num_queries = int(num_queries)
@@ -780,6 +993,9 @@ class ManifestDataset(Dataset):
         self.synthetic_pose = bool(synthetic_pose)
         self.z_from_dobj = bool(z_from_dobj)
         self.load_aux = bool(load_aux)
+        self.mim_mask_prob = float(mim_mask_prob)
+        self.mim_mask_size = int(mim_mask_size)
+        self.mim_mask_value = float(mim_mask_value)
         self.real_images = bool(real_images)
         self.multiscale = bool(multiscale)
         self.scale_min = float(scale_min)
@@ -979,6 +1195,21 @@ class ManifestDataset(Dataset):
 
         if flip:
             image = torch.flip(image, dims=(2,))
+
+        image_raw = None
+        mim_mask_ratio = None
+        if self.mim_mask_prob and float(self.mim_mask_prob) > 0 and int(self.mim_mask_size) > 0:
+            image_raw = image.clone()
+            mask = generate_block_mask(
+                target_size,
+                target_size,
+                patch_size=int(self.mim_mask_size),
+                mask_prob=float(self.mim_mask_prob),
+                generator=gen,
+            )
+            mim_mask_ratio = mask.float().mean()
+            if bool(mask.any()):
+                image = image.masked_fill(mask.unsqueeze(0).expand_as(image), float(self.mim_mask_value))
 
         instances = record.get("labels") or []
         if self.use_matcher:
@@ -1310,7 +1541,11 @@ class ManifestDataset(Dataset):
             derpp_teacher = self._load_derpp_teacher(record.get(self.derpp_teacher_key))
             if derpp_teacher is not None:
                 targets["derpp_teacher"] = derpp_teacher
-            return {"image": image, "targets": targets}
+            out = {"image": image, "targets": targets}
+            if image_raw is not None and mim_mask_ratio is not None:
+                out["image_raw"] = image_raw
+                out["mim_mask_ratio"] = float(mim_mask_ratio)
+            return out
 
         labels = torch.full((self.num_queries,), -1, dtype=torch.long)
         bbox = torch.zeros((self.num_queries, 4), dtype=torch.float32)
@@ -1331,7 +1566,11 @@ class ManifestDataset(Dataset):
         derpp_teacher = self._load_derpp_teacher(record.get(self.derpp_teacher_key))
         if derpp_teacher is not None:
             targets["derpp_teacher"] = derpp_teacher
-        return {"image": image, "targets": targets}
+        out = {"image": image, "targets": targets}
+        if image_raw is not None and mim_mask_ratio is not None:
+            out["image_raw"] = image_raw
+            out["mim_mask_ratio"] = float(mim_mask_ratio)
+        return out
 
 
 def _pad_field(targets, key, max_len, *, pad_value=0.0, dtype=None):
@@ -1370,6 +1609,26 @@ def _pad_field(targets, key, max_len, *, pad_value=0.0, dtype=None):
 def collate(batch):
     images = torch.stack([item["image"] for item in batch], dim=0)
     targets = [item["targets"] for item in batch]
+
+    extra: dict[str, torch.Tensor] = {}
+    if any("image_raw" in item for item in batch):
+        raws = []
+        for item in batch:
+            raw = item.get("image_raw")
+            if isinstance(raw, torch.Tensor):
+                raws.append(raw)
+            else:
+                raws.append(item["image"])
+        extra["image_raw"] = torch.stack(raws, dim=0)
+    if any("mim_mask_ratio" in item for item in batch):
+        ratios = []
+        for item in batch:
+            try:
+                ratios.append(float(item.get("mim_mask_ratio", 0.0)))
+            except Exception:
+                ratios.append(0.0)
+        extra["mim_mask_ratio"] = torch.tensor(ratios, dtype=torch.float32)
+
     if not targets or "gt_labels" not in targets[0]:
         return images, targets
 
@@ -1383,7 +1642,8 @@ def collate(batch):
             "gt_count": counts,
             "gt_mask": torch.zeros((len(targets), 0), dtype=torch.bool),
         }
-        return images, {"per_sample": targets, "padded": padded}
+        out = {"per_sample": targets, "padded": padded, **extra}
+        return images, out
 
     padded = {
         "gt_count": counts,
@@ -1412,7 +1672,8 @@ def collate(batch):
         if any(key in tgt for tgt in targets):
             padded[key] = _pad_field(targets, key, max_len, pad_value=pad_value, dtype=dtype)
 
-    return images, {"per_sample": targets, "padded": padded}
+    out = {"per_sample": targets, "padded": padded, **extra}
+    return images, out
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1613,6 +1874,16 @@ def main(argv: list[str] | None = None) -> int:
     args.num_queries = int(model_num_queries)
 
     if model_cfg is not None:
+        if getattr(model_cfg, "enable_mim", None) is not None:
+            try:
+                model_cfg.enable_mim = bool(args.enable_mim)
+            except Exception:
+                pass
+        if getattr(model_cfg, "mim_geom_channels", None) is not None:
+            try:
+                model_cfg.mim_geom_channels = int(getattr(model_cfg, "mim_geom_channels", 2) or 2)
+            except Exception:
+                pass
         model = build_model(model_cfg)
     else:
         model = RTDETRPose(
@@ -1623,6 +1894,8 @@ def main(argv: list[str] | None = None) -> int:
             num_decoder_layers=2,
             nhead=4,
             use_uncertainty=bool(args.use_uncertainty),
+            enable_mim=bool(args.enable_mim),
+            mim_geom_channels=2,
         )
 
     if loss_cfg is not None:
@@ -1634,6 +1907,7 @@ def main(argv: list[str] | None = None) -> int:
         losses_fn = build_losses(loss_cfg)
     else:
         losses_fn = Losses(task_aligner=args.task_aligner)
+    base_loss_weights = dict(getattr(losses_fn, "weights", {}) or {})
 
     device_str = str(args.device).strip() if args.device is not None else "cpu"
     if device_str.startswith("cuda") and not torch.cuda.is_available():
@@ -1868,7 +2142,85 @@ def main(argv: list[str] | None = None) -> int:
 
             with sync_context:
                 with autocast:
-                    out = model(images)
+                    step_weights, _stage = compute_stage_weights(
+                        base_loss_weights,
+                        global_step=int(global_step),
+                        stage_off_steps=int(args.stage_off_steps),
+                        stage_k_steps=int(args.stage_k_steps),
+                    )
+                    if not bool(args.enable_mim) or int(global_step) < int(args.mim_start_step):
+                        step_weights["mim"] = 0.0
+                        step_weights["entropy"] = 0.0
+                    losses_fn.weights = step_weights
+
+                    matcher_costs = {
+                        "cost_z": float(args.cost_z),
+                        "cost_rot": float(args.cost_rot),
+                        "cost_t": float(args.cost_t),
+                    }
+                    if bool(args.use_matcher):
+                        matcher_costs = compute_stage_costs(
+                            matcher_costs,
+                            global_step=int(global_step),
+                            cost_z_start_step=int(args.cost_z_start_step),
+                            cost_rot_start_step=int(args.cost_rot_start_step),
+                            cost_t_start_step=int(args.cost_t_start_step),
+                        )
+
+                    mim_active = (
+                        bool(args.enable_mim)
+                        and bool(args.use_matcher)
+                        and per_sample_targets is not None
+                        and int(global_step) >= int(args.mim_start_step)
+                    )
+                    geom_batch = None
+                    mask_batch = None
+                    if mim_active:
+                        geom_h = int(images.shape[-2])
+                        geom_w = int(images.shape[-1])
+                        geom_list = []
+                        mask_list = []
+                        for i, tgt in enumerate(per_sample_targets):
+                            bboxes = []
+                            z_list = None
+                            if isinstance(tgt, dict):
+                                bb_t = tgt.get("gt_bbox")
+                                if isinstance(bb_t, torch.Tensor):
+                                    bboxes = bb_t.tolist()
+                                z_t = tgt.get("gt_z")
+                                if isinstance(z_t, torch.Tensor) and int(z_t.numel()) > 0:
+                                    try:
+                                        z_list = z_t.squeeze(-1).tolist()
+                                    except Exception:
+                                        z_list = None
+                            geom_list.append(
+                                create_geom_input_from_bboxes(
+                                    bboxes,
+                                    z_list,
+                                    height=geom_h,
+                                    width=geom_w,
+                                )
+                            )
+                            mask_gen = torch.Generator()
+                            mask_gen.manual_seed(int(args.seed) + int(global_step) * 1000 + int(i))
+                            mask_list.append(
+                                generate_block_mask(
+                                    geom_h,
+                                    geom_w,
+                                    patch_size=int(args.mim_patch_size),
+                                    mask_prob=float(args.mim_mask_prob),
+                                    generator=mask_gen,
+                                )
+                            )
+                        geom_batch = torch.stack(geom_list, dim=0).to(device=device)
+                        mask_batch = torch.stack(mask_list, dim=0).to(device=device)
+
+                    out = model(
+                        images,
+                        geom_input=geom_batch,
+                        feature_mask=mask_batch,
+                        return_mim=bool(mim_active),
+                    )
 
                     sdft_total = None
                     sdft_parts = None
@@ -1953,11 +2305,11 @@ def main(argv: list[str] | None = None) -> int:
                             cost_bbox=args.cost_bbox,
                             log_z_pred=out.get("log_z"),
                             rot6d_pred=out.get("rot6d"),
-                            cost_z=args.cost_z,
-                            cost_rot=args.cost_rot,
+                            cost_z=float(matcher_costs["cost_z"]),
+                            cost_rot=float(matcher_costs["cost_rot"]),
                             offsets_pred=out.get("offsets"),
                             k_delta=out.get("k_delta"),
-                            cost_t=args.cost_t,
+                            cost_t=float(matcher_costs["cost_t"]),
                             keypoints_pred=out.get("keypoints"),
                         )
                         out = dict(out)
