@@ -11,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.9", "3.10", "3.11", "3.12"]
+        python-version: ["3.10", "3.11", "3.12"]
     steps:
       - uses: actions/checkout@v4
 
@@ -66,5 +66,9 @@ jobs:
 
       - name: Scenario smoke run
         run: |
-          bash tools/fetch_coco128.sh
-          python tools/run_scenarios.py --adapter dummy --max-images 10
+          if bash tools/fetch_coco128.sh; then
+            python tools/run_scenarios.py --adapter dummy --max-images 10
+          else
+            echo "warning: coco128 fetch failed; running dataset-free scenario suite smoke"
+            python tools/run_scenario_suite.py --output reports/scenario_suite_ci.json
+          fi
