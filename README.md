@@ -38,12 +38,17 @@ python3 -m pip install 'yolozu[coco]'    # pycocotools COCOeval
 python3 -m pip install 'yolozu[full]'
 ```
 
+Docs index (start here): [`docs/README.md`](docs/README.md)
+
 ## Why YOLOZU (what’s “sellable”)
 
-- **Backend-agnostic evaluation**: run inference in PyTorch / ONNXRuntime / TensorRT / C++ / Rust → export the same `predictions.json` → compare apples-to-apples.
-- **Unified CLI**: `yolozu` (pip) + `python3 tools/yolozu.py` (repo) wrap backends with consistent args, caching (`--cache`), and always write run metadata (git SHA / env / GPU / config hash).
+- **Bring-your-own inference + contract-first evaluation**: run inference in PyTorch / ONNXRuntime / TensorRT / C++ / Rust
+  → export the same `predictions.json` → compare apples-to-apples.
+- **Safe TTT (test-time training)**: presets + guard rails + reset policies (see `docs/ttt_protocol.md`).
+- **Apache-2.0-only ops**: license policy + checks to keep the toolchain clean (see `docs/license_policy.md`).
+- **Unified CLI**: `yolozu` (pip) + `python3 tools/yolozu.py` (repo) wrap backends with consistent args, caching (`--cache`),
+  and always write run metadata (git SHA / env / GPU / config hash).
 - **Parity + benchmarks**: backend diff stats (torch vs onnxrt vs trt) and fixed-protocol latency/FPS reports.
-- **Safe test-time training (Tent)**: norm-only updates with guard rails (non-finite/loss/update-norm stops + rollback) and reset policies.
 - **AI-friendly repo surface**: stable schemas + `tools/manifest.json` for tool discovery / automation.
 
 ## Feature highlights (what you can do)

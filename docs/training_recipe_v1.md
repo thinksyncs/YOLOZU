@@ -1,8 +1,10 @@
 # Training recipe v1 (COCO detect)
 
 This is a **reference recipe** for training a detector in an external environment.
-This repo does not ship a full training pipeline yet, but it **does** provide
-tools to validate/export predictions and evaluate e2e mAP.
+
+This repo ships a minimal training scaffold (`rtdetr_pose/`) to wire data/loss/export/metrics,
+but it is **not** a production-grade training stack. The stable integration point is the
+exported `predictions.json`.
 
 Goal: a reproducible recipe that can generate predictions JSON which improves
 over the current baseline on coco128 (quick check) and COCO val2017.

@@ -2,6 +2,9 @@
 
 This note provides a minimal, end-to-end path for training, inference, and exporting predictions.
 
+Note: the in-repo trainer under `rtdetr_pose/` is a **scaffold** (wires data/loss/export/metrics),
+not a production-grade training stack.
+
 ## Training (RT-DETR pose scaffold)
 
 1) Install dependencies (CPU PyTorch for local dev):

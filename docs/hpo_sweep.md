@@ -1,8 +1,9 @@
 # Hyperparameter sweep harness
 
-This repo does not include a full training loop yet, but you can still run
-parameter sweeps against **any** external training command. The sweep harness
-executes commands, collects a metrics JSON, and writes **CSV/MD tables**.
+This repo does not ship a production-grade training loop, but you can still run
+parameter sweeps against **any** external training command.
+
+The sweep harness executes commands, collects a metrics JSON, and writes **CSV/MD tables**.
 
 ## Quick start (mock run)
 

@@ -1,7 +1,11 @@
 # YOLOZU Spec (repo feature summary)
 
 ## Purpose
-YOLOZU is a lightweight evaluation and scaffolding repo for real‑time monocular RGB detection + depth + 6DoF pose (RT‑DETR‑based). It emphasizes CPU‑minimum dev/tests (GPU optional), precomputed inference JSON ingestion, and reproducible evaluation.
+YOLOZU is a lightweight evaluation and scaffolding repo for real‑time monocular RGB
+detection + depth + 6DoF pose (RT‑DETR‑based).
+
+It emphasizes CPU‑minimum dev/tests (GPU optional), precomputed inference JSON ingestion,
+and reproducible evaluation.
 
 ## Core capabilities
 ### 1) Dataset I/O (YOLO‑format)
@@ -14,12 +18,14 @@ YOLOZU is a lightweight evaluation and scaffolding repo for real‑time monocula
   - Intrinsics: `K_gt` / `intrinsics`
 
 ### 2) Mask‑only label derivation
-- If YOLO txt labels are missing and a mask is provided, bbox+class can be derived from masks.
+- If YOLO txt labels are missing and a mask is provided, bbox+class can be derived from masks
+  (implemented in `yolozu.dataset`).
 - Color mask (RGB): unique colors become classes (optionally `mask_class_map`).
-- Instance mask (single‑channel IDs): non‑zero IDs become instances, class via `mask_class_id`.
+- Instance mask (single‑channel IDs): non‑zero IDs become instances; class via `mask_class_id`
+  (or via `mask_class_map`).
 
 ### 3) Training scaffold (RT‑DETR pose)
-- Minimal training loop (`rtdetr_pose/tools/train_minimal.py`).
+- Minimal training loop scaffold (`rtdetr_pose/tools/train_minimal.py`).
 - Optional matcher (Hungarian) with staged cost terms.
 - MIM masking + teacher distillation schedules.
 - Denoising target augmentation.
@@ -67,7 +73,7 @@ YOLOZU is a lightweight evaluation and scaffolding repo for real‑time monocula
 - **Adapter Contract**: `docs/adapter_contract.md`
 
 ## Non‑goals
-- Full production training stack (this is a scaffold).
+- Full production training stack (this repo provides a scaffold, not a production trainer).
 - Heavy dependencies required for local evaluation.
 
 ## Versioning

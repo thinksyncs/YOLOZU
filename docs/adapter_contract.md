@@ -1,16 +1,55 @@
 # Adapter contract (v1)
 
-Adapters power `tools/export_predictions.py --adapter <name>`.
+Adapters are small wrappers that let an inference backend emit YOLOZU-compatible
+prediction artifacts.
+
+They power `tools/export_predictions.py --adapter <name>` (and any other tool that
+calls `adapter.predict(records)`).
 
 ## Required behavior
+
 An adapter must implement:
+
 - `predict(records: list[dict]) -> list[dict]`
-  - Each entry must be `{image, detections}`
-  - Detections must include `class_id`, `score`, and `bbox` (`cx,cy,w,h`)
+
+### Input: `records`
+
+`records` are built from YOLO-format datasets via `yolozu.dataset.build_manifest(...)`.
+
+Each record is a dict with at least:
+
+- `image` (required): image path/key (string)
+
+And may include (optional, best-effort):
+
+- `labels`: list of YOLO labels (`{class_id, cx, cy, w, h, ...}`)
+  - keypoints may be appended in YOLO pose-style and normalized by the loader
+- `image_hw` / `image_size`: `[h, w]` hints
+- pose: `pose` or `R_gt` / `t_gt`
+- intrinsics: `intrinsics` or `K_gt` / `K`
+- masks: `mask_path` / `mask` (plus `mask_format`, `mask_instances`, `mask_classes`,
+  `mask_class_id`, `mask_class_map`)
+- depth: `depth_path` / `depth` / `D_obj`
+
+Adapters should ignore unknown keys (so sidecar schemas can evolve without breaking
+older backends).
+
+### Output: per-image entries
+
+Each returned entry must be:
+
+- `{ "image": <same key as input record["image"]>, "detections": [...] }`
+
+Each detection must include:
+
+- `class_id`: int
+- `score`: float
+- `bbox`: `{cx, cy, w, h}` (see `docs/predictions_schema.md` for bbox format rules)
 
 ## Optional behavior
-- `predict` may include extra keys per detection (mask/depth/pose/intrinsics)
-- `records` are built from YOLO-format datasets via `yolozu.dataset.build_manifest`
+
+- `predict(...)` may include extra keys per detection (mask/depth/pose/intrinsics),
+  as long as required keys remain stable.
 
 ## TTT (Test-Time Training) hooks
 Adapters may optionally support test-time training (Tent, MIM) by implementing:
@@ -29,6 +68,21 @@ Adapters may optionally support test-time training (Tent, MIM) by implementing:
   - Each batch should be ready for model forward pass (no additional preprocessing)
   - Used by TTT to create adaptation batches before inference
   - Default: raises `RuntimeError("this adapter does not support TTT")`
+
+## Error / exception conventions (recommended)
+
+Adapters should fail fast with clear messages. Recommended patterns:
+
+- Missing optional dependency:
+  - raise `RuntimeError("missing optional dependency: torch (pip install 'yolozu[demo]')")`
+- Missing config/checkpoint:
+  - raise `FileNotFoundError(<path>)`
+- Unsupported option/backend:
+  - raise `RuntimeError("unsupported <thing>: ...")`
+- Unsupported TTT:
+  - raise `RuntimeError("this adapter does not support TTT")` (exact string, for consistency)
+- Invalid input record:
+  - raise `ValueError("record missing 'image'")` (or similar, with the key name)
 
 ### Example TTT adapter implementation
 

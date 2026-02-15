@@ -1,0 +1,84 @@
+# YOLOZU docs
+
+YOLOZU is an Apache-2.0-only, **contract-first evaluation harness**.
+This `docs/` folder is organized by **what you want to do**, not by module names.
+
+## What makes YOLOZU different (the “sell”)
+
+1) **Bring-your-own inference + contract-first evaluation**: export `predictions.json` from any
+   backend (PyTorch/ONNXRuntime/TensorRT/C++/Rust) and compare apples-to-apples.
+2) **Safe TTT (test-time training)**: presets + guard rails + reset policies so you can try TTT
+   without silently corrupting your model or your metrics.
+3) **Apache-2.0-only ops**: a license policy + checks to keep the toolchain clean for OSS/commercial
+   use.
+
+Links:
+- Bring-your-own inference: [external_inference.md](external_inference.md)
+- TTT protocol: [ttt_protocol.md](ttt_protocol.md)
+- License policy: [license_policy.md](license_policy.md)
+
+## Start here (4 entry points)
+
+### 1) Evaluate from `predictions.json` (bring-your-own inference)
+
+Run inference anywhere (PyTorch / ONNXRuntime / TensorRT / C++ / Rust) and export the same
+`predictions.json`. YOLOZU validates and scores it consistently (COCO mAP, scenario reports).
+
+Shortest command:
+
+```bash
+python3 tools/eval_suite.py --dataset /path/to/coco-yolo --predictions /path/to/predictions.json
+```
+
+Read next:
+- [External inference backends](external_inference.md)
+- [Training / inference / export (overview)](training_inference_export.md)
+- [Tools index](tools_index.md)
+
+### 2) Train → Export → Evaluate (minimal RT-DETR scaffold)
+
+The repo includes a minimal RT-DETR-style scaffold (`rtdetr_pose/`) that exists to wire data,
+losses, export, and metrics. It is **not** a production-grade training stack.
+
+Shortest command:
+
+```bash
+python3 tools/run_yolo26n_smoke_rtdetr_pose.py
+```
+
+Read next:
+- [Training / inference / export](training_inference_export.md)
+- [Real model interface](real_model_interface.md)
+- [Continual learning (rtdetr_pose)](continual_learning.md)
+
+### 3) Contracts (schemas that make results comparable)
+
+Contracts are the product: stable JSON artifacts that let you compare apples-to-apples across
+backends and environments.
+
+Shortest command:
+
+```bash
+python3 tools/validate_predictions.py /path/to/predictions.json --strict
+```
+
+Read next:
+- [Predictions JSON schema (v1)](predictions_schema.md)
+- [Adapter contract (v1)](adapter_contract.md)
+
+### 4) Protocols & Bench (YOLO26 protocol + sweeps)
+
+Protocols pin evaluation settings (split / image size / bbox format / metric key).
+Bench + sweeps help track regressions over time and compare many runs.
+
+Shortest command:
+
+```bash
+python3 tools/eval_suite.py --protocol yolo26 --dataset /path/to/coco-yolo --predictions-glob '/path/to/preds*.json'
+```
+
+Read next:
+- [YOLO26 evaluation protocol](yolo26_eval_protocol.md)
+- [Hyperparameter sweep harness](hpo_sweep.md)
+- [Latency/FPS benchmark harness](benchmark_latency.md)
+- [License policy (Apache-2.0-only guard)](license_policy.md)
