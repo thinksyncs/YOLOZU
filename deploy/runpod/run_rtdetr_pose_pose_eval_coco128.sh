@@ -14,6 +14,8 @@ DEVICE="${DEVICE:-cuda}"
 IMG_SIZE="${IMG_SIZE:-256}"
 BATCH_SIZE="${BATCH_SIZE:-16}"
 LR="${LR:-0.001}"
+MATCH_COST_ROT="${MATCH_COST_ROT:-0.0}"
+MATCH_COST_Z="${MATCH_COST_Z:-0.0}"
 MAX_IMAGES="${MAX_IMAGES:-64}"
 SCORE_THRESH="${SCORE_THRESH:-0.01}"
 MAX_DETS="${MAX_DETS:-100}"
@@ -59,8 +61,8 @@ for ep in "${epochs_arr[@]}"; do
     --batch-size "${BATCH_SIZE}" \
     --lr "${LR}" \
     --use-matcher \
-    --cost-rot 1.0 \
-    --cost-z 1.0 \
+    --cost-rot "${MATCH_COST_ROT}" \
+    --cost-z "${MATCH_COST_Z}" \
     --epochs "${ep}" \
     --run-dir "${run_dir}" \
     --checkpoint-out "${run_dir}/checkpoint.pt" \
@@ -95,4 +97,3 @@ done
 
 echo
 echo "[pose-eval] Done. Runs under: ${RUN_BASE}"
-
