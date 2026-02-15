@@ -28,12 +28,12 @@ python3 tools/prepare_bop_yolozu.py \
   --link-images
 
 # 3) Train → export predictions → COCOeval (detection mAP proxy) + pose eval.
-CONFIG="${CONFIG:-configs/yolo26_rtdetr_pose/yolo26n.json}"
+CONFIG="${CONFIG:-rtdetr_pose/configs/bop_tless_smoke.json}"
 DEVICE="${DEVICE:-cuda}"
 IMG_SIZE="${IMG_SIZE:-320}"
 BATCH_SIZE="${BATCH_SIZE:-16}"
 LR="${LR:-0.001}"
-SCORE_THRESH="${SCORE_THRESH:-0.01}"
+SCORE_THRESH="${SCORE_THRESH:-0.0}"
 MAX_DETS="${MAX_DETS:-100}"
 EPOCHS_CSV="${EPOCHS_CSV:-1,5,20}"
 RUN_BASE="${RUN_BASE:-/workspace/runs/rtdetr_pose_bop_tless}"
