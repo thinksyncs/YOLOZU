@@ -5,6 +5,31 @@ This note provides a minimal, end-to-end path for training, inference, and expor
 Note: the in-repo trainer under `rtdetr_pose/` is a **scaffold** (wires data/loss/export/metrics),
 not a production-grade training stack.
 
+## TL;DR (copy-paste)
+
+```bash
+python3 -m pip install -r requirements-test.txt
+bash tools/fetch_coco128.sh
+python3 rtdetr_pose/tools/train_minimal.py \
+  --dataset-root data/coco128 \
+  --config rtdetr_pose/configs/base.json \
+  --max-steps 50 \
+  --run-dir runs/train_minimal_smoke
+python3 tools/export_predictions.py \
+  --adapter rtdetr_pose \
+  --config rtdetr_pose/configs/base.json \
+  --checkpoint runs/train_minimal_smoke/checkpoint.pt \
+  --max-images 20 \
+  --wrap \
+  --output reports/predictions.json
+python3 tools/eval_coco.py \
+  --dataset data/coco128 \
+  --predictions reports/predictions.json \
+  --bbox-format cxcywh_norm \
+  --max-images 20 \
+  --dry-run
+```
+
 ## Training (RT-DETR pose scaffold)
 
 1) Install dependencies (CPU PyTorch for local dev):

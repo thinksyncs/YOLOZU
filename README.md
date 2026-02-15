@@ -268,11 +268,37 @@ Details: [deploy/docker/README.md](deploy/docker/README.md)
 
 The minimal trainer is implemented in `rtdetr_pose/tools/train_minimal.py`.
 
+Quickest path (source checkout):
+
+```bash
+python3 -m pip install -r requirements-test.txt
+bash tools/fetch_coco128.sh
+python3 rtdetr_pose/tools/train_minimal.py \
+  --dataset-root data/coco128 \
+  --config rtdetr_pose/configs/base.json \
+  --max-steps 50 \
+  --run-dir runs/train_minimal_smoke
+```
+
+Config-driven path (recommended for repeatability):
+
+```bash
+yolozu dev train configs/examples/train_setting.yaml
+```
+
 Recommended usage is to set `--run-dir`, which writes a standard, reproducible artifact set:
 - `metrics.jsonl` (+ final `metrics.json` / `metrics.csv`)
 - `checkpoint.pt` (+ optional `checkpoint_bundle.pt`)
 - `model.onnx` (+ `model.onnx.meta.json`)
 - `run_record.json` (git SHA / platform / args)
+
+Common next checks:
+
+```bash
+python3 tools/plot_metrics.py --jsonl runs/train_minimal_smoke/metrics.jsonl --out reports/train_loss.png
+python3 tools/export_predictions.py --adapter rtdetr_pose --config rtdetr_pose/configs/base.json --checkpoint runs/train_minimal_smoke/checkpoint.pt --max-images 20 --wrap --output reports/predictions.json
+python3 tools/eval_coco.py --dataset data/coco128 --predictions reports/predictions.json --bbox-format cxcywh_norm --max-images 20 --dry-run
+```
 
 Plot a loss curve (requires matplotlib):
 
