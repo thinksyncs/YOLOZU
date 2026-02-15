@@ -23,7 +23,8 @@ python3 tools/prepare_coco_keypoints_yolozu.py \
   --coco-root "${COCO_ROOT}" \
   --out "${OUT_DATASET}" \
   --out-split val2017 \
-  --max-images "${MAX_IMAGES}"
+  --max-images "${MAX_IMAGES}" \
+  --link-images
 
 ts="$(date -u +%Y-%m-%dT%H-%M-%SZ)"
 RUN_DIR="${RUN_DIR:-/workspace/runs/rtdetr_pose_coco_kp_${ts}}"
@@ -74,4 +75,3 @@ python3 tools/eval_keypoints.py \
   --output "${RUN_DIR}/keypoints_eval_pck.json"
 
 echo "${RUN_DIR}"
-
