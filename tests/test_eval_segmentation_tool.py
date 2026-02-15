@@ -1,5 +1,6 @@
 import json
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -70,7 +71,7 @@ class TestEvalSegmentationTool(unittest.TestCase):
 
             proc = subprocess.run(
                 [
-                    "python3",
+                    sys.executable,
                     str(script),
                     "--dataset-json",
                     str(dataset_json.relative_to(repo_root)),
@@ -112,4 +113,3 @@ class TestEvalSegmentationTool(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

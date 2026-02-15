@@ -1,5 +1,6 @@
 import json
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -27,7 +28,7 @@ class TestPrepareCityscapesSegTool(unittest.TestCase):
             out_root = root / "out"
             proc = subprocess.run(
                 [
-                    "python3",
+                    sys.executable,
                     str(script),
                     "--cityscapes-root",
                     str(city_root),
@@ -69,4 +70,3 @@ class TestPrepareCityscapesSegTool(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

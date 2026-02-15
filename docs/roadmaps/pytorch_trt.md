@@ -58,7 +58,7 @@ Status (2026-01-18)
 - Scaffold created in `rtdetr_pose/` with dataset loader, validator, and model stubs.
 - Dataset manifest supports metadata sidecar (`.json`) for mask/depth/pose/intrinsics; validator checks shapes and paths.
 - SIM/Blender sidecar schema added (M/D_obj/R_gt/t_gt/K_gt + cad_points) and content checks for mask/depth/bbox/projection.
-- Reports for baseline/gates/scenarios are scaffolded (dummy metrics; no real model yet).
+- Reports for baseline/gates/scenarios are implemented (some model components remain scaffold-level, not competitive).
 - rtdetr_pose scaffolding files are tracked in git; generated caches/reports are ignored.
 - Training loop scaffold + ONNX/TRT export/parity tooling are implemented (see `rtdetr_pose/tools/train_minimal.py`, `tools/run_rtdetr_pose_backend_suite.py`).
 - RT-DETR-style backbone/neck/encoder/decoder (CSPResNet + FPN/PAN + transformer encoder/decoder) is in place.
@@ -164,7 +164,7 @@ Start next (着手)
 ## Stage 7) Evaluation + scenario suite (per spec §6)
 - [x] Scenario suite run (symmetry, tabletop, depth extremes, jitter).
 - [x] Single report output: fps, mAP/Recall, depth error, pose error, rejection rate.
-- [ ] CI smoke run on tiny COCO subset.
+- [x] CI smoke run on tiny COCO subset.
 
 ## Stage 8) Documentation + handoff
 - [x] Update spec/checklist with actual implementation references.

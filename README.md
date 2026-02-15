@@ -1,5 +1,10 @@
 # YOLOZU (萬)
 
+[![CI](https://github.com/thinksyncs/YOLOZU/actions/workflows/ci.yml/badge.svg)](https://github.com/thinksyncs/YOLOZU/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/yolozu.svg)](https://pypi.org/project/yolozu/)
+[![Python](https://img.shields.io/pypi/pyversions/yolozu.svg)](https://pypi.org/project/yolozu/)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+
 Pronunciation: Yaoyorozu (yorozu). Official ASCII name: YOLOZU.
 
 YOLOZU is an Apache-2.0-only, **contract-first evaluation + tooling harness** for:
@@ -16,10 +21,27 @@ It focuses on:
 - Minimal training scaffold (RT-DETR pose) with reproducible artifacts
 - Hessian-based refinement for regression head predictions (depth, rotation, offsets)
 
+## Quickstart (pip users)
+
+```bash
+python3 -m pip install yolozu
+yolozu doctor --output -
+yolozu demo instance-seg
+```
+
+Optional extras:
+
+```bash
+python3 -m pip install 'yolozu[demo]'    # torch demos (CPU OK)
+python3 -m pip install 'yolozu[onnxrt]'  # ONNXRuntime CPU exporter
+python3 -m pip install 'yolozu[coco]'    # pycocotools COCOeval
+python3 -m pip install 'yolozu[full]'
+```
+
 ## Why YOLOZU (what’s “sellable”)
 
 - **Backend-agnostic evaluation**: run inference in PyTorch / ONNXRuntime / TensorRT / C++ / Rust → export the same `predictions.json` → compare apples-to-apples.
-- **Unified CLI**: `python3 tools/yolozu.py` wraps backends with consistent args, caching (`--cache`), and always writes run metadata (git SHA / env / GPU / config hash).
+- **Unified CLI**: `yolozu` (pip) + `python3 tools/yolozu.py` (repo) wrap backends with consistent args, caching (`--cache`), and always write run metadata (git SHA / env / GPU / config hash).
 - **Parity + benchmarks**: backend diff stats (torch vs onnxrt vs trt) and fixed-protocol latency/FPS reports.
 - **Safe test-time training (Tent)**: norm-only updates with guard rails (non-finite/loss/update-norm stops + rollback) and reset policies.
 - **AI-friendly repo surface**: stable schemas + `tools/manifest.json` for tool discovery / automation.
@@ -28,7 +50,9 @@ It focuses on:
 
 - Dataset I/O: YOLO-format images/labels + optional per-image JSON metadata.
 - Stable evaluation contract: versioned predictions-JSON schema + adapter contract.
-- Unified CLI: `python3 tools/yolozu.py` (`doctor`, `export`, `predict-images`, `sweep`) for research/eval workflows.
+- Unified CLI:
+  - pip: `yolozu` (install-safe commands + CPU demos)
+  - repo: `python3 tools/yolozu.py` (power-user research/eval workflows)
 - Inference/export: `tools/export_predictions.py` (torch adapter), `tools/export_predictions_onnxrt.py`, `tools/export_predictions_trt.py`.
 - Test-time adaptation options:
   - TTA: lightweight prediction-space post-transform (`--tta`).

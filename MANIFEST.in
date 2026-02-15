@@ -1,0 +1,12 @@
+include README.md
+include CHANGELOG.md
+include LICENSE
+include NOTICE
+include COPYRIGHT
+include SECURITY.md
+include CODE_OF_CONDUCT.md
+include CONTRIBUTING.md
+include CITATION.cff
+
+recursive-include yolozu/data *.json *.yaml *.yml
+

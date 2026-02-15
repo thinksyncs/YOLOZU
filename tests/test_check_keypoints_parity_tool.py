@@ -1,5 +1,6 @@
 import json
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -57,7 +58,7 @@ class TestCheckKeypointsParityTool(unittest.TestCase):
 
             ok = subprocess.run(
                 [
-                    "python3",
+                    sys.executable,
                     str(script),
                     "--reference",
                     str(ref),
@@ -79,7 +80,7 @@ class TestCheckKeypointsParityTool(unittest.TestCase):
 
             bad = subprocess.run(
                 [
-                    "python3",
+                    sys.executable,
                     str(script),
                     "--reference",
                     str(ref),
@@ -101,4 +102,3 @@ class TestCheckKeypointsParityTool(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

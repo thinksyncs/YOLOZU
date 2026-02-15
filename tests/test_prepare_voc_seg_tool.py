@@ -1,5 +1,6 @@
 import json
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -28,7 +29,7 @@ class TestPrepareVocSegTool(unittest.TestCase):
             out_root = root / "out"
             proc = subprocess.run(
                 [
-                    "python3",
+                    sys.executable,
                     str(script),
                     "--voc-root",
                     str(voc_root.parent),
@@ -72,4 +73,3 @@ class TestPrepareVocSegTool(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

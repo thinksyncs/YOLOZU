@@ -33,7 +33,7 @@ class TestYOLOZUCLI(unittest.TestCase):
             root = Path(td)
             out_path = root / "doctor.json"
             proc = subprocess.run(
-                ["python3", str(script), "doctor", "--output", str(out_path.relative_to(repo_root))],
+                [sys.executable, str(script), "doctor", "--output", str(out_path.relative_to(repo_root))],
                 cwd=str(repo_root),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -68,7 +68,7 @@ class TestYOLOZUCLI(unittest.TestCase):
             out_path = root / "preds.json"
             proc = subprocess.run(
                 [
-                    "python3",
+                    sys.executable,
                     str(script),
                     "export",
                     "--backend",
@@ -116,7 +116,7 @@ class TestYOLOZUCLI(unittest.TestCase):
             cache_dir = root / "cache"
 
             cmd = [
-                "python3",
+                sys.executable,
                 str(script),
                 "export",
                 "--backend",
@@ -175,7 +175,7 @@ class TestYOLOZUCLI(unittest.TestCase):
         script = repo_root / "tools" / "yolozu.py"
 
         proc = subprocess.run(
-            ["python3", str(script), "sweep", "--config", "docs/hpo_sweep_example.json", "--dry-run", "--max-runs", "1"],
+            [sys.executable, str(script), "sweep", "--config", "docs/hpo_sweep_example.json", "--dry-run", "--max-runs", "1"],
             cwd=str(repo_root),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -208,7 +208,7 @@ class TestYOLOZUCLI(unittest.TestCase):
 
             proc = subprocess.run(
                 [
-                    "python3",
+                    sys.executable,
                     str(script),
                     "predict-images",
                     "--backend",

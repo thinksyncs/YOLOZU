@@ -1,5 +1,6 @@
 import json
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -12,7 +13,7 @@ class TestExportPredictionsTTTCLI(unittest.TestCase):
         self.assertTrue(script.is_file())
 
         proc = subprocess.run(
-            ["python3", str(script), "--help"],
+            [sys.executable, str(script), "--help"],
             cwd=str(repo_root),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -49,7 +50,7 @@ class TestExportPredictionsTTTCLI(unittest.TestCase):
 
             proc = subprocess.run(
                 [
-                    "python3",
+                    sys.executable,
                     str(script),
                     "--adapter",
                     "dummy",
@@ -78,7 +79,7 @@ class TestExportPredictionsTTTCLI(unittest.TestCase):
 
             proc2 = subprocess.run(
                 [
-                    "python3",
+                    sys.executable,
                     str(script),
                     "--adapter",
                     "dummy",

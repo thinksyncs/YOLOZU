@@ -151,9 +151,8 @@ def run_instance_seg_demo(
         "result": {
             "map50_95": float(result.map50_95),
             "map50": float(result.map50),
-            "per_class": dict(result.per_class_ap),
-            "gt_instances_total": int(result.gt_instances_total),
-            "pred_instances_total": int(result.pred_instances_total),
+            "per_class": dict(result.per_class),
+            "counts": dict(result.counts),
             "warnings": list(result.warnings),
             "per_image": list(result.per_image or []),
         },
@@ -167,4 +166,3 @@ def run_instance_seg_demo(
     out_path = run_dir / str(output_name)
     out_path.write_text(json.dumps(report, indent=2, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
     return out_path
-

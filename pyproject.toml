@@ -10,7 +10,35 @@ readme = "README.md"
 requires-python = ">=3.9"
 license = { file = "LICENSE" }
 authors = [{ name = "YOLOZU contributors" }]
+keywords = [
+  "computer-vision",
+  "object-detection",
+  "segmentation",
+  "pose-estimation",
+  "tensorrt",
+  "onnx",
+  "onnxruntime",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: Apache Software License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 dependencies = ["PyYAML>=6.0", "numpy>=1.24", "Pillow>=10.0"]
+
+[project.urls]
+Homepage = "https://github.com/thinksyncs/YOLOZU"
+Repository = "https://github.com/thinksyncs/YOLOZU"
+Issues = "https://github.com/thinksyncs/YOLOZU/issues"
+Changelog = "https://github.com/thinksyncs/YOLOZU/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 demo = ["torch>=2.1"]

@@ -1,5 +1,6 @@
 import json
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -16,7 +17,7 @@ class TestReportDependencyLicensesTool(unittest.TestCase):
             out_path = root / "licenses.json"
 
             proc = subprocess.run(
-                ["python3", str(script), "--output", str(out_path)],
+                [sys.executable, str(script), "--output", str(out_path)],
                 cwd=str(repo_root),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -34,4 +35,3 @@ class TestReportDependencyLicensesTool(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

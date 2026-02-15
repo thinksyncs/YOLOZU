@@ -1,5 +1,6 @@
 import json
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -47,7 +48,7 @@ class TestBenchmarkKeypointsEvalTool(unittest.TestCase):
             out_path = root / "bench.json"
             proc = subprocess.run(
                 [
-                    "python3",
+                    sys.executable,
                     str(script),
                     "--dataset",
                     str(root),
@@ -79,4 +80,3 @@ class TestBenchmarkKeypointsEvalTool(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

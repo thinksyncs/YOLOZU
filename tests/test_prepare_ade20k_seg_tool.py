@@ -1,5 +1,6 @@
 import json
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -27,7 +28,7 @@ class TestPrepareADE20KSegTool(unittest.TestCase):
             out_root = root / "out"
             proc = subprocess.run(
                 [
-                    "python3",
+                    sys.executable,
                     str(script),
                     "--ade20k-root",
                     str(ade_root),
@@ -69,4 +70,3 @@ class TestPrepareADE20KSegTool(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

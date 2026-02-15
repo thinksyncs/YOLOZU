@@ -125,7 +125,45 @@ class TestPipCLICommands(unittest.TestCase):
             metrics = report.get("metrics") or {}
             self.assertAlmostEqual(float(metrics.get("map50")), 1.0, places=6)
 
+    def test_demo_instance_seg_smoke(self):
+        repo_root = Path(__file__).resolve().parents[1]
+        try:
+            import numpy as _  # noqa: F401
+            from PIL import Image as _  # noqa: F401
+        except Exception as exc:  # pragma: no cover
+            self.skipTest(f"deps not available: {exc}")
+
+        with tempfile.TemporaryDirectory(dir=str(repo_root)) as td:
+            root = Path(td)
+            run_dir = root / "run"
+            proc = self._run(
+                [
+                    "demo",
+                    "instance-seg",
+                    "--num-images",
+                    "3",
+                    "--image-size",
+                    "48",
+                    "--max-instances",
+                    "2",
+                    "--run-dir",
+                    str(run_dir),
+                ],
+                cwd=repo_root,
+            )
+            if proc.returncode != 0:
+                self.fail(f"demo instance-seg failed:\n{proc.stdout}\n{proc.stderr}")
+
+            lines = [line.strip() for line in proc.stdout.splitlines() if line.strip()]
+            self.assertTrue(lines, "demo instance-seg produced no stdout")
+            out_path = Path(lines[-1])
+            self.assertTrue(out_path.is_file(), f"demo report missing: {out_path}")
+            payload = json.loads(out_path.read_text(encoding="utf-8"))
+            self.assertEqual(payload.get("kind"), "instance_seg_demo")
+            res = payload.get("result") or {}
+            self.assertIn("map50", res)
+            self.assertIn("map50_95", res)
+
 
 if __name__ == "__main__":
     unittest.main()
-

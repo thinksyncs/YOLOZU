@@ -1,4 +1,5 @@
 import subprocess
+import sys
 import unittest
 from pathlib import Path
 
@@ -10,7 +11,7 @@ class TestLicensePolicy(unittest.TestCase):
         self.assertTrue(script.is_file(), "missing tools/check_license_policy.py")
 
         proc = subprocess.run(
-            ["python3", str(script)],
+            [sys.executable, str(script)],
             cwd=str(repo_root),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -23,4 +24,3 @@ class TestLicensePolicy(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

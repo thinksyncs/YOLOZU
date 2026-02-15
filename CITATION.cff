@@ -1,0 +1,11 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "YOLOZU"
+version: "0.1.0"
+license: "Apache-2.0"
+repository-code: "https://github.com/thinksyncs/YOLOZU"
+url: "https://github.com/thinksyncs/YOLOZU"
+authors:
+  - name: "YOLOZU contributors"
+date-released: "2026-02-15"
+
