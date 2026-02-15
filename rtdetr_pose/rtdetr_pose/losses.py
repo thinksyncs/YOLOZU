@@ -153,6 +153,7 @@ class Losses(nn.Module):
         self.weights = {
             "cls": 1.0,
             "box": 1.0,
+            "kp": 1.0,
             "z": 1.0,
             "rot": 1.0,
             "off": 1.0,
@@ -209,6 +210,29 @@ class Losses(nn.Module):
                 loss_box = _masked_mean(diff, valid)
             losses["loss_box"] = loss_box
             total = total + self.weights["box"] * loss_box
+
+        keypoints_pred = outputs.get("keypoints")
+        keypoints_gt = _first_present(targets, ("keypoints_gt", "gt_keypoints", "keypoints"))
+        keypoints_mask = _first_present(targets, ("keypoints_mask", "gt_keypoints_mask"))
+        if keypoints_pred is not None and keypoints_gt is not None:
+            kp_mask_for_loss = None
+            if keypoints_mask is not None:
+                keypoints_mask = keypoints_mask.to(device=keypoints_pred.device, dtype=torch.bool)
+                kp_mask_for_loss = keypoints_mask
+            if valid is not None:
+                v = valid.to(device=keypoints_pred.device, dtype=torch.bool).unsqueeze(-1)
+                kp_mask_for_loss = v if kp_mask_for_loss is None else (kp_mask_for_loss & v)
+
+            diff = torch.abs(keypoints_pred - keypoints_gt).sum(dim=-1)  # (B,Q,K)
+            if kp_mask_for_loss is None:
+                loss_kp = diff.mean()
+            else:
+                if kp_mask_for_loss.numel() == 0 or not bool(kp_mask_for_loss.any()):
+                    loss_kp = diff.sum() * 0.0
+                else:
+                    loss_kp = diff[kp_mask_for_loss].mean()
+            losses["loss_kp"] = loss_kp
+            total = total + self.weights["kp"] * loss_kp
 
         log_z_pred = outputs.get("log_z")
         log_sigma_z = outputs.get("log_sigma_z")

@@ -27,7 +27,8 @@ class TestModelShapes(unittest.TestCase):
         )
         x = torch.zeros(2, 3, 64, 64)
         out = model(x)
-        self.assertEqual(out["logits"].shape, (2, 10, 5))
+        # Factory reserves the last class as "no-object"/background.
+        self.assertEqual(out["logits"].shape, (2, 10, 6))
         self.assertEqual(out["bbox"].shape, (2, 10, 4))
         self.assertEqual(out["log_z"].shape, (2, 10, 1))
         self.assertEqual(out["rot6d"].shape, (2, 10, 6))

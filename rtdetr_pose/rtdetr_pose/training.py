@@ -42,6 +42,7 @@ def build_query_aligned_targets(
     offsets_pred=None,
     k_delta=None,
     cost_t: float = 0.0,
+    keypoints_pred=None,
 ):
     """Match queries to GT per-sample and build query-aligned targets.
 
@@ -72,6 +73,8 @@ def build_query_aligned_targets(
     aligned_k_mask = []
     aligned_t_mask = []
     aligned_mask = []
+    aligned_keypoints = []
+    aligned_keypoints_mask = []
 
     neg_log_prob = -torch.log_softmax(logits, dim=-1)
     bbox_norm = bbox_pred.sigmoid()
@@ -97,6 +100,8 @@ def build_query_aligned_targets(
         gt_offsets_mask = targets[b].get("gt_offsets_mask")
         gt_t = _first_present(targets[b], ("gt_t", "t_gt", "t"))
         gt_t_mask = targets[b].get("gt_t_mask")
+        gt_keypoints = _first_present(targets[b], ("gt_keypoints", "keypoints_gt", "keypoints"))
+        gt_keypoints_mask = _first_present(targets[b], ("gt_keypoints_mask", "keypoints_mask"))
         gt_m_mask = targets[b].get("gt_M_mask")
         gt_dobj_mask = targets[b].get("gt_D_obj_mask")
         k_gt = _first_present(targets[b], ("K_gt", "K", "intrinsics"))
@@ -123,6 +128,10 @@ def build_query_aligned_targets(
             gt_m_mask = None
         if isinstance(gt_dobj_mask, torch.Tensor) and gt_dobj_mask.numel() == 0:
             gt_dobj_mask = None
+        if isinstance(gt_keypoints, torch.Tensor) and gt_keypoints.numel() == 0:
+            gt_keypoints = None
+        if isinstance(gt_keypoints_mask, torch.Tensor) and gt_keypoints_mask.numel() == 0:
+            gt_keypoints_mask = None
 
         has_k = k_gt is not None
         has_t = gt_t is not None and (gt_t_mask is None or bool(gt_t_mask.any()))
@@ -168,6 +177,13 @@ def build_query_aligned_targets(
             else:
                 hw_t = torch.zeros((2,), dtype=torch.float32, device=logits.device)
             aligned_hw.append(hw_t)
+            k_count = 0
+            if keypoints_pred is not None and isinstance(keypoints_pred, torch.Tensor) and keypoints_pred.ndim == 4:
+                k_count = int(keypoints_pred.shape[2])
+            elif gt_keypoints is not None and isinstance(gt_keypoints, torch.Tensor) and gt_keypoints.ndim == 3:
+                k_count = int(gt_keypoints.shape[1])
+            aligned_keypoints.append(torch.zeros((num_queries, k_count, 2), dtype=torch.float32, device=logits.device))
+            aligned_keypoints_mask.append(torch.zeros((num_queries, k_count), dtype=torch.bool, device=logits.device))
             continue
 
         gt_labels = gt_labels.to(device=logits.device)
@@ -190,6 +206,10 @@ def build_query_aligned_targets(
             gt_t = gt_t.to(device=logits.device, dtype=torch.float32)
         if gt_t_mask is not None:
             gt_t_mask = gt_t_mask.to(device=logits.device, dtype=torch.bool)
+        if gt_keypoints is not None:
+            gt_keypoints = gt_keypoints.to(device=logits.device, dtype=torch.float32)
+        if gt_keypoints_mask is not None:
+            gt_keypoints_mask = gt_keypoints_mask.to(device=logits.device, dtype=torch.bool)
         if gt_m_mask is not None:
             gt_m_mask = gt_m_mask.to(device=logits.device, dtype=torch.bool)
         if gt_dobj_mask is not None:
@@ -274,6 +294,13 @@ def build_query_aligned_targets(
         dobj_mask_q = torch.zeros((num_queries,), dtype=torch.bool, device=logits.device)
         t_q = torch.zeros((num_queries, 3), dtype=torch.float32, device=logits.device)
         t_mask_q = torch.zeros((num_queries,), dtype=torch.bool, device=logits.device)
+        k_count = 0
+        if keypoints_pred is not None and isinstance(keypoints_pred, torch.Tensor) and keypoints_pred.ndim == 4:
+            k_count = int(keypoints_pred.shape[2])
+        elif gt_keypoints is not None and isinstance(gt_keypoints, torch.Tensor) and gt_keypoints.ndim == 3:
+            k_count = int(gt_keypoints.shape[1])
+        kp_q = torch.zeros((num_queries, k_count, 2), dtype=torch.float32, device=logits.device)
+        kp_mask_q = torch.zeros((num_queries, k_count), dtype=torch.bool, device=logits.device)
         for r, c in zip(row_ind, col_ind):
             if 0 <= c < num_queries:
                 labels_q[c] = gt_labels[r]
@@ -307,6 +334,12 @@ def build_query_aligned_targets(
                         t_mask_q[c] = True
                     else:
                         t_mask_q[c] = bool(gt_t_mask[r])
+                if gt_keypoints is not None and int(kp_q.shape[1]) > 0:
+                    kp_q[c] = gt_keypoints[r]
+                    if gt_keypoints_mask is None:
+                        kp_mask_q[c] = True
+                    else:
+                        kp_mask_q[c] = gt_keypoints_mask[r].to(dtype=torch.bool)
         aligned_labels.append(labels_q)
         aligned_bbox.append(bbox_q)
         aligned_mask.append(mask_q)
@@ -320,6 +353,8 @@ def build_query_aligned_targets(
         aligned_dobj_mask.append(dobj_mask_q)
         aligned_t.append(t_q)
         aligned_t_mask.append(t_mask_q)
+        aligned_keypoints.append(kp_q)
+        aligned_keypoints_mask.append(kp_mask_q)
 
         if has_k:
             aligned_k.append(k_gt)
@@ -350,4 +385,6 @@ def build_query_aligned_targets(
         "image_hw": torch.stack(aligned_hw, dim=0),
         "K_mask": torch.stack(aligned_k_mask, dim=0),
         "t_mask": torch.stack(aligned_t_mask, dim=0),
+        "keypoints_gt": torch.stack(aligned_keypoints, dim=0),
+        "keypoints_mask": torch.stack(aligned_keypoints_mask, dim=0),
     }

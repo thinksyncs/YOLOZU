@@ -14,6 +14,7 @@ class DatasetConfig:
 @dataclass
 class ModelConfig:
     num_classes: int = 80
+    num_keypoints: int = 0
     hidden_dim: int = 256
     num_queries: int = 300
     use_uncertainty: bool = False

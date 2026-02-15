@@ -16,21 +16,31 @@ def _load_yolo_labels(label_path):
         if not stripped:
             continue
         parts = stripped.split()
-        if len(parts) != 5:
+        if len(parts) < 5:
+            raise ValueError(f"invalid label line: {line}")
+        if len(parts) != 5 and (len(parts) - 5) % 3 != 0:
             raise ValueError(f"invalid label line: {line}")
         class_id = int(float(parts[0]))
         coords = [float(value) for value in parts[1:]]
-        labels.append(
-            {
-                "class_id": class_id,
-                "bbox": {
-                    "cx": coords[0],
-                    "cy": coords[1],
-                    "w": coords[2],
-                    "h": coords[3],
-                },
-            }
-        )
+        entry = {
+            "class_id": class_id,
+            "bbox": {
+                "cx": coords[0],
+                "cy": coords[1],
+                "w": coords[2],
+                "h": coords[3],
+            },
+        }
+        if len(parts) > 5:
+            kps = []
+            extras = coords[4:]
+            for i in range(0, len(extras), 3):
+                x = float(extras[i + 0])
+                y = float(extras[i + 1])
+                v = float(extras[i + 2])
+                kps.append({"x": x, "y": y, "v": v})
+            entry["keypoints"] = kps
+        labels.append(entry)
     return labels
 
 

@@ -249,6 +249,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--hidden-dim", type=int, default=64)
     parser.add_argument("--num-classes", type=int, default=80)
     parser.add_argument(
+        "--num-keypoints",
+        type=int,
+        default=0,
+        help="If >0, enable keypoints training with this many keypoints per instance (default: 0 disables).",
+    )
+    parser.add_argument(
         "--use-uncertainty",
         action="store_true",
         help="Enable uncertainty heads (log_sigma_z/log_sigma_rot) for task alignment.",
@@ -733,6 +739,7 @@ class ManifestDataset(Dataset):
         records,
         num_queries,
         num_classes,
+        num_keypoints,
         image_size,
         seed,
         use_matcher,
@@ -766,6 +773,7 @@ class ManifestDataset(Dataset):
         self.records = records
         self.num_queries = int(num_queries)
         self.num_classes = int(num_classes)
+        self.num_keypoints = int(num_keypoints)
         self.image_size = int(image_size)
         self.seed = int(seed)
         self.use_matcher = bool(use_matcher)
@@ -985,6 +993,8 @@ class ManifestDataset(Dataset):
             gt_t_mask = []
             gt_offsets = []
             gt_offsets_mask = []
+            gt_keypoints = []
+            gt_keypoints_mask = []
             gt_M_mask = []
             gt_D_obj_mask = []
             gt_M = []
@@ -1049,6 +1059,32 @@ class ManifestDataset(Dataset):
                     cx = 1.0 - cx
                 gt_labels.append(class_id)
                 gt_bbox.append([cx, cy, w, h])
+
+                if int(self.num_keypoints) > 0:
+                    k_count = int(self.num_keypoints)
+                    kps = inst.get("keypoints")
+                    kp_xy = [[0.0, 0.0] for _ in range(k_count)]
+                    kp_mask = [False for _ in range(k_count)]
+                    if isinstance(kps, list) and kps:
+                        for ki, kp in enumerate(kps[:k_count]):
+                            if not isinstance(kp, dict):
+                                continue
+                            try:
+                                x = float(kp.get("x", 0.0))
+                                y = float(kp.get("y", 0.0))
+                            except Exception:
+                                continue
+                            v = kp.get("v", 0.0)
+                            try:
+                                v_i = int(float(v))
+                            except Exception:
+                                v_i = 0
+                            if flip:
+                                x = 1.0 - x
+                            kp_xy[ki] = [x, y]
+                            kp_mask[ki] = v_i > 0
+                    gt_keypoints.append(kp_xy)
+                    gt_keypoints_mask.append(kp_mask)
 
                 # Real (t/R/offsets) if present, otherwise optional synthetic fallback.
                 t_i = full.get("t_gt", [None])[inst_i] if full.get("t_gt") is not None else None
@@ -1222,6 +1258,13 @@ class ManifestDataset(Dataset):
                 gt_t_mask_t = torch.empty((0,), dtype=torch.bool)
                 gt_offsets_t = torch.empty((0, 2), dtype=torch.float32)
                 gt_offsets_mask_t = torch.empty((0,), dtype=torch.bool)
+                if int(self.num_keypoints) > 0:
+                    k_count = int(self.num_keypoints)
+                    gt_keypoints_t = torch.empty((0, k_count, 2), dtype=torch.float32)
+                    gt_keypoints_mask_t = torch.empty((0, k_count), dtype=torch.bool)
+                else:
+                    gt_keypoints_t = torch.empty((0, 0, 2), dtype=torch.float32)
+                    gt_keypoints_mask_t = torch.empty((0, 0), dtype=torch.bool)
                 gt_M_mask_t = torch.empty((0,), dtype=torch.bool)
                 gt_D_obj_mask_t = torch.empty((0,), dtype=torch.bool)
             else:
@@ -1235,27 +1278,35 @@ class ManifestDataset(Dataset):
                 gt_t_mask_t = torch.tensor(gt_t_mask, dtype=torch.bool)
                 gt_offsets_t = torch.tensor(gt_offsets, dtype=torch.float32)
                 gt_offsets_mask_t = torch.tensor(gt_offsets_mask, dtype=torch.bool)
+                if int(self.num_keypoints) > 0:
+                    gt_keypoints_t = torch.tensor(gt_keypoints, dtype=torch.float32)
+                    gt_keypoints_mask_t = torch.tensor(gt_keypoints_mask, dtype=torch.bool)
+                else:
+                    gt_keypoints_t = torch.empty((num_inst, 0, 2), dtype=torch.float32)
+                    gt_keypoints_mask_t = torch.empty((num_inst, 0), dtype=torch.bool)
                 gt_M_mask_t = torch.tensor(gt_M_mask, dtype=torch.bool)
                 gt_D_obj_mask_t = torch.tensor(gt_D_obj_mask, dtype=torch.bool)
 
             targets = {
-                    "gt_labels": gt_labels_t,
-                    "gt_bbox": gt_bbox_t,
-                    "gt_z": gt_z_t,
-                    "gt_z_mask": gt_z_mask_t,
-                    "gt_R": gt_R_t,
-                    "gt_R_mask": gt_R_mask_t,
-                    "gt_t": gt_t_t,
-                    "gt_t_mask": gt_t_mask_t,
-                    "gt_offsets": gt_offsets_t,
-                    "gt_offsets_mask": gt_offsets_mask_t,
-                    "gt_M_mask": gt_M_mask_t,
-                    "gt_D_obj_mask": gt_D_obj_mask_t,
-                    **({"gt_M": m_tensor} if m_tensor is not None else {}),
-                    **({"gt_D_obj": d_tensor} if d_tensor is not None else {}),
-                    **({"K_gt": K_gt} if K_gt is not None else {}),
-                    "image_hw": image_hw,
-                }
+                "gt_labels": gt_labels_t,
+                "gt_bbox": gt_bbox_t,
+                "gt_z": gt_z_t,
+                "gt_z_mask": gt_z_mask_t,
+                "gt_R": gt_R_t,
+                "gt_R_mask": gt_R_mask_t,
+                "gt_t": gt_t_t,
+                "gt_t_mask": gt_t_mask_t,
+                "gt_offsets": gt_offsets_t,
+                "gt_offsets_mask": gt_offsets_mask_t,
+                "gt_keypoints": gt_keypoints_t,
+                "gt_keypoints_mask": gt_keypoints_mask_t,
+                "gt_M_mask": gt_M_mask_t,
+                "gt_D_obj_mask": gt_D_obj_mask_t,
+                **({"gt_M": m_tensor} if m_tensor is not None else {}),
+                **({"gt_D_obj": d_tensor} if d_tensor is not None else {}),
+                **({"K_gt": K_gt} if K_gt is not None else {}),
+                "image_hw": image_hw,
+            }
             derpp_teacher = self._load_derpp_teacher(record.get(self.derpp_teacher_key))
             if derpp_teacher is not None:
                 targets["derpp_teacher"] = derpp_teacher
@@ -1350,6 +1401,8 @@ def collate(batch):
         ("gt_t_mask", False, torch.bool),
         ("gt_offsets", 0.0, torch.float32),
         ("gt_offsets_mask", False, torch.bool),
+        ("gt_keypoints", 0.0, torch.float32),
+        ("gt_keypoints_mask", False, torch.bool),
         ("gt_M_mask", False, torch.bool),
         ("gt_D_obj_mask", False, torch.bool),
         ("gt_M", 0.0, torch.float32),
@@ -1433,6 +1486,8 @@ def main(argv: list[str] | None = None) -> int:
     if model_cfg is not None:
         args.num_queries = int(model_cfg.num_queries)
         args.num_classes = int(model_cfg.num_classes)
+        if getattr(model_cfg, "num_keypoints", None) is not None:
+            args.num_keypoints = int(getattr(model_cfg, "num_keypoints"))
 
     records = None
     if args.records_json:
@@ -1502,6 +1557,7 @@ def main(argv: list[str] | None = None) -> int:
         records,
         num_queries=args.num_queries,
         num_classes=args.num_classes,
+        num_keypoints=args.num_keypoints,
         image_size=args.image_size,
         seed=args.seed,
         use_matcher=args.use_matcher,
@@ -1560,7 +1616,8 @@ def main(argv: list[str] | None = None) -> int:
         model = build_model(model_cfg)
     else:
         model = RTDETRPose(
-            num_classes=args.num_classes,
+            num_classes=int(args.num_classes) + 1,
+            num_keypoints=int(getattr(args, "num_keypoints", 0) or 0),
             hidden_dim=args.hidden_dim,
             num_queries=model_num_queries,
             num_decoder_layers=2,
@@ -1638,7 +1695,8 @@ def main(argv: list[str] | None = None) -> int:
             teacher_model = build_model(model_cfg)
         else:
             teacher_model = RTDETRPose(
-                num_classes=args.num_classes,
+                num_classes=int(args.num_classes) + 1,
+                num_keypoints=int(getattr(args, "num_keypoints", 0) or 0),
                 hidden_dim=args.hidden_dim,
                 num_queries=model_num_queries,
                 num_decoder_layers=2,
@@ -1900,6 +1958,7 @@ def main(argv: list[str] | None = None) -> int:
                             offsets_pred=out.get("offsets"),
                             k_delta=out.get("k_delta"),
                             cost_t=args.cost_t,
+                            keypoints_pred=out.get("keypoints"),
                         )
                         out = dict(out)
                         # For box regression we train in normalized space.
@@ -1919,6 +1978,8 @@ def main(argv: list[str] | None = None) -> int:
                             "image_hw": aligned["image_hw"],
                             "K_mask": aligned["K_mask"],
                             "t_mask": aligned["t_mask"],
+                            "keypoints_gt": aligned.get("keypoints_gt"),
+                            "keypoints_mask": aligned.get("keypoints_mask"),
                             "M_mask": aligned.get("M_mask"),
                             "D_obj_mask": aligned.get("D_obj_mask"),
                         }

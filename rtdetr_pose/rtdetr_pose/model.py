@@ -309,6 +309,20 @@ class GlobalKHead(nn.Module):
         return self.delta(x)
 
 
+class KeypointsHead(nn.Module):
+    def __init__(self, hidden_dim: int, num_keypoints: int):
+        super().__init__()
+        self.num_keypoints = int(num_keypoints)
+        self.proj = nn.Linear(int(hidden_dim), int(num_keypoints) * 2)
+
+    def forward(self, x):
+        # x: (B, Q, hidden_dim) -> (B, Q, K, 2) in normalized coords (sigmoid)
+        b, q, _ = x.shape
+        k = int(self.num_keypoints)
+        out = self.proj(x).sigmoid()
+        return out.reshape(b, q, k, 2)
+
+
 class RenderTeacher(nn.Module):
     """Geometry-derived teacher for MIM (train-only).
     
@@ -368,6 +382,7 @@ class RTDETRPose(nn.Module):
     def __init__(
         self,
         num_classes=80,
+        num_keypoints: int = 0,
         hidden_dim=256,
         num_queries=300,
         use_uncertainty=False,
@@ -413,6 +428,9 @@ class RTDETRPose(nn.Module):
         self.head = HeadFast(hidden_dim, num_classes, use_uncertainty=use_uncertainty)
         self.offset_head = CenterOffsetHead(hidden_dim)
         self.k_head = GlobalKHead(hidden_dim)
+        self.keypoints_head = None
+        if int(num_keypoints) > 0:
+            self.keypoints_head = KeypointsHead(int(hidden_dim), int(num_keypoints))
         
         # Masked reconstruction branch (optional, train-only by default)
         self.enable_mim = bool(enable_mim)
@@ -450,6 +468,8 @@ class RTDETRPose(nn.Module):
         out = self.head(dec)
         out["offsets"] = self.offset_head(dec)
         out["k_delta"] = self.k_head(dec.mean(dim=1))
+        if self.keypoints_head is not None:
+            out["keypoints"] = self.keypoints_head(dec)
         
         # Masked reconstruction branch (train-only or TTT)
         if return_mim and self.enable_mim and self.render_teacher is not None and self.decoder_mim is not None:

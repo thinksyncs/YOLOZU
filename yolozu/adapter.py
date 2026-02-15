@@ -297,6 +297,9 @@ class RTDETRPoseAdapter(ModelAdapter):
                 log_sigma_rot = log_sigma_rot[0].squeeze(-1)
             offsets = out["offsets"][0]
             k_delta = out["k_delta"][0]
+            keypoints = out.get("keypoints")
+            if keypoints is not None:
+                keypoints = keypoints[0]
 
             probs = torch.softmax(logits, dim=-1)
 
@@ -322,6 +325,12 @@ class RTDETRPoseAdapter(ModelAdapter):
                     "offsets": [float(v) for v in offsets[idx].tolist()],
                     "k_delta": [float(v) for v in k_delta.tolist()],
                 }
+                if keypoints is not None:
+                    try:
+                        kp_xy = keypoints[idx]
+                        det["keypoints"] = [{"x": float(x), "y": float(y), "v": 2} for x, y in kp_xy.tolist()]
+                    except Exception:
+                        pass
                 if log_sigma_z is not None:
                     ls_z = float(log_sigma_z[idx].item())
                     det["log_sigma_z"] = ls_z
