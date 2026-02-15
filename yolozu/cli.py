@@ -121,6 +121,31 @@ def _cmd_export(args: argparse.Namespace) -> int:
 
 
 def _cmd_validate(args: argparse.Namespace) -> int:
+    if args.validate_command == "dataset":
+        from yolozu.dataset import build_manifest
+        from yolozu.dataset_validator import validate_dataset_records
+
+        manifest = build_manifest(str(args.dataset), split=str(args.split) if args.split else None)
+        records = manifest.get("images") or []
+        if not isinstance(records, list):
+            raise SystemExit("invalid dataset manifest (expected list under 'images')")
+        if args.max_images is not None:
+            records = records[: int(args.max_images)]
+
+        res = validate_dataset_records(
+            records,
+            strict=bool(args.strict),
+            mode=str(args.mode),
+            check_images=not bool(args.no_check_images),
+        )
+        for w in res.warnings:
+            print(w, file=sys.stderr)
+        if res.errors:
+            for e in res.errors:
+                print(e, file=sys.stderr)
+            return 1
+        return 0
+
     path = Path(str(args.path))
     if not path.exists():
         raise SystemExit(f"file not found: {path}")
@@ -279,6 +304,14 @@ def main(argv: list[str] | None = None) -> int:
     val_is = validate_sub.add_parser("instance-seg", help="Validate instance-segmentation predictions JSON (PNG masks).")
     val_is.add_argument("path", type=str, help="Path to instance-seg predictions JSON.")
 
+    val_ds = validate_sub.add_parser("dataset", help="Validate a YOLO-format dataset layout + labels.")
+    val_ds.add_argument("dataset", type=str, help="YOLO-format dataset root (contains images/ + labels/).")
+    val_ds.add_argument("--split", default=None, help="Split under images/ and labels/ (default: auto).")
+    val_ds.add_argument("--max-images", type=int, default=None, help="Optional cap for number of images checked.")
+    val_ds.add_argument("--strict", action="store_true", help="Strict bbox checks (range + inside-image).")
+    val_ds.add_argument("--mode", choices=("fail", "warn"), default="fail", help="fail=exit nonzero on errors; warn=always exit 0.")
+    val_ds.add_argument("--no-check-images", action="store_true", help="Skip image existence/size checks.")
+
     eis = sub.add_parser(
         "eval-instance-seg",
         help="Evaluate instance segmentation predictions (mask mAP over PNG masks).",
@@ -425,6 +458,23 @@ def main(argv: list[str] | None = None) -> int:
     demo_cl.add_argument("--seed", type=int, default=0, help="Random seed (default: 0).")
     demo_cl.add_argument("--device", default="cpu", help="Torch device (default: cpu).")
     demo_cl.add_argument("--method", default="ewc_replay", choices=("naive", "ewc", "replay", "ewc_replay"))
+    demo_cl.add_argument(
+        "--methods",
+        nargs="+",
+        default=None,
+        choices=("naive", "ewc", "replay", "ewc_replay"),
+        help="Run multiple methods and write a suite report.",
+    )
+    demo_cl.add_argument(
+        "--compare",
+        action="store_true",
+        help="Convenience flag: run all methods (naive/ewc/replay/ewc_replay) and write a suite report.",
+    )
+    demo_cl.add_argument(
+        "--markdown",
+        action="store_true",
+        help="Also write a markdown summary table next to the JSON output (suite or single).",
+    )
     demo_cl.add_argument("--steps-a", type=int, default=200, help="Training steps on domain A (default: 200).")
     demo_cl.add_argument("--steps-b", type=int, default=200, help="Training steps on domain B (default: 200).")
     demo_cl.add_argument("--batch-size", type=int, default=64, help="Batch size (default: 64).")
@@ -512,13 +562,60 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         if args.demo_command == "continual":
-            from yolozu.demos.continual import run_continual_demo
+            from yolozu.demos.continual import (
+                format_continual_demo_suite_markdown,
+                run_continual_demo,
+                run_continual_demo_suite,
+            )
+
+            methods = None
+            if args.methods:
+                methods = [str(m) for m in args.methods]
+            elif args.compare:
+                methods = ["naive", "ewc", "replay", "ewc_replay"]
+
+            if methods and len(methods) > 1:
+                out = run_continual_demo_suite(
+                    methods=methods,
+                    output=args.output,
+                    seed=int(args.seed),
+                    device=str(args.device),
+                    steps_a=int(args.steps_a),
+                    steps_b=int(args.steps_b),
+                    batch_size=int(args.batch_size),
+                    hidden=int(args.hidden),
+                    lr=float(args.lr),
+                    corr=float(args.corr),
+                    noise=float(args.noise),
+                    n_train=int(args.n_train),
+                    n_eval=int(args.n_eval),
+                    ewc_lambda=float(args.ewc_lambda),
+                    fisher_batches=int(args.fisher_batches),
+                    replay_capacity=int(args.replay_capacity),
+                    replay_k=int(args.replay_k),
+                )
+                try:
+                    payload = json.loads(Path(out).read_text(encoding="utf-8"))
+                    md = format_continual_demo_suite_markdown(payload)
+                    print(md, end="")
+                    if args.markdown:
+                        md_path = Path(out).with_suffix(".md")
+                        md_path.write_text(md, encoding="utf-8")
+                        print(str(md_path))
+                except Exception:
+                    pass
+                print(str(out))
+                return 0
+
+            method = str(args.method)
+            if methods and len(methods) == 1:
+                method = str(methods[0])
 
             out = run_continual_demo(
                 output=args.output,
                 seed=int(args.seed),
                 device=str(args.device),
-                method=str(args.method),
+                method=method,
                 steps_a=int(args.steps_a),
                 steps_b=int(args.steps_b),
                 batch_size=int(args.batch_size),
@@ -541,11 +638,16 @@ def main(argv: list[str] | None = None) -> int:
                 forgetting = metrics.get("forgetting_acc_a")
                 gain = metrics.get("gain_acc_b")
                 print(
-                    "continual demo: "
+                    f"continual demo ({method}): "
                     f"accA {a.get('acc_a'):.3f}→{b.get('acc_a'):.3f} "
                     f"accB {a.get('acc_b'):.3f}→{b.get('acc_b'):.3f} "
                     f"forget={forgetting:.3f} gain={gain:.3f}"
                 )
+                if args.markdown:
+                    md = format_continual_demo_suite_markdown({"runs": [{"method": method, "metrics": metrics}]})
+                    md_path = Path(out).with_suffix(".md")
+                    md_path.write_text(md, encoding="utf-8")
+                    print(str(md_path))
             except Exception:
                 pass
             print(str(out))

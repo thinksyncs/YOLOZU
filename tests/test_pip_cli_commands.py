@@ -51,6 +51,36 @@ class TestPipCLICommands(unittest.TestCase):
             if proc.returncode != 0:
                 self.fail(f"validate instance-seg failed:\n{proc.stdout}\n{proc.stderr}")
 
+    def test_validate_dataset_smoke(self):
+        repo_root = Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory(dir=str(repo_root)) as td:
+            root = Path(td)
+            dataset_root = root / "dataset"
+            (dataset_root / "images" / "train2017").mkdir(parents=True, exist_ok=True)
+            (dataset_root / "labels" / "train2017").mkdir(parents=True, exist_ok=True)
+            img_path = dataset_root / "images" / "train2017" / "000001.png"
+            # Minimal PNG header with valid signature + IHDR width/height.
+            img_path.write_bytes(
+                b"\x89PNG\r\n\x1a\n" + b"\x00\x00\x00\rIHDR" + (1).to_bytes(4, "big") + (1).to_bytes(4, "big")
+            )
+            (dataset_root / "labels" / "train2017" / "000001.txt").write_text("0 0.5 0.5 0.2 0.2\n", encoding="utf-8")
+
+            proc = self._run(
+                [
+                    "validate",
+                    "dataset",
+                    str(dataset_root),
+                    "--split",
+                    "train2017",
+                    "--max-images",
+                    "1",
+                    "--strict",
+                ],
+                cwd=repo_root,
+            )
+            if proc.returncode != 0:
+                self.fail(f"validate dataset failed:\n{proc.stdout}\n{proc.stderr}")
+
     def test_onnxrt_export_dry_run_writes_json(self):
         repo_root = Path(__file__).resolve().parents[1]
         with tempfile.TemporaryDirectory(dir=str(repo_root)) as td:
@@ -163,6 +193,57 @@ class TestPipCLICommands(unittest.TestCase):
             res = payload.get("result") or {}
             self.assertIn("map50", res)
             self.assertIn("map50_95", res)
+
+    def test_demo_continual_compare_smoke(self):
+        repo_root = Path(__file__).resolve().parents[1]
+        try:
+            import torch as _  # noqa: F401
+        except Exception as exc:  # pragma: no cover
+            self.skipTest(f"torch not available: {exc}")
+
+        with tempfile.TemporaryDirectory(dir=str(repo_root)) as td:
+            root = Path(td)
+            out_path = root / "continual_suite.json"
+            proc = self._run(
+                [
+                    "demo",
+                    "continual",
+                    "--compare",
+                    "--steps-a",
+                    "5",
+                    "--steps-b",
+                    "5",
+                    "--batch-size",
+                    "32",
+                    "--hidden",
+                    "8",
+                    "--n-train",
+                    "256",
+                    "--n-eval",
+                    "128",
+                    "--fisher-batches",
+                    "2",
+                    "--replay-capacity",
+                    "64",
+                    "--replay-k",
+                    "16",
+                    "--markdown",
+                    "--output",
+                    str(out_path),
+                ],
+                cwd=repo_root,
+            )
+            if proc.returncode != 0:
+                self.fail(f"demo continual --compare failed:\n{proc.stdout}\n{proc.stderr}")
+
+            self.assertTrue(out_path.is_file(), f"suite report missing: {out_path}")
+            payload = json.loads(out_path.read_text(encoding="utf-8"))
+            self.assertEqual(payload.get("kind"), "continual_demo_suite")
+            runs = payload.get("runs") or []
+            methods = {r.get("method") for r in runs if isinstance(r, dict)}
+            self.assertEqual(methods, {"naive", "ewc", "replay", "ewc_replay"})
+            md_path = out_path.with_suffix(".md")
+            self.assertTrue(md_path.is_file(), f"markdown missing: {md_path}")
 
 
 if __name__ == "__main__":

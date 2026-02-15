@@ -29,6 +29,67 @@ class ContinualDemoReport:
         return {"kind": "continual_demo", "schema_version": int(self.schema_version), "settings": self.settings, "metrics": self.metrics}
 
 
+@dataclass(frozen=True)
+class ContinualDemoSuiteReport:
+    schema_version: int
+    settings: dict[str, Any]
+    runs: list[dict[str, Any]]
+    summary: dict[str, Any]
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "kind": "continual_demo_suite",
+            "schema_version": int(self.schema_version),
+            "settings": self.settings,
+            "runs": self.runs,
+            "summary": self.summary,
+        }
+
+
+def format_continual_demo_suite_markdown(payload: dict[str, Any]) -> str:
+    runs = payload.get("runs") or []
+    if not isinstance(runs, list):
+        runs = []
+
+    def fnum(value: Any) -> str:
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return f"{float(value):.3f}"
+        return ""
+
+    lines = []
+    lines.append("| method | accA(A) | accA(B) | forgetting | accB(A) | accB(B) | gain |")
+    lines.append("|---|---:|---:|---:|---:|---:|---:|")
+    for run in runs:
+        if not isinstance(run, dict):
+            continue
+        method = str(run.get("method") or "")
+        metrics = run.get("metrics") or {}
+        if not isinstance(metrics, dict):
+            metrics = {}
+        after_a = metrics.get("after_task_a") or {}
+        after_b = metrics.get("after_task_b") or {}
+        if not isinstance(after_a, dict):
+            after_a = {}
+        if not isinstance(after_b, dict):
+            after_b = {}
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    method,
+                    fnum(after_a.get("acc_a")),
+                    fnum(after_b.get("acc_a")),
+                    fnum(metrics.get("forgetting_acc_a")),
+                    fnum(after_a.get("acc_b")),
+                    fnum(after_b.get("acc_b")),
+                    fnum(metrics.get("gain_acc_b")),
+                ]
+            )
+            + " |"
+        )
+    return "\n".join(lines) + "\n"
+
+
 def run_continual_demo(
     *,
     output: str | Path | None = None,
@@ -206,3 +267,121 @@ def run_continual_demo(
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(report.to_json(), indent=2, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
     return out_path
+
+
+def run_continual_demo_suite(
+    *,
+    methods: list[str],
+    output: str | Path | None = None,
+    seed: int = 0,
+    device: str = "cpu",
+    steps_a: int = 200,
+    steps_b: int = 200,
+    batch_size: int = 64,
+    hidden: int = 32,
+    lr: float = 1e-2,
+    corr: float = 2.0,
+    noise: float = 0.6,
+    n_train: int = 4096,
+    n_eval: int = 1024,
+    ewc_lambda: float = 20.0,
+    fisher_batches: int = 64,
+    replay_capacity: int = 512,
+    replay_k: int = 64,
+) -> Path:
+    if not methods:
+        raise ValueError("methods must be non-empty")
+
+    torch = _require_torch()
+
+    run_id = _utc_run_id()
+
+    prefix = "continual_demo_suite"
+    if output is None:
+        run_dir = Path("runs") / "yolozu_demos" / "continual" / f"suite_{run_id}"
+        suite_path = run_dir / "suite.json"
+    else:
+        out_path = Path(output)
+        if out_path.is_dir() or str(output).endswith(("/", "\\")):
+            run_dir = out_path / f"suite_{run_id}"
+            suite_path = run_dir / "suite.json"
+        else:
+            run_dir = out_path.parent
+            suite_path = out_path
+            prefix = out_path.stem
+
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    runs: list[dict[str, Any]] = []
+    forgetting_best: dict[str, Any] | None = None
+    gain_best: dict[str, Any] | None = None
+
+    for method in methods:
+        method_s = str(method)
+        report_path = run_dir / f"{prefix}_{method_s}.json"
+        out = run_continual_demo(
+            output=report_path,
+            seed=int(seed),
+            device=str(device),
+            method=method_s,
+            steps_a=int(steps_a),
+            steps_b=int(steps_b),
+            batch_size=int(batch_size),
+            hidden=int(hidden),
+            lr=float(lr),
+            corr=float(corr),
+            noise=float(noise),
+            n_train=int(n_train),
+            n_eval=int(n_eval),
+            ewc_lambda=float(ewc_lambda),
+            fisher_batches=int(fisher_batches),
+            replay_capacity=int(replay_capacity),
+            replay_k=int(replay_k),
+        )
+        if out is None:  # pragma: no cover
+            continue
+        payload = json.loads(Path(out).read_text(encoding="utf-8"))
+        metrics = payload.get("metrics") or {}
+        if not isinstance(metrics, dict):
+            metrics = {}
+
+        runs.append({"method": method_s, "metrics": metrics, "report": str(Path(out))})
+
+        forgetting = metrics.get("forgetting_acc_a")
+        if isinstance(forgetting, (int, float)) and not isinstance(forgetting, bool):
+            if forgetting_best is None or float(forgetting) < float(forgetting_best["value"]):
+                forgetting_best = {"method": method_s, "value": float(forgetting)}
+
+        gain = metrics.get("gain_acc_b")
+        if isinstance(gain, (int, float)) and not isinstance(gain, bool):
+            if gain_best is None or float(gain) > float(gain_best["value"]):
+                gain_best = {"method": method_s, "value": float(gain)}
+
+    suite = ContinualDemoSuiteReport(
+        schema_version=1,
+        settings={
+            "methods": [str(m) for m in methods],
+            "seed": int(seed),
+            "device": str(device),
+            "steps_a": int(steps_a),
+            "steps_b": int(steps_b),
+            "batch_size": int(batch_size),
+            "hidden": int(hidden),
+            "lr": float(lr),
+            "corr": float(corr),
+            "noise": float(noise),
+            "n_train": int(n_train),
+            "n_eval": int(n_eval),
+            "ewc_lambda": float(ewc_lambda),
+            "fisher_batches": int(fisher_batches),
+            "replay_capacity": int(replay_capacity),
+            "replay_k": int(replay_k),
+            "torch_version": getattr(torch, "__version__", None),
+        },
+        runs=runs,
+        summary={"best_forgetting": forgetting_best, "best_gain": gain_best},
+    )
+
+    suite_path.parent.mkdir(parents=True, exist_ok=True)
+    suite_path.write_text(json.dumps(suite.to_json(), indent=2, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
+    return suite_path

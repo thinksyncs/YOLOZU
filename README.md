@@ -186,7 +186,8 @@ CPU demos:
 
 ```bash
 yolozu demo instance-seg
-yolozu demo continual --method ewc_replay   # requires yolozu[demo]
+yolozu demo continual --method ewc_replay     # requires yolozu[demo]
+yolozu demo continual --compare --markdown    # suite: naive/ewc/replay/ewc_replay
 ```
 
 ## Source checkout (repo users)
@@ -209,6 +210,7 @@ python3 -m unittest -q
 |---|---|---|
 | Environment report | `yolozu doctor --output -` | `python3 tools/yolozu.py doctor --output reports/doctor.json` |
 | Export smoke (no inference) | `yolozu export --backend labels --dataset /path/to/yolo --output reports/predictions.json --force` | same |
+| Validate dataset layout | `yolozu validate dataset /path/to/yolo --strict` | `python3 tools/validate_dataset.py /path/to/yolo --strict` |
 | Validate predictions JSON | `yolozu validate predictions reports/predictions.json --strict` | `python3 tools/validate_predictions.py reports/predictions.json --strict` |
 | Instance-seg eval (PNG masks) | `yolozu eval-instance-seg --dataset /path --predictions preds.json --output reports/instance_seg_eval.json` | `python3 tools/eval_instance_segmentation.py ...` |
 | ONNXRuntime CPU export | `yolozu onnxrt export ...` (requires `yolozu[onnxrt]`) | `python3 tools/export_predictions_onnxrt.py ...` |

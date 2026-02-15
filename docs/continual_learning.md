@@ -8,6 +8,17 @@ The baseline strategy is:
 - **Memory**: add a small **replay buffer** (default 50 images, reservoir sampling) and train on *(current task + replay)* while also self-distilling.
 - Optional: **LoRA** to restrict trainable parameters (parameter-efficient continual fine-tuning).
 
+## 0-minute start (pip users; CPU)
+
+If you want to **see continual-learning behavior** (domain shift + forgetting mitigation) without downloading datasets:
+
+```bash
+python3 -m pip install 'yolozu[demo]'
+yolozu demo continual --compare --markdown
+```
+
+This is a **toy synthetic** demo (not an image model). For real continual fine-tuning on image datasets, use the `rtdetr_pose` workflow below.
+
 ## Quick start (domain-incremental)
 
 1) Create a continual config (start from the example):
