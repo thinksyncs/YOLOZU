@@ -47,7 +47,16 @@ def _extract_zip(zip_path: Path, out_dir: Path, *, force: bool) -> None:
     if stamp.exists() and stamp.read_text(encoding="utf-8").strip() == digest and not force:
         return
     with zipfile.ZipFile(zip_path, "r") as zf:
-        zf.extractall(out_dir)
+        try:
+            zf.extractall(out_dir)
+        except OSError as exc:
+            # Some RunPod images have tight quotas on the root overlay FS; extraction can fail even
+            # when targeting /workspace. Allow opting into partial extracts for smoke tests.
+            allow_partial = bool(getattr(_extract_zip, "_allow_partial", False))
+            if allow_partial and getattr(exc, "errno", None) in (122,):
+                print(f"warning: partial extract due to quota: {exc}", file=sys.stderr)
+                return
+            raise
     stamp.write_text(digest + "\n", encoding="utf-8")
 
 
@@ -62,6 +71,11 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     p.add_argument("--out", required=True, help="Output directory (will contain extracted dataset folder).")
     p.add_argument("--cache", default=None, help="Optional cache directory for zips (default: <out>/zips).")
     p.add_argument("--force", action="store_true", help="Re-download and re-extract even if present.")
+    p.add_argument(
+        "--allow-partial-extract",
+        action="store_true",
+        help="If extraction fails with a disk quota error, keep partial extraction and continue (for smoke tests).",
+    )
     return p.parse_args(argv)
 
 
@@ -92,6 +106,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"download: {url}")
         _download(url, zip_path, force=bool(args.force))
         print(f"extract: {zip_path} -> {out_dir}")
+        setattr(_extract_zip, "_allow_partial", bool(args.allow_partial_extract))
         _extract_zip(zip_path, out_dir, force=bool(args.force))
 
     # Print dataset root hint if present.
@@ -105,4 +120,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
