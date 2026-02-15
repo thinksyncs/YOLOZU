@@ -9,6 +9,7 @@ repo_root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(repo_root))
 
 from yolozu.boxes import cxcywh_norm_to_xyxy_abs, iou_xyxy_abs
+from yolozu.image_keys import add_image_aliases
 from yolozu.image_size import get_image_size
 from yolozu.predictions import load_predictions_entries
 
@@ -67,10 +68,7 @@ def _load_index(path: str) -> dict[str, list[_Det]]:
             if "class_id" not in d or "bbox" not in d or "score" not in d:
                 continue
             dets.append(_Det(class_id=int(d["class_id"]), score=float(d["score"]), bbox=d["bbox"]))
-        out[image] = dets
-        base = image.split("/")[-1]
-        if base and base not in out:
-            out[base] = dets
+        add_image_aliases(out, image, dets)
     return out
 
 
@@ -221,4 +219,3 @@ def main(argv=None):
 
 if __name__ == "__main__":
     main()
-

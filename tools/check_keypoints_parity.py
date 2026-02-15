@@ -8,6 +8,8 @@ from pathlib import Path
 repo_root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(repo_root))
 
+from yolozu.boxes import iou_cxcywh_norm_dict
+from yolozu.image_keys import add_image_aliases
 from yolozu.keypoints import normalize_keypoints
 from yolozu.predictions import load_predictions_entries
 
@@ -37,32 +39,7 @@ def _bbox_tuple_norm(bbox: dict) -> tuple[float, float, float, float]:
 
 
 def _bbox_iou_cxcywh_norm(a: dict, b: dict) -> float:
-    ax1 = float(a["cx"]) - float(a["w"]) / 2.0
-    ay1 = float(a["cy"]) - float(a["h"]) / 2.0
-    ax2 = float(a["cx"]) + float(a["w"]) / 2.0
-    ay2 = float(a["cy"]) + float(a["h"]) / 2.0
-
-    bx1 = float(b["cx"]) - float(b["w"]) / 2.0
-    by1 = float(b["cy"]) - float(b["h"]) / 2.0
-    bx2 = float(b["cx"]) + float(b["w"]) / 2.0
-    by2 = float(b["cy"]) + float(b["h"]) / 2.0
-
-    ix1 = max(ax1, bx1)
-    iy1 = max(ay1, by1)
-    ix2 = min(ax2, bx2)
-    iy2 = min(ay2, by2)
-    iw = max(0.0, ix2 - ix1)
-    ih = max(0.0, iy2 - iy1)
-    inter = iw * ih
-    if inter <= 0.0:
-        return 0.0
-
-    area_a = max(0.0, ax2 - ax1) * max(0.0, ay2 - ay1)
-    area_b = max(0.0, bx2 - bx1) * max(0.0, by2 - by1)
-    denom = area_a + area_b - inter
-    if denom <= 0.0:
-        return 0.0
-    return float(inter / denom)
+    return iou_cxcywh_norm_dict(a, b)
 
 
 def _close(a: float, b: float, atol: float) -> bool:
@@ -89,10 +66,7 @@ def _load_index(path: str) -> tuple[list[str], dict[str, list[_Det]]]:
             except Exception:
                 continue
             dets.append(_Det(class_id=int(d["class_id"]), score=float(d["score"]), bbox=d["bbox"], keypoints=kps))
-        out[image] = dets
-        base = image.split("/")[-1]
-        if base and base not in out:
-            out[base] = dets
+        add_image_aliases(out, image, dets)
     return images, out
 
 
@@ -242,4 +216,3 @@ def main(argv=None):
 
 if __name__ == "__main__":
     main()
-

@@ -7,6 +7,7 @@ from typing import Any
 
 from yolozu.dataset import build_manifest
 from yolozu.instance_segmentation_eval import extract_gt_instances_from_record, load_mask_bool, evaluate_instance_map
+from yolozu.image_keys import image_basename, image_key_aliases, lookup_image_alias
 from yolozu.instance_segmentation_predictions import iter_instances, load_instance_segmentation_predictions_entries
 from yolozu.metrics_report import build_report, write_json
 
@@ -398,10 +399,13 @@ def run_instance_segmentation_eval(
                     p = effective_pred_root / p
                 inst = dict(inst)
                 inst["mask"] = str(p)
-            pred_index.setdefault(image, []).append(inst)
-            base = image.split("/")[-1]
-            if base and base not in pred_index:
-                pred_index[base] = pred_index[image]
+            aliases = image_key_aliases(image)
+            if not aliases:
+                continue
+            bucket = pred_index.setdefault(aliases[0], [])
+            bucket.append(inst)
+            for alias in aliases[1:]:
+                pred_index.setdefault(alias, bucket)
 
         # Select overlay order based on per-image diagnostics.
         max_class_id = 0
@@ -438,7 +442,7 @@ def run_instance_segmentation_eval(
                 continue
 
             gt_instances, _ = extract_gt_instances_from_record(rec, allow_rgb_masks=bool(allow_rgb_masks))
-            pred_instances = pred_index.get(image_path) or pred_index.get(image_path.split("/")[-1]) or []
+            pred_instances = lookup_image_alias(pred_index, image_path) or []
             if not gt_instances and not pred_instances:
                 continue
 
@@ -502,7 +506,7 @@ def run_instance_segmentation_eval(
             diag = diag_by_path.get(image_path)
             overlays_index.append(
                 {
-                    "image": image_path.split("/")[-1],
+                    "image": image_basename(image_path) or image_path,
                     "overlay": str(out_path),
                     "badness": int(diag.get("badness", 0)) if isinstance(diag, dict) else None,
                     "tp": int(diag.get("tp", 0)) if isinstance(diag, dict) else None,
@@ -514,4 +518,3 @@ def run_instance_segmentation_eval(
 
     _write_html(html_path=html_path, title=str(title), report=report, overlays=overlays_index if overlays_index else None)
     return output_path, html_path
-

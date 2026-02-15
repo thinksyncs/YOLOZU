@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Iterable
 
 from yolozu.boxes import iou_xyxy_abs
+from yolozu.image_keys import add_image_aliases, lookup_image_alias
 from yolozu.intrinsics import parse_intrinsics
 
 
@@ -230,10 +231,7 @@ def calibrate_predictions_lbfgs(
         image = entry.get("image")
         if not image:
             continue
-        pred_index[str(image)] = entry
-        base = str(image).split("/")[-1]
-        if base and base not in pred_index:
-            pred_index[base] = entry
+        add_image_aliases(pred_index, str(image), entry)
 
     z_pred_list: list[float] = []
     z_gt_list: list[float] = []
@@ -257,10 +255,7 @@ def calibrate_predictions_lbfgs(
         image = record.get("image")
         if not image:
             continue
-        entry = pred_index.get(str(image))
-        if entry is None:
-            base = str(image).split("/")[-1]
-            entry = pred_index.get(base)
+        entry = lookup_image_alias(pred_index, str(image))
         if entry is None:
             continue
 

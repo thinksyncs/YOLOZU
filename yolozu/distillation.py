@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from .image_keys import add_image_aliases, lookup_image_alias
 from .simple_map import _bbox_iou_cxcywh_norm
 
 
@@ -20,10 +21,7 @@ def _index_by_image(entries: list[dict[str, Any]]) -> dict[str, list[dict[str, A
         if not image:
             continue
         dets = entry.get("detections", []) or []
-        index[image] = list(dets) if isinstance(dets, list) else []
-        base = image.split("/")[-1]
-        if base and base not in index:
-            index[base] = index[image]
+        add_image_aliases(index, image, list(dets) if isinstance(dets, list) else [])
     return index
 
 
@@ -53,7 +51,7 @@ def distill_predictions(
         if not image:
             continue
         student_dets = [dict(d) for d in (entry.get("detections", []) or [])]
-        teacher_dets = teacher_index.get(image, []) or []
+        teacher_dets = lookup_image_alias(teacher_index, image) or []
         teacher_used = [False] * len(teacher_dets)
 
         for det in student_dets:

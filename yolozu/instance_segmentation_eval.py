@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
 
+from .image_keys import image_basename, image_key_aliases, lookup_image_alias
 
 def _try_import_deps():  # pragma: no cover
     try:
@@ -363,9 +364,8 @@ def evaluate_instance_map(
         for cid, masks in per_image.items():
             entry.setdefault(int(cid), []).extend(list(masks))
 
-        base = image.split("/")[-1]
-        if base and base not in gt_by_image:
-            gt_by_image[base] = entry
+        for alias in image_key_aliases(image):
+            gt_by_image.setdefault(alias, entry)
 
     # Flatten predictions instances.
     from yolozu.instance_segmentation_predictions import iter_instances, validate_instance_segmentation_predictions_entries
@@ -391,13 +391,12 @@ def evaluate_instance_map(
             image_key = str(record.get("image", ""))
             if not image_key:
                 continue
-            masks = gt_by_image.get(image_key, {}).get(int(class_id), [])
+            image_gt = lookup_image_alias(gt_by_image, image_key) or {}
+            masks = image_gt.get(int(class_id), [])
             used = [False] * len(masks)
-            gt_used[image_key] = used
+            for alias in image_key_aliases(image_key):
+                gt_used.setdefault(alias, used)
             gt_count += len(masks)
-            base = image_key.split("/")[-1]
-            if base and base not in gt_used:
-                gt_used[base] = used
         if gt_count == 0:
             return 0.0
 
@@ -409,8 +408,9 @@ def evaluate_instance_map(
 
         for pred in class_preds:
             image_key = str(pred["image"])
-            gt_masks = gt_by_image.get(image_key, {}).get(int(class_id), [])
-            used = gt_used.get(image_key, [])
+            image_gt = lookup_image_alias(gt_by_image, image_key) or {}
+            gt_masks = image_gt.get(int(class_id), [])
+            used = lookup_image_alias(gt_used, image_key) or []
 
             try:
                 pm = _load_pred_mask(pred["mask"])
@@ -474,19 +474,25 @@ def evaluate_instance_map(
             key = str(p.get("image", ""))
             if not key:
                 continue
-            pred_by_image.setdefault(key, []).append(p)
+            aliases = image_key_aliases(key)
+            if not aliases:
+                continue
+            bucket = pred_by_image.setdefault(aliases[0], [])
+            bucket.append(p)
+            for alias in aliases[1:]:
+                pred_by_image.setdefault(alias, bucket)
 
         diag_thresh = float(diagnostics_iou)
         for record in records:
             image_path = str(record.get("image", ""))
             if not image_path:
                 continue
-            base = image_path.split("/")[-1]
+            base = image_basename(image_path) or image_path
 
             # Collect predictions for either full path key or basename key.
             preds: list[dict[str, Any]] = []
             seen: set[tuple[str, int, float]] = set()
-            for key in (image_path, base):
+            for key in image_key_aliases(image_path):
                 for it in pred_by_image.get(str(key), []) or []:
                     try:
                         sig = (str(it.get("mask", "")), int(it.get("class_id", 0)), float(it.get("score", 0.0)))
@@ -498,7 +504,7 @@ def evaluate_instance_map(
                     preds.append(it)
 
             # GT map for this record (already loaded).
-            gt_map = gt_by_image.get(image_path, {}) or gt_by_image.get(base, {}) or {}
+            gt_map = lookup_image_alias(gt_by_image, image_path) or {}
 
             gt_total = sum(len(v) for v in gt_map.values())
             pred_total = int(len(preds))

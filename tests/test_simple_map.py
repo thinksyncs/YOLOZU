@@ -49,6 +49,22 @@ class TestSimpleMap(unittest.TestCase):
         teacher_map = evaluate_map(records, teacher, iou_thresholds=[0.5]).map50
         self.assertGreaterEqual(teacher_map, student_map)
 
+    def test_map_matches_windows_style_prediction_image(self):
+        records = [
+            {
+                "image": "/dataset/images/img1.jpg",
+                "labels": [{"class_id": 0, "cx": 0.5, "cy": 0.5, "w": 0.2, "h": 0.2}],
+            }
+        ]
+        preds = [
+            {
+                "image": r"C:\dataset\images\img1.jpg",
+                "detections": [{"class_id": 0, "score": 0.9, "bbox": {"cx": 0.5, "cy": 0.5, "w": 0.2, "h": 0.2}}],
+            }
+        ]
+        result = evaluate_map(records, preds, iou_thresholds=[0.5])
+        self.assertAlmostEqual(float(result.map50), 1.0, places=6)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from .image_size import get_image_size
+from .image_keys import add_image_aliases, lookup_image_alias, require_image_key
 
 
 @dataclass(frozen=True)
@@ -31,8 +32,10 @@ def build_coco_ground_truth(records: list[dict[str, Any]]) -> tuple[dict[str, An
 
     image_key_to_id: dict[str, int] = {}
     ann_id = 1
-    for image_id, record in enumerate(records, start=1):
-        image_path = Path(record["image"])
+    for idx, record in enumerate(records):
+        image_id = int(idx + 1)
+        image_key = require_image_key(record.get("image"), where=f"records[{idx}].image")
+        image_path = Path(image_key)
         width, height = get_image_size(image_path)
 
         images.append(
@@ -43,8 +46,7 @@ def build_coco_ground_truth(records: list[dict[str, Any]]) -> tuple[dict[str, An
                 "height": height,
             }
         )
-        image_key_to_id[str(image_path)] = image_id
-        image_key_to_id[image_path.name] = image_id
+        add_image_aliases(image_key_to_id, image_key, image_id)
 
         for label in record.get("labels", []) or []:
             class_id = int(label["class_id"])
@@ -89,19 +91,27 @@ def predictions_to_coco_detections(
     """
 
     out: list[dict[str, Any]] = []
-    for entry in predictions_entries:
-        image_key = str(entry.get("image", ""))
-        if not image_key:
-            continue
-        image_id = coco_index.image_key_to_id.get(image_key)
-        if image_id is None:
-            base = image_key.split("/")[-1]
-            image_id = coco_index.image_key_to_id.get(base)
+    for idx, entry in enumerate(predictions_entries):
+        where = f"predictions[{idx}]"
+        if not isinstance(entry, dict):
+            raise ValueError(f"{where} must be an object")
+
+        image_key = require_image_key(entry.get("image"), where=f"{where}.image")
+        image_id = lookup_image_alias(coco_index.image_key_to_id, image_key)
         if image_id is None:
             raise ValueError(f"prediction refers to unknown image: {image_key}")
+        if image_id not in image_sizes:
+            raise ValueError(f"missing image size for image_id={image_id}")
 
         width, height = image_sizes[image_id]
-        for det in entry.get("detections", []) or []:
+        detections = entry.get("detections", [])
+        if detections is None:
+            detections = []
+        if not isinstance(detections, list):
+            raise ValueError(f"{where}.detections must be a list")
+        for det_idx, det in enumerate(detections):
+            if not isinstance(det, dict):
+                raise ValueError(f"{where}.detections[{det_idx}] must be an object")
             if "class_id" not in det:
                 raise ValueError(f"missing class_id for image {image_key}")
             class_id = int(det["class_id"])
@@ -205,4 +215,3 @@ def _to_abs_xywh(bbox: Any, *, width: int, height: int, bbox_format: str) -> tup
         return float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3])
 
     raise ValueError(f"unsupported bbox format ({bbox_format}) or shape")
-

@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from .image_size import get_image_size
+from .image_keys import add_image_aliases, lookup_image_alias, require_image_key
 from .keypoints import normalize_keypoints
 
 
@@ -103,13 +104,14 @@ def build_coco_keypoints_ground_truth(
         return 2
 
     ann_id = 1
-    for image_id, record in enumerate(records, start=1):
-        image_path = Path(record["image"])
+    for idx, record in enumerate(records):
+        image_id = int(idx + 1)
+        image_key = require_image_key(record.get("image"), where=f"records[{idx}].image")
+        image_path = Path(image_key)
         width, height = get_image_size(image_path)
 
         images.append({"id": image_id, "file_name": image_path.name, "width": width, "height": height})
-        image_key_to_id[str(image_path)] = image_id
-        image_key_to_id[image_path.name] = image_id
+        add_image_aliases(image_key_to_id, image_key, image_id)
 
         for label in record.get("labels", []) or []:
             if not isinstance(label, dict) or label.get("keypoints") is None:
@@ -197,20 +199,28 @@ def predictions_to_coco_keypoints(
         return 1.0
 
     out: list[dict[str, Any]] = []
-    for entry in predictions_entries:
-        image_key = str(entry.get("image", ""))
-        if not image_key:
-            continue
-        image_id = coco_index.image_key_to_id.get(image_key)
-        if image_id is None:
-            base = image_key.split("/")[-1]
-            image_id = coco_index.image_key_to_id.get(base)
+    for idx, entry in enumerate(predictions_entries):
+        where = f"predictions[{idx}]"
+        if not isinstance(entry, dict):
+            raise ValueError(f"{where} must be an object")
+
+        image_key = require_image_key(entry.get("image"), where=f"{where}.image")
+        image_id = lookup_image_alias(coco_index.image_key_to_id, image_key)
         if image_id is None:
             raise ValueError(f"prediction refers to unknown image: {image_key}")
+        if image_id not in image_sizes:
+            raise ValueError(f"missing image size for image_id={image_id}")
 
         width, height = image_sizes[image_id]
-        for det in entry.get("detections", []) or []:
-            if not isinstance(det, dict) or det.get("keypoints") is None:
+        detections = entry.get("detections", [])
+        if detections is None:
+            detections = []
+        if not isinstance(detections, list):
+            raise ValueError(f"{where}.detections must be a list")
+        for det_idx, det in enumerate(detections):
+            if not isinstance(det, dict):
+                raise ValueError(f"{where}.detections[{det_idx}] must be an object")
+            if det.get("keypoints") is None:
                 continue
 
             score = float(det.get("score", 0.0) or 0.0)
@@ -315,4 +325,3 @@ def evaluate_coco_oks_map(
         "oks_max_dets": int(max_dets),
     }
     return {"metrics": metrics, "stats": stats}
-

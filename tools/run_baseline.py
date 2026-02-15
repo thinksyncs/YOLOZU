@@ -12,6 +12,7 @@ sys.path.insert(0, str(repo_root))
 from yolozu.adapter import DummyAdapter, PrecomputedAdapter, RTDETRPoseAdapter
 from yolozu.boxes import iou_xyxy_abs
 from yolozu.dataset import build_manifest
+from yolozu.image_keys import add_image_aliases, lookup_image_alias
 from yolozu.scenario_suite import build_report
 from yolozu.coco_eval import build_coco_ground_truth, evaluate_coco_map, predictions_to_coco_detections
 
@@ -162,12 +163,7 @@ def _index_predictions(predictions):
         dets = entry.get("detections") or []
         if not isinstance(dets, list):
             dets = []
-        index[str(image)] = dets
-    # Add basename aliases for convenience.
-    for image, dets in list(index.items()):
-        base = str(image).split("/")[-1]
-        if base and base not in index:
-            index[base] = dets
+        add_image_aliases(index, str(image), dets)
     return index
 
 
@@ -179,7 +175,7 @@ def _match_counts(records, predictions, iou_thr):
 
     for record in records:
         labels = record.get("labels") or []
-        dets = pred_index.get(record.get("image"), [])
+        dets = lookup_image_alias(pred_index, record.get("image")) or []
 
         total_gt += len(labels)
         total_pred += len(dets)

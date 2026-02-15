@@ -39,6 +39,15 @@ class TestPrecomputedAdapter(unittest.TestCase):
             out = adapter.predict([{"image": "x.jpg", "labels": []}])
             self.assertEqual(out[0]["detections"], [])
 
+    def test_matches_windows_style_path_alias(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "preds.json"
+            payload = [{"image": r"C:\tmp\0001.jpg", "detections": [{"score": 0.8}]}]
+            path.write_text(json.dumps(payload))
+            adapter = PrecomputedAdapter(path)
+            out = adapter.predict([{"image": "C:/tmp/0001.jpg", "labels": []}])
+            self.assertEqual(out[0]["detections"], [{"score": 0.8}])
+
 
 if __name__ == "__main__":
     unittest.main()

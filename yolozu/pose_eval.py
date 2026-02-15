@@ -4,7 +4,9 @@ import math
 from dataclasses import dataclass, field
 from typing import Any, Iterable
 
+from .boxes import iou_cxcywh_norm_dict
 from .geometry import corrected_intrinsics, recover_translation
+from .image_keys import add_image_aliases, image_basename, lookup_image_alias
 from .intrinsics import parse_intrinsics
 from .math3d import geodesic_distance
 
@@ -149,32 +151,7 @@ def _bbox_center_px(bbox: dict[str, Any], *, image_wh: tuple[float | None, float
 
 
 def _bbox_iou_cxcywh_norm(a: dict[str, Any], b: dict[str, Any]) -> float:
-    ax1 = float(a["cx"]) - float(a["w"]) / 2.0
-    ay1 = float(a["cy"]) - float(a["h"]) / 2.0
-    ax2 = float(a["cx"]) + float(a["w"]) / 2.0
-    ay2 = float(a["cy"]) + float(a["h"]) / 2.0
-
-    bx1 = float(b["cx"]) - float(b["w"]) / 2.0
-    by1 = float(b["cy"]) - float(b["h"]) / 2.0
-    bx2 = float(b["cx"]) + float(b["w"]) / 2.0
-    by2 = float(b["cy"]) + float(b["h"]) / 2.0
-
-    ix1 = max(ax1, bx1)
-    iy1 = max(ay1, by1)
-    ix2 = min(ax2, bx2)
-    iy2 = min(ay2, by2)
-    iw = max(0.0, ix2 - ix1)
-    ih = max(0.0, iy2 - iy1)
-    inter = iw * ih
-    if inter <= 0.0:
-        return 0.0
-
-    area_a = max(0.0, ax2 - ax1) * max(0.0, ay2 - ay1)
-    area_b = max(0.0, bx2 - bx1) * max(0.0, by2 - by1)
-    denom = area_a + area_b - inter
-    if denom <= 0.0:
-        return 0.0
-    return float(inter / denom)
+    return iou_cxcywh_norm_dict(a, b)
 
 
 def _match_dets_to_gts(
@@ -273,10 +250,7 @@ def evaluate_pose(
         image = entry.get("image")
         if not isinstance(image, str) or not image:
             continue
-        pred_index[str(image)] = entry
-        base = str(image).split("/")[-1]
-        if base and base not in pred_index:
-            pred_index[base] = entry
+        add_image_aliases(pred_index, str(image), entry)
 
     total_gt = 0
     total_pred = 0
@@ -322,7 +296,7 @@ def evaluate_pose(
         r_gt_list = _extract_r_gt(record, n_gt)
         t_gt_list = _extract_t_gt(record, n_gt)
 
-        entry = pred_index.get(image) or pred_index.get(image.split("/")[-1])
+        entry = lookup_image_alias(pred_index, image)
         dets_raw = entry.get("detections", []) if isinstance(entry, dict) else []
         dets_list = dets_raw if isinstance(dets_raw, list) else []
 
@@ -446,7 +420,7 @@ def evaluate_pose(
             if len(per_image) < int(keep_per_image):
                 per_image.append(
                     {
-                        "image": image.split("/")[-1],
+                        "image": image_basename(image) or image,
                         "gt": int(n_gt),
                         "pred": int(len(dets)),
                         "matches": int(len(matches)),

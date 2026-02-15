@@ -4,36 +4,13 @@ import math
 from dataclasses import dataclass
 from typing import Any
 
+from .boxes import iou_cxcywh_norm_dict
+from .image_keys import add_image_aliases, lookup_image_alias
 from .keypoints import normalize_keypoints
 
 
 def _bbox_iou_cxcywh_norm(a: dict[str, Any], b: dict[str, Any]) -> float:
-    ax1 = float(a["cx"]) - float(a["w"]) / 2.0
-    ay1 = float(a["cy"]) - float(a["h"]) / 2.0
-    ax2 = float(a["cx"]) + float(a["w"]) / 2.0
-    ay2 = float(a["cy"]) + float(a["h"]) / 2.0
-
-    bx1 = float(b["cx"]) - float(b["w"]) / 2.0
-    by1 = float(b["cy"]) - float(b["h"]) / 2.0
-    bx2 = float(b["cx"]) + float(b["w"]) / 2.0
-    by2 = float(b["cy"]) + float(b["h"]) / 2.0
-
-    ix1 = max(ax1, bx1)
-    iy1 = max(ay1, by1)
-    ix2 = min(ax2, bx2)
-    iy2 = min(ay2, by2)
-    iw = max(0.0, ix2 - ix1)
-    ih = max(0.0, iy2 - iy1)
-    inter = iw * ih
-    if inter <= 0.0:
-        return 0.0
-
-    area_a = max(0.0, ax2 - ax1) * max(0.0, ay2 - ay1)
-    area_b = max(0.0, bx2 - bx1) * max(0.0, by2 - by1)
-    denom = area_a + area_b - inter
-    if denom <= 0.0:
-        return 0.0
-    return float(inter / denom)
+    return iou_cxcywh_norm_dict(a, b)
 
 
 def _as_int_or_none(value: Any) -> int | None:
@@ -129,6 +106,10 @@ def evaluate_keypoints_pck(
     warnings: list[str] = []
     per_image: list[dict[str, Any]] = []
 
+    pred_index: dict[str, Any] = dict(predictions_index or {})
+    for key, value in list(pred_index.items()):
+        add_image_aliases(pred_index, key, value, overwrite_primary=False)
+
     total_gt_instances = 0
     total_pred_instances = 0
     total_matched_instances = 0
@@ -167,10 +148,7 @@ def evaluate_keypoints_pck(
         gt_labels = [lab for lab in labels if isinstance(lab, dict) and lab.get("keypoints") is not None]
         total_gt_instances += int(len(gt_labels))
 
-        pred_detections = predictions_index.get(image)
-        if pred_detections is None:
-            base = image.split("/")[-1]
-            pred_detections = predictions_index.get(base)
+        pred_detections = lookup_image_alias(pred_index, image)
         pred_detections = pred_detections or []
         if not isinstance(pred_detections, list):
             pred_detections = [pred_detections]
@@ -297,4 +275,3 @@ def evaluate_keypoints_pck(
         "per_image": per_image,
         "warnings": sorted(set(warnings)),
     }
-

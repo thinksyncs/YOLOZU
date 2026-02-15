@@ -3,6 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Iterable
 
+from .boxes import iou_cxcywh_norm_dict
+from .image_keys import add_image_aliases, image_key_aliases, lookup_image_alias
+
 
 @dataclass(frozen=True)
 class MapResult:
@@ -12,32 +15,7 @@ class MapResult:
 
 
 def _bbox_iou_cxcywh_norm(a: dict[str, Any], b: dict[str, Any]) -> float:
-    ax1 = float(a["cx"]) - float(a["w"]) / 2.0
-    ay1 = float(a["cy"]) - float(a["h"]) / 2.0
-    ax2 = float(a["cx"]) + float(a["w"]) / 2.0
-    ay2 = float(a["cy"]) + float(a["h"]) / 2.0
-
-    bx1 = float(b["cx"]) - float(b["w"]) / 2.0
-    by1 = float(b["cy"]) - float(b["h"]) / 2.0
-    bx2 = float(b["cx"]) + float(b["w"]) / 2.0
-    by2 = float(b["cy"]) + float(b["h"]) / 2.0
-
-    ix1 = max(ax1, bx1)
-    iy1 = max(ay1, by1)
-    ix2 = min(ax2, bx2)
-    iy2 = min(ay2, by2)
-    iw = max(0.0, ix2 - ix1)
-    ih = max(0.0, iy2 - iy1)
-    inter = iw * ih
-    if inter <= 0.0:
-        return 0.0
-
-    area_a = max(0.0, ax2 - ax1) * max(0.0, ay2 - ay1)
-    area_b = max(0.0, bx2 - bx1) * max(0.0, by2 - by1)
-    denom = area_a + area_b - inter
-    if denom <= 0.0:
-        return 0.0
-    return float(inter / denom)
+    return iou_cxcywh_norm_dict(a, b)
 
 
 def _group_ground_truth(records: list[dict[str, Any]]) -> tuple[dict[str, dict[int, list[dict[str, Any]]]], set[int]]:
@@ -48,9 +26,7 @@ def _group_ground_truth(records: list[dict[str, Any]]) -> tuple[dict[str, dict[i
         if not image:
             continue
         entry = gt_by_image.setdefault(image, {})
-        base = image.split("/")[-1]
-        if base and base not in gt_by_image:
-            gt_by_image[base] = entry
+        add_image_aliases(gt_by_image, image, entry, overwrite_primary=False)
         for label in record.get("labels", []) or []:
             try:
                 class_id = int(label.get("class_id", 0))
@@ -112,13 +88,12 @@ def _ap_for_class(
     gt_count = 0
     gt_used: dict[str, list[bool]] = {}
     for image in images:
-        boxes = gt_by_image.get(str(image), {}).get(class_id, [])
+        image_gt = lookup_image_alias(gt_by_image, str(image)) or {}
+        boxes = image_gt.get(class_id, [])
         used = [False] * len(boxes)
-        gt_used[str(image)] = used
+        for alias in image_key_aliases(str(image)):
+            gt_used.setdefault(alias, used)
         gt_count += len(boxes)
-        base = str(image).split("/")[-1]
-        if base and base not in gt_used:
-            gt_used[base] = used
 
     if gt_count == 0:
         return 0.0
@@ -131,8 +106,9 @@ def _ap_for_class(
 
     for pred in class_preds:
         image = pred["image"]
-        gt_boxes = gt_by_image.get(image, {}).get(class_id, [])
-        used = gt_used.get(image, [])
+        image_gt = lookup_image_alias(gt_by_image, image) or {}
+        gt_boxes = image_gt.get(class_id, [])
+        used = lookup_image_alias(gt_used, image) or []
 
         best_iou = 0.0
         best_idx = -1

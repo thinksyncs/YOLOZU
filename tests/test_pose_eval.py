@@ -50,7 +50,32 @@ class TestPoseEval(unittest.TestCase):
         self.assertAlmostEqual(float(r.metrics["rot_success"]), 1.0, places=6)
         self.assertAlmostEqual(float(r.metrics["trans_success"]), 1.0, places=6)
 
+    def test_pose_matches_windows_style_prediction_image(self):
+        from yolozu.pose_eval import evaluate_pose
+
+        record = {
+            "image": "/data/images/0001.jpg",
+            "labels": [{"class_id": 0, "cx": 0.5, "cy": 0.5, "w": 0.2, "h": 0.2}],
+            "R_gt": [[[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]],
+            "t_gt": [[0.0, 0.0, 1.0]],
+        }
+        preds = [
+            {
+                "image": r"C:\data\images\0001.jpg",
+                "detections": [
+                    {
+                        "class_id": 0,
+                        "score": 1.0,
+                        "bbox": {"cx": 0.5, "cy": 0.5, "w": 0.2, "h": 0.2},
+                        "R": [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+                        "t_xyz": [0.0, 0.0, 1.0],
+                    }
+                ],
+            }
+        ]
+        r = evaluate_pose([record], preds, iou_threshold=0.5, min_score=0.0)
+        self.assertEqual(r.counts["matches"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()
-

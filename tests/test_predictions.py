@@ -116,6 +116,16 @@ class TestPredictionsIO(unittest.TestCase):
             self.assertIn("/tmp/0001.jpg", idx)
             self.assertIn("0001.jpg", idx)
 
+    def test_load_index_normalizes_windows_slashes(self):
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td) / "preds.json"
+            payload = [{"image": r"C:\tmp\0001.jpg", "detections": [{"score": 0.9, "bbox": {"cx": 0.1, "cy": 0.1, "w": 0.1, "h": 0.1}}]}]
+            p.write_text(json.dumps(payload))
+            idx = load_predictions_index(p)
+            self.assertIn(r"C:\tmp\0001.jpg", idx)
+            self.assertIn("C:/tmp/0001.jpg", idx)
+            self.assertIn("0001.jpg", idx)
+
     def test_validator_warnings_non_strict(self):
         entries = [{"image": "a.jpg", "detections": [{"score": 0.1, "bbox": {"cx": 0.5, "cy": 0.5, "w": 0.2, "h": 0.2}}]}]
         res = validate_predictions_entries(entries, strict=False)
@@ -125,6 +135,12 @@ class TestPredictionsIO(unittest.TestCase):
         entries = [{"image": "a.jpg", "detections": [{"class_id": 1, "score": "0.1", "bbox": {"cx": 0.5, "cy": 0.5, "w": 0.2, "h": 0.2}}]}]
         with self.assertRaises(ValueError):
             validate_predictions_entries(entries, strict=True)
+
+    def test_validator_requires_image_string(self):
+        entries = [{"image": 123, "detections": []}]
+        with self.assertRaises(ValueError) as ctx:
+            validate_predictions_entries(entries, strict=False)
+        self.assertIn("image must be a non-empty string", str(ctx.exception))
 
 
 if __name__ == "__main__":

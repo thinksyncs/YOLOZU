@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
+from .image_keys import add_image_aliases, require_image_key
 from .keypoints import normalize_keypoints
 
 
@@ -241,8 +242,8 @@ def validate_predictions_entries(entries: Iterable[dict[str, Any]], *, strict: b
         if not isinstance(entry, dict):
             raise ValueError(f"{where}: entry must be an object")
         image = entry.get("image")
-        if not image:
-            raise ValueError(f"{where}: missing 'image'")
+        if not isinstance(image, str) or not image.strip():
+            raise ValueError(f"{where}: image must be a non-empty string")
         dets = entry.get("detections", [])
         if dets is None:
             dets = []
@@ -281,19 +282,21 @@ def load_predictions_index(path: str | Path, *, add_basename_aliases: bool = Tru
     entries = load_predictions_entries(path)
 
     index: dict[str, list[Any]] = {}
-    for entry in entries:
+    for idx, entry in enumerate(entries):
         image = entry.get("image")
-        if not image:
+        if image is None:
+            continue
+        try:
+            image_key = require_image_key(image, where=f"predictions[{idx}].image")
+        except ValueError:
             continue
         dets = entry.get("detections", [])
         if dets is None:
             dets = []
-        index[str(image)] = dets if isinstance(dets, list) else _as_list(dets)
-
-    if add_basename_aliases:
-        for image, dets in list(index.items()):
-            base = str(image).split("/")[-1]
-            if base and base not in index:
-                index[base] = dets
+        dets_list = dets if isinstance(dets, list) else _as_list(dets)
+        if add_basename_aliases:
+            add_image_aliases(index, image_key, dets_list)
+        else:
+            index[image_key] = dets_list
 
     return index

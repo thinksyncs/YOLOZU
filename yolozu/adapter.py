@@ -50,17 +50,18 @@ class PrecomputedAdapter(ModelAdapter):
         self._index = load_predictions_index(self._path)
 
     def predict(self, records):
+        from .image_keys import lookup_image_alias, require_image_key
+
         if self._index is None:
             self._load()
 
         outputs = []
-        for record in records:
-            image = record["image"]
-            dets = self._index.get(image)
-            if dets is None:
-                base = str(image).split("/")[-1]
-                dets = self._index.get(base, [])
-            outputs.append({"image": image, "detections": dets})
+        for idx, record in enumerate(records):
+            if not isinstance(record, dict):
+                raise ValueError(f"records[{idx}] must be an object")
+            image_key = require_image_key(record.get("image"), where=f"records[{idx}].image")
+            dets = lookup_image_alias(self._index, image_key)
+            outputs.append({"image": image_key, "detections": dets if dets is not None else []})
         return outputs
 
 

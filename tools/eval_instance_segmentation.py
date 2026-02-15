@@ -9,6 +9,7 @@ repo_root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(repo_root))
 
 from yolozu.dataset import build_manifest  # noqa: E402
+from yolozu.image_keys import image_basename, image_key_aliases, lookup_image_alias  # noqa: E402
 from yolozu.instance_segmentation_eval import extract_gt_instances_from_record, load_mask_bool  # noqa: E402
 from yolozu.instance_segmentation_eval import evaluate_instance_map  # noqa: E402
 from yolozu.instance_segmentation_predictions import iter_instances, load_instance_segmentation_predictions_entries  # noqa: E402
@@ -407,10 +408,13 @@ def main(argv: list[str] | None = None) -> None:
                         p = pred_root / p
                     inst = dict(inst)
                     inst["mask"] = str(p)
-                pred_index.setdefault(image, []).append(inst)
-                base = image.split("/")[-1]
-                if base and base not in pred_index:
-                    pred_index[base] = pred_index[image]
+                aliases = image_key_aliases(image)
+                if not aliases:
+                    continue
+                bucket = pred_index.setdefault(aliases[0], [])
+                bucket.append(inst)
+                for alias in aliases[1:]:
+                    pred_index.setdefault(alias, bucket)
 
             # Render first N images that have either GT or preds.
             max_class_id = 0
@@ -447,7 +451,7 @@ def main(argv: list[str] | None = None) -> None:
                     continue
 
                 gt_instances, _ = extract_gt_instances_from_record(rec, allow_rgb_masks=bool(args.allow_rgb_masks))
-                pred_instances = pred_index.get(image_path) or pred_index.get(image_path.split("/")[-1]) or []
+                pred_instances = lookup_image_alias(pred_index, image_path) or []
                 if not gt_instances and not pred_instances:
                     continue
 
@@ -517,7 +521,7 @@ def main(argv: list[str] | None = None) -> None:
                 diag = diag_by_path.get(image_path)
                 overlays_index.append(
                     {
-                        "image": image_path.split("/")[-1],
+                        "image": image_basename(image_path) or image_path,
                         "overlay": str(out_path),
                         "badness": int(diag.get("badness", 0)) if isinstance(diag, dict) else None,
                         "tp": int(diag.get("tp", 0)) if isinstance(diag, dict) else None,

@@ -15,6 +15,7 @@ from yolozu.coco_keypoints_eval import (  # noqa: E402
     predictions_to_coco_keypoints,
 )
 from yolozu.dataset import build_manifest  # noqa: E402
+from yolozu.image_keys import add_image_aliases, lookup_image_alias  # noqa: E402
 from yolozu.keypoints import keypoints_to_pixels, normalize_keypoints  # noqa: E402
 from yolozu.keypoints_eval import evaluate_keypoints_pck, match_keypoints_detections  # noqa: E402
 from yolozu.metrics_report import build_report, write_json  # noqa: E402
@@ -430,23 +431,20 @@ def main(argv: list[str] | None = None) -> None:
             # Keep original order.
             pass
 
-        record_by_image = {str(r.get("image")): r for r in records if isinstance(r, dict) and r.get("image")}
+        record_by_image: dict[str, dict[str, Any]] = {}
+        for r in records:
+            if not isinstance(r, dict) or not r.get("image"):
+                continue
+            add_image_aliases(record_by_image, str(r.get("image")), r)
 
         overlays_index = []
         for idx, row in enumerate(candidates[: int(args.max_overlays)]):
             image_path = str(row.get("image"))
-            record = record_by_image.get(image_path)
-            if record is None:
-                # Try basename alias.
-                base = image_path.split("/")[-1]
-                record = record_by_image.get(base)
+            record = lookup_image_alias(record_by_image, image_path)
             if record is None:
                 continue
 
-            pred_dets = pred_index.get(image_path)
-            if pred_dets is None:
-                base = image_path.split("/")[-1]
-                pred_dets = pred_index.get(base)
+            pred_dets = lookup_image_alias(pred_index, image_path)
             pred_dets = pred_dets or []
             if not isinstance(pred_dets, list):
                 pred_dets = [pred_dets]

@@ -12,6 +12,7 @@ repo_root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(repo_root))
 
 from yolozu.dataset import build_manifest
+from yolozu.image_keys import image_key_aliases
 from yolozu.metrics_report import build_report, write_json
 from yolozu.predictions import load_predictions_entries
 from yolozu.predictions_transform import fuse_detection_scores
@@ -58,10 +59,7 @@ def _allowed_image_keys(records: list[dict[str, Any]]) -> set[str]:
         image = str(r.get("image", ""))
         if not image:
             continue
-        keys.add(image)
-        base = image.split("/")[-1]
-        if base:
-            keys.add(base)
+        keys.update(image_key_aliases(image))
     return keys
 
 
@@ -71,8 +69,8 @@ def _filter_entries(entries: list[dict[str, Any]], allowed_keys: set[str]) -> li
         image = str(e.get("image", ""))
         if not image:
             continue
-        base = image.split("/")[-1]
-        if image in allowed_keys or base in allowed_keys:
+        aliases = image_key_aliases(image)
+        if any(alias in allowed_keys for alias in aliases):
             out.append(e)
     return out
 
@@ -347,4 +345,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
