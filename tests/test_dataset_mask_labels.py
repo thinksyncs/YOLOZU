@@ -89,7 +89,7 @@ class TestDatasetMaskLabels(unittest.TestCase):
         rec = [r for r in manifest["images"] if Path(r["image"]).stem == stem][0]
         labels = sorted(rec["labels"], key=lambda d: (d["cx"], d["cy"]))
         self.assertEqual(len(labels), 2)
-        self.assertEqual({l["class_id"] for l in labels}, {3})
+        self.assertEqual({label["class_id"] for label in labels}, {3})
 
         # Instance 7: x=[1..3], y=[1..2]
         self.assertAlmostEqual(labels[0]["cx"], 0.25, places=6)
@@ -128,7 +128,7 @@ class TestDatasetMaskLabels(unittest.TestCase):
         rec = [r for r in manifest["images"] if Path(r["image"]).stem == stem][0]
         labels = rec["labels"]
         self.assertEqual(len(labels), 3)
-        class_ids = sorted([int(l["class_id"]) for l in labels])
+        class_ids = sorted([int(label["class_id"]) for label in labels])
         self.assertEqual(class_ids, [2, 2, 4])
 
 

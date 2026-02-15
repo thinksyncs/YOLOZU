@@ -132,13 +132,14 @@ python3 tools/convert_coco_instance_seg_predictions.py \
 Start here: [docs/training_inference_export.md](docs/training_inference_export.md)
 
 - Repo feature summary: [docs/yolozu_spec.md](docs/yolozu_spec.md)
-- Model/spec note: [rt_detr_6dof_geom_mim_spec_en_v0_4.md](rt_detr_6dof_geom_mim_spec_en_v0_4.md)
+- Model/spec note: [docs/specs/rt_detr_6dof_geom_mim_spec_en_v0_4.md](docs/specs/rt_detr_6dof_geom_mim_spec_en_v0_4.md)
 - Training / inference / export quick steps: [docs/training_inference_export.md](docs/training_inference_export.md)
 - Hessian solver for regression refinement: [docs/hessian_solver.md](docs/hessian_solver.md)
 - Predictions schema (stable): [docs/predictions_schema.md](docs/predictions_schema.md)
 - Adapter contract (stable): [docs/adapter_contract.md](docs/adapter_contract.md)
 - License policy: [docs/license_policy.md](docs/license_policy.md)
 - Tools index (AI-friendly): [docs/tools_index.md](docs/tools_index.md) / [tools/manifest.json](tools/manifest.json)
+- AI-first usage guide: [docs/ai_first.md](docs/ai_first.md)
 
 ## Roadmap (priorities)
 

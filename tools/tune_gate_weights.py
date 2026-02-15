@@ -12,7 +12,6 @@ repo_root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(repo_root))
 
 from yolozu.cli_args import (
-    require_float_in_range,
     require_non_negative_float,
     require_non_negative_int,
     require_positive_int,

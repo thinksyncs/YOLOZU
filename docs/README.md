@@ -16,6 +16,7 @@ Links:
 - Bring-your-own inference: [external_inference.md](external_inference.md)
 - TTT protocol: [ttt_protocol.md](ttt_protocol.md)
 - License policy: [license_policy.md](license_policy.md)
+- AI-first guide: [ai_first.md](ai_first.md)
 
 ## Start here (4 entry points)
 

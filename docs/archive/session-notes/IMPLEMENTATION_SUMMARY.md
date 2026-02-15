@@ -195,7 +195,7 @@ See `tools/example_mim_inference.py --ttt` for complete example.
 
 ## References
 
-- Specification: `rt_detr_6dof_geom_mim_spec_en_v0_4.md` Section 6
+- Specification: `docs/specs/rt_detr_6dof_geom_mim_spec_en_v0_4.md` Section 6
 - Related: Tent TTT (entropy minimization)
 - Related: MAE/BEiT (masked image modeling)
 

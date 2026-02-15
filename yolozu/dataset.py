@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .keypoints import normalize_keypoints
+
+if TYPE_CHECKING:  # pragma: no cover
+    import numpy as np
 
 
 def _first_key(data: dict[str, Any], keys: tuple[str, ...]) -> Any:

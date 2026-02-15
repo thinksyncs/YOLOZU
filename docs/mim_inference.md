@@ -244,7 +244,7 @@ def create_geom_from_predictions(bbox, mask_pred, depth_pred, K):
 
 ## References
 
-- Specification: `rt_detr_6dof_geom_mim_spec_en_v0_4.md` Section 6
+- Specification: `docs/specs/rt_detr_6dof_geom_mim_spec_en_v0_4.md` Section 6
 - Model implementation: `rtdetr_pose/rtdetr_pose/model.py`
 - Loss functions: `rtdetr_pose/rtdetr_pose/losses.py`
 - Tests: `tests/test_mim_reconstruction.py`

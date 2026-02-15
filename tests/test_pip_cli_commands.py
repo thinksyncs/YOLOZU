@@ -119,8 +119,8 @@ class TestPipCLICommands(unittest.TestCase):
     def test_eval_instance_seg_smoke(self):
         repo_root = Path(__file__).resolve().parents[1]
         try:
-            import numpy as _  # noqa: F401
-            from PIL import Image as _  # noqa: F401
+            import numpy  # noqa: F401
+            from PIL import Image  # noqa: F401
         except Exception as exc:  # pragma: no cover
             self.skipTest(f"deps not available: {exc}")
 
@@ -158,8 +158,8 @@ class TestPipCLICommands(unittest.TestCase):
     def test_demo_instance_seg_smoke(self):
         repo_root = Path(__file__).resolve().parents[1]
         try:
-            import numpy as _  # noqa: F401
-            from PIL import Image as _  # noqa: F401
+            import numpy  # noqa: F401
+            from PIL import Image  # noqa: F401
         except Exception as exc:  # pragma: no cover
             self.skipTest(f"deps not available: {exc}")
 

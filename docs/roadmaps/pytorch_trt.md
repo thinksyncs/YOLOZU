@@ -7,7 +7,7 @@ bd list
 bd search "<keyword>"
 ```
 
-Spec reference: `rt_detr_6dof_geom_mim_spec_en_v0_4.md`
+Spec reference: `docs/specs/rt_detr_6dof_geom_mim_spec_en_v0_4.md`
 
 ## YOLO26 competition tooling
 
