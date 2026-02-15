@@ -26,6 +26,7 @@ It focuses on:
 ```bash
 python3 -m pip install yolozu
 yolozu doctor --output -
+yolozu predict-images --backend dummy --input-dir /path/to/images
 yolozu demo instance-seg
 ```
 
@@ -143,12 +144,12 @@ Start here: [docs/training_inference_export.md](docs/training_inference_export.m
 
 ## Roadmap (priorities)
 
-- P0 (done): Unified CLI (`torch` / `onnxruntime` / `tensorrt`) with consistent args + same output schema; always write meta (git SHA / env / GPU / seed / config hash); keep `tools/manifest.json` updated.
-- P1 (done): `doctor` (deps/GPU/driver/onnxrt/TRT diagnostics) + `predict-images` (folder input → predictions JSON + overlays) + HTML report.
-- P2 (partial): cache/re-run (fingerprinted runs) + sweeps (wrapper exists; expand sweeps for TTT/threshold/gate weights) + production inference cores (C++/Rust) as needed.
+- P0: Unified CLI (`torch` / `onnxruntime` / `tensorrt`) with consistent args + same output schema; always write meta (git SHA / env / GPU / seed / config hash); keep `tools/manifest.json` updated.
+- P1: `doctor` (deps/GPU/driver/onnxrt/TRT diagnostics) + `predict-images` (folder input → predictions JSON + overlays) + HTML report.
+- P2: cache/re-run (fingerprinted runs) + sweeps (wrapper exists; expand sweeps for TTT/threshold/gate weights) + production inference cores (C++/Rust) as needed.
 - Long-form notes: `docs/roadmap.md`
 
-## Pros / Cons (project-level)
+## Pros / Operational Notes (project-level)
 
 ### Pros
 - Apache-2.0-only utilities and evaluation harnesses (no vendored GPL/AGPL inference code).
@@ -158,18 +159,22 @@ Start here: [docs/training_inference_export.md](docs/training_inference_export.m
 - Reproducible artifacts: stable JSON reports + optional JSONL history for regressions.
 - Symmetry + commonsense constraints are treated as first-class, test-covered utilities (not ad-hoc postprocess).
 
-### Cons / Limitations
-- Not a turnkey training repo: the in-repo `rtdetr_pose/` model is scaffolding to wire data/losses/metrics/export.
-  It is not expected to be competitive without significant upgrades.
-- No “one command” real-time inference app is shipped here. The intended flow is:
-  bring-your-own inference backend → export predictions JSON → run evaluation/scenarios in this repo.
-- TensorRT development is **not** macOS-friendly: engine build/export steps assume an NVIDIA stack (typically Linux).
-  On macOS you can still do CPU-side validation and keep GPU steps for Runpod/remote.
-- Backend parity is fragile: preprocessing (letterbox/RGB order), output layouts, and score calibration can dominate
-  mAP/FPS differences more than the model itself if they drift.
-- Some tools intentionally use lightweight metrics (e.g. `yolozu.simple_map`) to avoid heavy deps; full COCOeval
-  requires optional dependencies and the proper COCO layout.
-- Large model weights/datasets are intentionally kept out of git; you need external storage and reproducible pointers.
+### Operational notes and mitigations
+- Training remains scaffold-first in `rtdetr_pose/` (data/loss/export wiring), while continual-learning behavior is
+  immediately testable from pip with `yolozu demo continual --compare --markdown` and source training stays available via
+  `yolozu dev train <config>` (`docs/training_inference_export.md`).
+- A one-command folder inference path is available from pip: `yolozu predict-images --backend onnxrt --input-dir <dir> --onnx <model.onnx>`,
+  which writes predictions JSON + overlays + HTML in one run.
+- TensorRT remains NVIDIA/Linux-centric, while macOS can run CPU validation and ONNXRuntime export:
+  `yolozu onnxrt export ...`; GPU/TRT build/eval is pinned to Runpod/container workflows (`docs/tensorrt_pipeline.md`).
+- Backend parity drift is handled by a dedicated checker:
+  `yolozu parity --reference reports/pred_torch.json --candidate reports/pred_onnxrt.json`
+  plus protocol-pinned eval settings (`docs/yolo26_eval_protocol.md`).
+- Lightweight metrics stay available for fast loops, and full COCOeval is directly exposed from pip:
+  `python3 -m pip install 'yolozu[coco]'` then
+  `yolozu eval-coco --dataset <yolo-dataset> --predictions <predictions.json>`.
+- Model weights/datasets stay outside git by design; reproducibility is maintained through stable JSON artifacts and
+  pinned path conventions documented in `docs/external_inference.md` and `docs/yolo26_inference_adapters.md`.
 
 ## Install (pip users)
 
@@ -216,8 +221,11 @@ python3 -m unittest -q
 |---|---|---|
 | Environment report | `yolozu doctor --output -` | `python3 tools/yolozu.py doctor --output reports/doctor.json` |
 | Export smoke (no inference) | `yolozu export --backend labels --dataset /path/to/yolo --output reports/predictions.json --force` | same |
+| Folder inference + overlays/HTML | `yolozu predict-images --backend onnxrt --input-dir /path/to/images --onnx /path/to/model.onnx` | `python3 tools/yolozu.py predict-images ...` |
+| Backend parity check | `yolozu parity --reference reports/pred_torch.json --candidate reports/pred_onnxrt.json` | `python3 tools/check_predictions_parity.py ...` |
 | Validate dataset layout | `yolozu validate dataset /path/to/yolo --strict` | `python3 tools/validate_dataset.py /path/to/yolo --strict` |
 | Validate predictions JSON | `yolozu validate predictions reports/predictions.json --strict` | `python3 tools/validate_predictions.py reports/predictions.json --strict` |
+| COCOeval mAP | `yolozu eval-coco --dataset /path/to/yolo --predictions reports/predictions.json` (requires `yolozu[coco]`) | `python3 tools/eval_coco.py ...` |
 | Instance-seg eval (PNG masks) | `yolozu eval-instance-seg --dataset /path --predictions preds.json --output reports/instance_seg_eval.json` | `python3 tools/eval_instance_segmentation.py ...` |
 | ONNXRuntime CPU export | `yolozu onnxrt export ...` (requires `yolozu[onnxrt]`) | `python3 tools/export_predictions_onnxrt.py ...` |
 | Training scaffold | `yolozu dev train train_setting.yaml` (source checkout only) | `python3 rtdetr_pose/tools/train_minimal.py ...` |

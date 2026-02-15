@@ -6,6 +6,35 @@ import unittest
 from pathlib import Path
 
 
+_MIN_JPEG_1X1 = bytes(
+    [
+        0xFF,
+        0xD8,
+        0xFF,
+        0xC0,
+        0x00,
+        0x11,
+        0x08,
+        0x00,
+        0x01,
+        0x00,
+        0x01,
+        0x03,
+        0x01,
+        0x11,
+        0x00,
+        0x02,
+        0x11,
+        0x01,
+        0x03,
+        0x11,
+        0x01,
+        0xFF,
+        0xD9,
+    ]
+)
+
+
 class TestPipCLICommands(unittest.TestCase):
     def _run(self, args: list[str], *, cwd: Path) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
@@ -244,6 +273,142 @@ class TestPipCLICommands(unittest.TestCase):
             self.assertEqual(methods, {"naive", "ewc", "replay", "ewc_replay"})
             md_path = out_path.with_suffix(".md")
             self.assertTrue(md_path.is_file(), f"markdown missing: {md_path}")
+
+    def test_predict_images_dummy_writes_outputs(self):
+        repo_root = Path(__file__).resolve().parents[1]
+        try:
+            from PIL import Image
+        except Exception as exc:  # pragma: no cover
+            self.skipTest(f"Pillow not available: {exc}")
+
+        with tempfile.TemporaryDirectory(dir=str(repo_root)) as td:
+            root = Path(td)
+            input_dir = root / "images"
+            input_dir.mkdir(parents=True, exist_ok=True)
+            image_path = input_dir / "000001.png"
+            Image.new("RGB", (16, 16), color=(0, 0, 0)).save(image_path)
+
+            out_json = root / "predict_images.json"
+            overlays_dir = root / "overlays"
+            html_path = root / "predict_images.html"
+            proc = self._run(
+                [
+                    "predict-images",
+                    "--backend",
+                    "dummy",
+                    "--input-dir",
+                    str(input_dir),
+                    "--max-images",
+                    "1",
+                    "--output",
+                    str(out_json),
+                    "--overlays-dir",
+                    str(overlays_dir),
+                    "--html",
+                    str(html_path),
+                ],
+                cwd=repo_root,
+            )
+            if proc.returncode != 0:
+                self.fail(f"predict-images failed:\n{proc.stdout}\n{proc.stderr}")
+
+            self.assertTrue(out_json.is_file(), f"missing output json: {out_json}")
+            payload = json.loads(out_json.read_text(encoding="utf-8"))
+            preds = payload.get("predictions") or []
+            self.assertEqual(len(preds), 1)
+            self.assertEqual(Path(preds[0]["image"]), image_path)
+            self.assertTrue(html_path.is_file(), f"missing html report: {html_path}")
+            self.assertTrue(overlays_dir.is_dir(), f"missing overlays dir: {overlays_dir}")
+            self.assertTrue(list(overlays_dir.glob("*.png")), "expected overlay image")
+
+    def test_eval_coco_dry_run_smoke(self):
+        repo_root = Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory(dir=str(repo_root)) as td:
+            root = Path(td)
+            dataset_root = root / "dataset"
+            images_dir = dataset_root / "images" / "train2017"
+            labels_dir = dataset_root / "labels" / "train2017"
+            images_dir.mkdir(parents=True, exist_ok=True)
+            labels_dir.mkdir(parents=True, exist_ok=True)
+            image_path = images_dir / "000001.jpg"
+            image_path.write_bytes(_MIN_JPEG_1X1)
+            (labels_dir / "000001.txt").write_text("0 0.5 0.5 0.2 0.2\n", encoding="utf-8")
+
+            preds_path = root / "preds.json"
+            preds_path.write_text(
+                json.dumps(
+                    [
+                        {
+                            "image": str(image_path),
+                            "detections": [
+                                {
+                                    "class_id": 0,
+                                    "score": 1.0,
+                                    "bbox": {"cx": 0.5, "cy": 0.5, "w": 0.2, "h": 0.2},
+                                }
+                            ],
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            out_path = root / "coco_eval.json"
+            proc = self._run(
+                [
+                    "eval-coco",
+                    "--dataset",
+                    str(dataset_root),
+                    "--split",
+                    "train2017",
+                    "--predictions",
+                    str(preds_path),
+                    "--dry-run",
+                    "--output",
+                    str(out_path),
+                ],
+                cwd=repo_root,
+            )
+            if proc.returncode != 0:
+                self.fail(f"eval-coco --dry-run failed:\n{proc.stdout}\n{proc.stderr}")
+
+            report = json.loads(out_path.read_text(encoding="utf-8"))
+            self.assertTrue(report.get("dry_run"))
+            self.assertIn("counts", report)
+
+    def test_parity_command_smoke(self):
+        repo_root = Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory(dir=str(repo_root)) as td:
+            root = Path(td)
+            image_path = root / "000001.jpg"
+            image_path.write_bytes(_MIN_JPEG_1X1)
+
+            payload = [
+                {
+                    "image": str(image_path),
+                    "detections": [{"class_id": 0, "score": 0.9, "bbox": {"cx": 0.5, "cy": 0.5, "w": 0.2, "h": 0.2}}],
+                }
+            ]
+            ref_path = root / "ref.json"
+            cand_path = root / "cand.json"
+            ref_path.write_text(json.dumps(payload), encoding="utf-8")
+            cand_path.write_text(json.dumps(payload), encoding="utf-8")
+
+            proc = self._run(
+                [
+                    "parity",
+                    "--reference",
+                    str(ref_path),
+                    "--candidate",
+                    str(cand_path),
+                ],
+                cwd=repo_root,
+            )
+            if proc.returncode != 0:
+                self.fail(f"parity failed:\n{proc.stdout}\n{proc.stderr}")
+
+            report = json.loads(proc.stdout)
+            self.assertTrue(report.get("ok"))
 
 
 if __name__ == "__main__":

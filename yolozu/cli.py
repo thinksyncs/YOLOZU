@@ -7,6 +7,7 @@ from pathlib import Path
 
 from yolozu import __version__
 
+from .cli_args import parse_image_size_arg, require_non_negative_int
 from .config import simple_yaml_load
 
 
@@ -248,6 +249,141 @@ def _cmd_onnxrt_export(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_predict_images(args: argparse.Namespace) -> int:
+    from yolozu.predict_images import predict_images
+
+    try:
+        max_images = require_non_negative_int(args.max_images, flag_name="--max-images")
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+
+    try:
+        out_json, out_html = predict_images(
+            backend=str(args.backend),
+            input_dir=str(args.input_dir),
+            output=str(args.output),
+            score=float(args.score),
+            max_images=max_images,
+            force=bool(args.force),
+            glob_patterns=list(args.glob) if args.glob else None,
+            overlays_dir=str(args.overlays_dir) if args.overlays_dir else None,
+            html=str(args.html) if args.html else None,
+            title=str(args.title),
+            onnx=(str(args.onnx) if args.onnx else None),
+            input_name=str(args.input_name),
+            boxes_output=str(args.boxes_output),
+            scores_output=str(args.scores_output),
+            class_output=(str(args.class_output) if args.class_output else None),
+            combined_output=(str(args.combined_output) if args.combined_output else None),
+            combined_format=str(args.combined_format),
+            raw_output=(str(args.raw_output) if args.raw_output else None),
+            raw_format=str(args.raw_format),
+            raw_postprocess=str(args.raw_postprocess),
+            boxes_format=str(args.boxes_format),
+            boxes_scale=str(args.boxes_scale),
+            min_score=float(args.min_score),
+            topk=int(args.topk),
+            nms_iou=float(args.nms_iou),
+            agnostic_nms=bool(args.agnostic_nms),
+            imgsz=int(args.imgsz),
+            dry_run=bool(args.dry_run),
+            strict=bool(args.strict),
+        )
+    except Exception as exc:
+        raise SystemExit(str(exc)) from exc
+
+    print(str(out_json))
+    if out_html is not None:
+        print(str(out_html))
+    return 0
+
+
+def _cmd_eval_coco(args: argparse.Namespace) -> int:
+    import time
+
+    from yolozu.coco_eval import build_coco_ground_truth, evaluate_coco_map, predictions_to_coco_detections
+    from yolozu.dataset import build_manifest
+    from yolozu.predictions import load_predictions_entries, validate_predictions_entries
+
+    dataset_root = Path(str(args.dataset)).expanduser()
+    if not dataset_root.is_absolute():
+        dataset_root = Path.cwd() / dataset_root
+
+    manifest = build_manifest(dataset_root, split=str(args.split) if args.split else None)
+    records = list(manifest.get("images") or [])
+    if args.max_images is not None:
+        records = records[: int(args.max_images)]
+
+    gt, index = build_coco_ground_truth(records)
+    image_sizes = {image["id"]: (int(image["width"]), int(image["height"])) for image in gt["images"]}
+
+    predictions_path = Path(str(args.predictions)).expanduser()
+    if not predictions_path.is_absolute():
+        predictions_path = Path.cwd() / predictions_path
+    predictions = load_predictions_entries(predictions_path)
+    validation = validate_predictions_entries(predictions, strict=False)
+    detections = predictions_to_coco_detections(
+        predictions,
+        coco_index=index,
+        image_sizes=image_sizes,
+        bbox_format=str(args.bbox_format),
+    )
+
+    if bool(args.dry_run):
+        result: dict[str, object] = {
+            "metrics": {"map50_95": None, "map50": None, "map75": None, "ar100": None},
+            "stats": [],
+            "dry_run": True,
+            "counts": {"images": int(len(records)), "detections": int(len(detections))},
+            "warnings": validation.warnings,
+        }
+    else:
+        result = evaluate_coco_map(gt, detections)
+        result["warnings"] = validation.warnings
+
+    payload: dict[str, object] = {
+        "report_schema_version": 1,
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "dataset": str(dataset_root),
+        "split": manifest.get("split"),
+        "split_requested": str(args.split) if args.split else None,
+        "predictions": str(predictions_path),
+        "bbox_format": str(args.bbox_format),
+        "max_images": int(args.max_images) if args.max_images is not None else None,
+        **result,
+    }
+
+    output_path = Path(str(args.output)).expanduser()
+    if not output_path.is_absolute():
+        output_path = Path.cwd() / output_path
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
+    print(str(output_path))
+    return 0
+
+
+def _cmd_parity(args: argparse.Namespace) -> int:
+    from yolozu.predictions_parity import compare_predictions
+
+    try:
+        max_images = require_non_negative_int(args.max_images, flag_name="--max-images")
+        image_size = parse_image_size_arg(args.image_size, flag_name="--image-size")
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+
+    report = compare_predictions(
+        reference=str(args.reference),
+        candidate=str(args.candidate),
+        image_size=image_size,
+        max_images=max_images,
+        iou_thresh=float(args.iou_thresh),
+        score_atol=float(args.score_atol),
+        bbox_atol=float(args.bbox_atol),
+    )
+    print(json.dumps(report, indent=2, sort_keys=True, ensure_ascii=False))
+    return 0 if bool(report.get("ok")) else 2
+
+
 def _cmd_resources(args: argparse.Namespace) -> int:
     from yolozu import resources
 
@@ -294,6 +430,60 @@ def main(argv: list[str] | None = None) -> int:
         help="Predictions JSON output path (default: reports/predictions.json).",
     )
     export.add_argument("--force", action="store_true", help="Overwrite outputs if they exist.")
+
+    predict = sub.add_parser("predict-images", help="Run folder inference and write predictions JSON + overlays + HTML.")
+    predict.add_argument("--backend", choices=("dummy", "onnxrt"), default="dummy", help="Inference backend.")
+    predict.add_argument("--input-dir", required=True, help="Input directory containing images.")
+    predict.add_argument("--glob", action="append", default=None, help="Glob pattern(s) under input dir (repeatable).")
+    predict.add_argument("--max-images", type=int, default=None, help="Optional cap for number of images.")
+    predict.add_argument("--score", type=float, default=0.9, help="Dummy score when --backend=dummy.")
+    predict.add_argument("--output", default="reports/predict_images.json", help="Predictions JSON output path.")
+    predict.add_argument("--force", action="store_true", help="Overwrite outputs if they exist.")
+    predict.add_argument("--overlays-dir", default="reports/overlays", help="Overlay images output directory.")
+    predict.add_argument("--html", default="reports/predict_images.html", help="Optional HTML report path.")
+    predict.add_argument("--title", default="YOLOZU predict-images report", help="HTML title.")
+    predict.add_argument("--onnx", default=None, help="Path to ONNX model (required for --backend onnxrt unless --dry-run).")
+    predict.add_argument("--input-name", default="images", help="ONNX input name (default: images).")
+    predict.add_argument("--boxes-output", default="boxes", help="Output name for boxes tensor (default: boxes).")
+    predict.add_argument("--scores-output", default="scores", help="Output name for scores tensor (default: scores).")
+    predict.add_argument("--class-output", default=None, help="Optional output name for class_id tensor.")
+    predict.add_argument("--combined-output", default=None, help="Optional output name for [x1,y1,x2,y2,score,class_id].")
+    predict.add_argument("--combined-format", choices=("xyxy_score_class",), default="xyxy_score_class")
+    predict.add_argument("--raw-output", default=None, help="Optional output name for raw head output.")
+    predict.add_argument("--raw-format", choices=("yolo_84",), default="yolo_84")
+    predict.add_argument("--raw-postprocess", choices=("native", "ultralytics"), default="native")
+    predict.add_argument("--boxes-format", choices=("xyxy",), default="xyxy")
+    predict.add_argument("--boxes-scale", choices=("abs", "norm"), default="norm")
+    predict.add_argument("--min-score", type=float, default=0.001, help="Score threshold (default: 0.001).")
+    predict.add_argument("--topk", type=int, default=300, help="Top-K detections per image (default: 300).")
+    predict.add_argument("--nms-iou", type=float, default=0.7, help="NMS IoU for raw output decode (default: 0.7).")
+    predict.add_argument("--agnostic-nms", action="store_true", help="Class-agnostic NMS for raw output decode.")
+    predict.add_argument("--imgsz", type=int, default=640, help="Input image size (square, default: 640).")
+    predict.add_argument("--dry-run", action="store_true", help="Write schema-correct JSON without running inference.")
+    predict.add_argument("--strict", action="store_true", help="Strict prediction schema validation before writing.")
+
+    eval_coco = sub.add_parser("eval-coco", help="Evaluate detections with COCOeval (optional extra: yolozu[coco]).")
+    eval_coco.add_argument("--dataset", required=True, help="YOLO-format dataset root (images/ + labels/).")
+    eval_coco.add_argument("--split", default=None, help="Dataset split under images/ and labels/ (default: auto).")
+    eval_coco.add_argument("--predictions", required=True, help="Predictions JSON path.")
+    eval_coco.add_argument(
+        "--bbox-format",
+        choices=("cxcywh_norm", "cxcywh_abs", "xywh_abs", "xyxy_abs"),
+        default="cxcywh_norm",
+        help="How to interpret detection bbox fields (default: cxcywh_norm).",
+    )
+    eval_coco.add_argument("--dry-run", action="store_true", help="Skip COCOeval; only validate/convert predictions.")
+    eval_coco.add_argument("--max-images", type=int, default=None, help="Optional cap for number of images.")
+    eval_coco.add_argument("--output", default="reports/coco_eval.json", help="Output report path.")
+
+    parity = sub.add_parser("parity", help="Compare two predictions JSON artifacts for backend parity.")
+    parity.add_argument("--reference", required=True, help="Reference predictions JSON (e.g. PyTorch).")
+    parity.add_argument("--candidate", required=True, help="Candidate predictions JSON (e.g. ONNXRuntime).")
+    parity.add_argument("--iou-thresh", type=float, default=0.99, help="IoU threshold for a match.")
+    parity.add_argument("--score-atol", type=float, default=1e-4, help="Absolute tolerance for score differences.")
+    parity.add_argument("--bbox-atol", type=float, default=1e-4, help="Absolute tolerance for bbox differences.")
+    parity.add_argument("--max-images", type=int, default=None, help="Optional cap for number of images.")
+    parity.add_argument("--image-size", default=None, help="Optional fixed image size (N or W,H) to skip image reads.")
 
     validate = sub.add_parser("validate", help="Validate artifacts (predictions JSON, instance-seg predictions).")
     validate_sub = validate.add_subparsers(dest="validate_command", required=True)
@@ -531,6 +721,12 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_doctor(str(args.output))
     if args.command == "export":
         return _cmd_export(args)
+    if args.command == "predict-images":
+        return _cmd_predict_images(args)
+    if args.command == "eval-coco":
+        return _cmd_eval_coco(args)
+    if args.command == "parity":
+        return _cmd_parity(args)
     if args.command == "validate":
         return _cmd_validate(args)
     if args.command == "eval-instance-seg":
