@@ -1,8 +1,8 @@
 # YOLOZU (萬)
 
 [![CI](https://github.com/thinksyncs/YOLOZU/actions/workflows/ci.yml/badge.svg)](https://github.com/thinksyncs/YOLOZU/actions/workflows/ci.yml)
-[![PyPI](https://img.shields.io/pypi/v/yolozu.svg)](https://pypi.org/project/yolozu/)
-[![Python](https://img.shields.io/pypi/pyversions/yolozu.svg)](https://pypi.org/project/yolozu/)
+[![PyPI](https://img.shields.io/pypi/v/yolozu?logo=pypi&logoColor=white)](https://pypi.org/project/yolozu/)
+[![Python >=3.10](https://img.shields.io/badge/python-%3E%3D3.10-3776AB?logo=python&logoColor=white)](https://pypi.org/project/yolozu/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 Pronunciation: Yaoyorozu (yorozu). Official ASCII name: YOLOZU.
