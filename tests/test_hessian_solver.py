@@ -152,6 +152,29 @@ class TestHessianSolver(unittest.TestCase):
         meta = result["hessian_refinement"]
         self.assertLessEqual(meta["iterations"], 5)
 
+    def test_refine_detection_zero_max_iterations(self):
+        detection = {
+            "class_id": 0,
+            "score": 0.9,
+            "log_z": math.log(2.2),
+        }
+
+        config = HessianSolverConfig(
+            max_iterations=0,
+            refine_depth=True,
+            refine_rotation=False,
+            refine_offsets=False,
+        )
+
+        result = refine_detection_hessian(
+            detection,
+            config=config,
+            gt_depth=2.0,
+        )
+
+        self.assertIn("hessian_refinement", result)
+        self.assertEqual(int(result["hessian_refinement"]["iterations"]), 0)
+
     def test_refine_predictions_batch(self):
         predictions = [
             {
@@ -262,6 +285,44 @@ class TestHessianSolver(unittest.TestCase):
         refined_norm = sum(x * x for x in det["offsets"]) ** 0.5
         original_norm = sum(x * x for x in predictions[0]["detections"][0]["offsets"]) ** 0.5
         self.assertLess(refined_norm, original_norm)
+
+    def test_refine_predictions_windows_style_path_key(self):
+        predictions = [
+            {
+                "image": "test1.jpg",
+                "detections": [
+                    {
+                        "class_id": 0,
+                        "score": 0.9,
+                        "log_z": math.log(2.2),
+                    }
+                ],
+            }
+        ]
+        records = [
+            {
+                "image": r"C:\dataset\test1.jpg",
+                "labels": [
+                    {
+                        "class_id": 0,
+                        "t_gt": [0.0, 0.0, 2.0],
+                    }
+                ],
+            }
+        ]
+
+        config = HessianSolverConfig(
+            max_iterations=5,
+            refine_depth=True,
+            refine_rotation=False,
+            refine_offsets=False,
+        )
+
+        refined = refine_predictions_hessian(predictions, records, config=config)
+        det = refined[0]["detections"][0]
+        self.assertIn("log_z", det)
+        refined_depth = math.exp(det["log_z"])
+        self.assertLess(abs(refined_depth - 2.0), abs(2.2 - 2.0))
 
     def test_refine_detection_invalid_inputs(self):
         detection = {

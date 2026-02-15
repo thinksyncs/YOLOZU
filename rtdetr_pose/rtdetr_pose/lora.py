@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable
 
 
 try:
@@ -156,12 +155,6 @@ class LoRAConv2d(nn.Module):
         return y + delta * self.scale
 
 
-def _iter_named_linear_modules(model: "nn.Module") -> Iterable[tuple[str, nn.Linear]]:
-    for name, module in model.named_modules():
-        if isinstance(module, nn.Linear):
-            yield name, module
-
-
 def apply_lora(
     model: "nn.Module",
     *,
@@ -188,6 +181,8 @@ def apply_lora(
         raise ValueError("target must be one of: head, all_linear, all_conv1x1, all_linear_conv1x1")
 
     replaced = 0
+    linear_enabled = target in ("head", "all_linear", "all_linear_conv1x1")
+    conv_enabled = target in ("all_conv1x1", "all_linear_conv1x1")
     # We need to replace modules by walking parent modules.
     for parent_name, parent in model.named_modules():
         for child_name, child in list(parent.named_children()):
@@ -198,20 +193,13 @@ def apply_lora(
             full_name = f"{parent_name}.{child_name}" if parent_name else child_name
 
             if target == "head":
-                allowed_prefixes = ("head.", "offset_head.", "k_head.")
-                if not (full_name == "head" or full_name.startswith(allowed_prefixes)):
-                    continue
-                if not (
-                    full_name.startswith("head.")
-                    or full_name.startswith("offset_head.")
-                    or full_name.startswith("k_head.")
-                ):
+                if not (full_name.startswith("head.") or full_name.startswith("offset_head.") or full_name.startswith("k_head.")):
                     continue
 
-            if is_linear and target in ("head", "all_linear", "all_linear_conv1x1"):
+            if is_linear and linear_enabled:
                 setattr(parent, child_name, LoRALinear(child, r=int(r), alpha=alpha, dropout=float(dropout)))
                 replaced += 1
-            elif is_conv1x1 and target in ("all_conv1x1", "all_linear_conv1x1"):
+            elif is_conv1x1 and conv_enabled:
                 setattr(parent, child_name, LoRAConv2d(child, r=int(r), alpha=alpha, dropout=float(dropout)))
                 replaced += 1
 

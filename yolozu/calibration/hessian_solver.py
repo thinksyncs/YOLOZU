@@ -108,6 +108,13 @@ def _geodesic_distance_torch(r1: torch.Tensor, r2: torch.Tensor) -> torch.Tensor
     return torch.acos(cos_theta)
 
 
+def _basename_key(path_like: Any) -> str:
+    text = str(path_like)
+    if not text:
+        return ""
+    return text.replace("\\", "/").rsplit("/", 1)[-1]
+
+
 def refine_detection_hessian(
     detection: dict[str, Any],
     *,
@@ -206,9 +213,11 @@ def refine_detection_hessian(
     
     # Gauss-Newton iterations.
     converged = False
-    final_residual = float('inf')
+    final_residual = float("inf")
+    iterations_run = 0
     
     for iteration in range(config.max_iterations):
+        iterations_run = int(iteration + 1)
         # Compute residuals.
         residuals = []
         weights = []
@@ -253,11 +262,10 @@ def refine_detection_hessian(
             weights.append(config.w_upright)
         
         if not residuals:
+            final_residual = 0.0
             break
         
-        # Flatten parameters for update.
-        param_flat = torch.cat([p.flatten() for p in params])
-        n_params = param_flat.shape[0]
+        n_params = int(sum(int(p.numel()) for p in params))
         
         # Ensure all residuals are scalar and weighted.
         scalar_residuals = []
@@ -271,6 +279,7 @@ def refine_detection_hessian(
         
         # Total loss for convergence check.
         total_residual = sum(r * r for r in scalar_residuals)
+        final_residual = float(total_residual.sqrt().item())
         
         # Compute gradients for each residual.
         J_rows = []
@@ -305,7 +314,6 @@ def refine_detection_hessian(
         
         # Check convergence.
         update_norm = delta_p.norm().item()
-        final_residual = total_residual.sqrt().item()
         
         # Check for NaN.
         if math.isnan(update_norm) or math.isnan(final_residual):
@@ -358,7 +366,7 @@ def refine_detection_hessian(
         log_z=refined_log_z,
         rot6d=refined_rot6d,
         offsets=refined_offsets,
-        iterations=iteration + 1,  # iteration is 0-indexed, so +1 for count
+        iterations=int(iterations_run),
         converged=converged,
         final_residual=final_residual,
     )
@@ -411,7 +419,7 @@ def refine_predictions_hessian(
             if image:
                 record_index[str(image)] = record
                 # Also index by basename.
-                base = str(image).split("/")[-1]
+                base = _basename_key(image)
                 if base and base not in record_index:
                     record_index[base] = record
     
@@ -433,7 +441,7 @@ def refine_predictions_hessian(
         if image and record_index:
             record = record_index.get(str(image))
             if record is None:
-                base = str(image).split("/")[-1]
+                base = _basename_key(image)
                 record = record_index.get(base)
         
         # Refine each detection.
