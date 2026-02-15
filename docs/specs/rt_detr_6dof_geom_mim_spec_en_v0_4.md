@@ -52,8 +52,8 @@ Version: **v0.4-en**
 - Avoid AGPL components in the inference path.
 
 ### 1.4 Symmetry & commonsense constraints checklist
-- [ ] `symmetry.json` exists and is validated at load time.
-- [ ] `constraints.yaml` exists with enable flags for each constraint.
+- [ ] `configs/runtime/symmetry.json` exists and is validated at load time.
+- [ ] `configs/runtime/constraints.yaml` exists with enable flags for each constraint.
 - [ ] Symmetry-aware rotation loss and metrics are enabled.
 - [ ] Template verification uses symmetry-aware scoring.
 - [ ] Depth prior regularizer is implemented and ablated.
@@ -226,7 +226,7 @@ Given `M` and `D_obj`:
 For rotationally symmetric objects, pose labels are **not unique**. Training with a naïve rotation loss becomes ill-posed.
 
 ### 7.2 Symmetry metadata (preferred; no symmetry head initially)
-Maintain `symmetry.json`:
+Maintain `configs/runtime/symmetry.json`:
 
 ```json
 {
@@ -258,7 +258,7 @@ This prevents rejecting correct poses that are equivalent under symmetry.
 ### 7.5 When to add a SymmetryHead (optional)
 Only if symmetry varies within a class or unknown classes are frequent:
 - outputs `sym_type`, `n`, `axis`.
-Otherwise, rely on `symmetry.json` for determinism and simplicity.
+Otherwise, rely on `configs/runtime/symmetry.json` for determinism and simplicity.
 
 ---
 
@@ -382,8 +382,8 @@ Base → +CenterOffset → +GlobalK → +SymLoss → +MIM → +AugEngine → +Te
 
 ## 14. Repository deliverables (minimum)
 - `spec_en.md` (this file)
-- `symmetry.json`
-- `constraints.yaml`
+- `configs/runtime/symmetry.json`
+- `configs/runtime/constraints.yaml`
 - `augment.yaml`
 - automated dataset consistency checks
 - training config(s) for staged schedule

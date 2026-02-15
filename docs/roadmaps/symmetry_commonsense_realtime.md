@@ -31,8 +31,8 @@ Gate
 ## Stage 1) Spec + configuration (source of truth)
 Deliverables
 - [x] Add a “Symmetry & Commonsense Constraints” checklist section in spec/docs.
-- [x] Create `symmetry.json` (class -> symmetry group, axis, order, notes).
-- [x] Create `constraints.yaml`:
+- [x] Create `configs/runtime/symmetry.json` (class -> symmetry group, axis, order, notes).
+- [x] Create `configs/runtime/constraints.yaml`:
   - tabletop plane parameters (if calibrated): `n, d`
   - depth range priors per class
   - upright constraints per class

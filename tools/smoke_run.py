@@ -5,15 +5,15 @@ from pathlib import Path
 repo_root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(repo_root))
 
-from yolozu.config import load_constraints, load_symmetry_map
+from yolozu.config import default_runtime_config_path, load_constraints, load_symmetry_map
 from yolozu.math3d import mat_identity, rotation_z
 from yolozu.pipeline import evaluate_candidate
 from yolozu.symmetry import min_symmetry_geodesic
 
 
 def main():
-    constraints = load_constraints(repo_root / "constraints.yaml")
-    symmetry = load_symmetry_map(repo_root / "symmetry.json")
+    constraints = load_constraints(default_runtime_config_path("constraints.yaml"))
+    symmetry = load_symmetry_map(default_runtime_config_path("symmetry.json"))
 
     class_key = "sample"
     sym_spec = symmetry.get(class_key, {"type": "none"})

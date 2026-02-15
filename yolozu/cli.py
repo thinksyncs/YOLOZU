@@ -621,17 +621,17 @@ def main(argv: list[str] | None = None) -> int:
     dev_sub = dev.add_subparsers(dest="dev_command", required=True)
 
     dev_train = dev_sub.add_parser("train", help="Run training using a YAML/JSON config (source checkout only).")
-    dev_train.add_argument("config", type=str, help="Path to train_setting.yaml")
+    dev_train.add_argument("config", type=str, help="Path to train config (e.g. configs/examples/train_setting.yaml).")
 
     dev_test = dev_sub.add_parser("test", help="Run scenario tests using a YAML/JSON config (source checkout only).")
-    dev_test.add_argument("config", type=str, help="Path to test_setting.yaml")
+    dev_test.add_argument("config", type=str, help="Path to test config (e.g. configs/examples/test_setting.yaml).")
 
     # Backward-compatible hidden aliases.
     alias_help = argparse.SUPPRESS
     alias_train = sub.add_parser("train", help=alias_help)
-    alias_train.add_argument("config", type=str, help="Path to train_setting.yaml")
+    alias_train.add_argument("config", type=str, help="Path to train config (e.g. configs/examples/train_setting.yaml).")
     alias_test = sub.add_parser("test", help=alias_help)
-    alias_test.add_argument("config", type=str, help="Path to test_setting.yaml")
+    alias_test.add_argument("config", type=str, help="Path to test config (e.g. configs/examples/test_setting.yaml).")
 
     demo = sub.add_parser("demo", help="Run small self-contained demos (CPU-friendly).")
     demo_sub = demo.add_subparsers(dest="demo_command", required=True)

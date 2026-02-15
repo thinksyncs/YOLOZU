@@ -6,7 +6,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from yolozu.config import get_symmetry_spec, load_constraints, load_symmetry_map
+from yolozu.config import default_runtime_config_path, get_symmetry_spec, load_constraints, load_symmetry_map
 
 
 class TestConfigLoader(unittest.TestCase):
@@ -14,7 +14,7 @@ class TestConfigLoader(unittest.TestCase):
         self.repo_root = Path(__file__).resolve().parents[1]
 
     def test_load_constraints_defaults(self):
-        cfg = load_constraints(self.repo_root / "constraints.yaml")
+        cfg = load_constraints(default_runtime_config_path("constraints.yaml"))
         self.assertIn("enabled", cfg)
         self.assertFalse(cfg["enabled"]["depth_prior"])
         self.assertIsInstance(cfg["table_plane"]["n"], list)

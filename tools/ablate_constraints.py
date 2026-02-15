@@ -1,15 +1,18 @@
 import copy
 import json
+import sys
 from pathlib import Path
 
-from yolozu.config import load_constraints
+repo_root = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(repo_root))
+
+from yolozu.config import default_runtime_config_path, load_constraints
 from yolozu.constraints import apply_constraints
 from yolozu.math3d import rotation_matrix_axis_angle
 
 
 def main():
-    repo_root = Path(__file__).resolve().parents[1]
-    cfg = load_constraints(repo_root / "constraints.yaml")
+    cfg = load_constraints(default_runtime_config_path("constraints.yaml"))
     sample = {
         "class_key": "sample",
         "bbox_wh": (20.0, 20.0),

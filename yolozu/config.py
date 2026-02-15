@@ -1,6 +1,9 @@
 import json
 from pathlib import Path
 
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+_RUNTIME_CONFIG_DIR = _REPO_ROOT / "configs" / "runtime"
+
 
 DEFAULT_CONSTRAINTS = {
     "enabled": {
@@ -17,6 +20,16 @@ DEFAULT_CONSTRAINTS = {
     },
     "template_gate": {"tau": 0.0},
 }
+
+
+def default_runtime_config_path(filename):
+    modern = _RUNTIME_CONFIG_DIR / str(filename)
+    if modern.exists():
+        return modern
+    legacy = _REPO_ROOT / str(filename)
+    if legacy.exists():
+        return legacy
+    return modern
 
 
 def load_symmetry_map(path):

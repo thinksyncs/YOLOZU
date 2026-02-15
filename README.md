@@ -228,7 +228,7 @@ python3 -m unittest -q
 | COCOeval mAP | `yolozu eval-coco --dataset /path/to/yolo --predictions reports/predictions.json` (requires `yolozu[coco]`) | `python3 tools/eval_coco.py ...` |
 | Instance-seg eval (PNG masks) | `yolozu eval-instance-seg --dataset /path --predictions preds.json --output reports/instance_seg_eval.json` | `python3 tools/eval_instance_segmentation.py ...` |
 | ONNXRuntime CPU export | `yolozu onnxrt export ...` (requires `yolozu[onnxrt]`) | `python3 tools/export_predictions_onnxrt.py ...` |
-| Training scaffold | `yolozu dev train train_setting.yaml` (source checkout only) | `python3 rtdetr_pose/tools/train_minimal.py ...` |
+| Training scaffold | `yolozu dev train configs/examples/train_setting.yaml` (source checkout only) | `python3 rtdetr_pose/tools/train_minimal.py ...` |
 | Scenario suite | — | `python3 tools/run_scenarios.py ...` |
 
 Dev-only commands (source checkout): `yolozu dev train`, `yolozu dev test` (aliases: `yolozu train/test`).

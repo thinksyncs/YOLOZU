@@ -65,7 +65,7 @@ and reproducible evaluation.
 ### 9) CLI convenience
 - Installed CLI: `yolozu doctor`, `yolozu export`, `yolozu validate`, `yolozu eval-instance-seg`, `yolozu resources`, `yolozu demo`.
 - Optional extra: `yolozu onnxrt export ...` (install `yolozu[onnxrt]`).
-- Dev-only (source checkout): `yolozu dev train train_setting.yaml`, `yolozu dev test test_setting.yaml` (aliases: `yolozu train/test`).
+- Dev-only (source checkout): `yolozu dev train configs/examples/train_setting.yaml`, `yolozu dev test configs/examples/test_setting.yaml` (aliases: `yolozu train/test`).
 - Power-user in-repo CLI (source checkout): `python3 tools/yolozu.py ...`
 
 ## Contracts

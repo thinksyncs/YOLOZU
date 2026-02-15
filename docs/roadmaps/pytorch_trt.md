@@ -153,7 +153,7 @@ Start next (着手)
 ## Stage 5) Inference + constraints (per spec §2, §8, §9)
 - [x] Translation recovery using corrected `K'` + offsets (utility-level).
 - [x] Symmetry-aware template verification (Top-K only).
-- [x] Constraints gating (depth prior, plane, upright) using `constraints.yaml`.
+- [x] Constraints gating (depth prior, plane, upright) using `configs/runtime/constraints.yaml`.
 - [x] Low-FP gate via `score_tmp_sym < τ`.
 
 ## Stage 6) TensorRT export + parity
