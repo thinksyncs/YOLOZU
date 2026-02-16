@@ -72,3 +72,73 @@ jobs:
             echo "warning: coco128 fetch failed; running dataset-free scenario suite smoke"
             python tools/run_scenario_suite.py --output reports/scenario_suite_ci.json
           fi
+
+      - name: Training contract smoke (dry-run + ONNX export/parity)
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          from PIL import Image
+          root = Path(os.environ["RUNNER_TEMP"]) / "yolozu_tiny_dataset"
+          for split in ("train2017", "val2017"):
+              images = root / "images" / split
+              labels = root / "labels" / split
+              images.mkdir(parents=True, exist_ok=True)
+              labels.mkdir(parents=True, exist_ok=True)
+              for idx in range(2):
+                  name = f"{idx:06d}"
+                  img_path = images / f"{name}.jpg"
+                  Image.new("RGB", (32, 32), color=(0, 0, 0)).save(img_path)
+                  (labels / f"{name}.txt").write_text("0 0.5 0.5 0.2 0.2\n", encoding="utf-8")
+          print(root)
+          PY
+
+          yolozu train configs/examples/train_contract.yaml \
+            --run-id ci_smoke \
+            --dry-run \
+            --dataset-root "${RUNNER_TEMP}/yolozu_tiny_dataset" \
+            --split train2017 \
+            --val-split val2017 \
+            --device cpu \
+            --amp none \
+            --ddp-backend gloo \
+            --image-size 32 \
+            --batch-size 1
+
+          test -f runs/ci_smoke/reports/run_meta.json
+          test -f runs/ci_smoke/reports/config_resolved.yaml
+          test -f runs/ci_smoke/checkpoints/last.pt
+          test -f runs/ci_smoke/checkpoints/best.pt
+          test -f runs/ci_smoke/exports/model.onnx
+          test -f runs/ci_smoke/reports/onnx_parity.json
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          meta = json.loads(Path("runs/ci_smoke/reports/run_meta.json").read_text(encoding="utf-8"))
+          assert "host" in meta and isinstance(meta["host"], dict)
+          assert "accelerator" in meta and isinstance(meta["accelerator"], dict)
+          print("run_meta keys OK")
+          PY
+
+      - name: PyInstaller smoke (build + resources list)
+        run: |
+          python -m pip install pyinstaller
+          pyinstaller -y -n yolozu_bin \
+            deploy/pyinstaller/yolozu_entrypoint.py \
+            --collect-data yolozu.data \
+            --collect-data rtdetr_pose
+          ./dist/yolozu_bin/yolozu_bin --help
+          ./dist/yolozu_bin/yolozu_bin resources list | head -n 5
+
+      - name: PyArmor + PyInstaller smoke (optional)
+        if: ${{ vars.PYARMOR_SMOKE == '1' }}
+        run: |
+          python -m pip install pyarmor
+          rm -rf build/pyarmor_obf dist/yolozu_pyarmor yolozu_pyarmor.spec
+          pyarmor gen -O build/pyarmor_obf deploy/pyinstaller/yolozu_entrypoint.py
+          pyinstaller -y -n yolozu_pyarmor \
+            build/pyarmor_obf/yolozu_entrypoint.py \
+            --collect-data yolozu.data \
+            --collect-data rtdetr_pose
+          ./dist/yolozu_pyarmor/yolozu_pyarmor --help

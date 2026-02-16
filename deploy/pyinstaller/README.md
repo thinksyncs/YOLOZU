@@ -69,3 +69,8 @@ Recommended approach:
 - Optional deps not present in the build environment:
   - install the extras you need *before* running PyInstaller, e.g. `pip install 'yolozu[full]'`
 
+## CI verification
+
+- GitHub Actions runs a PyInstaller smoke build on every CI run (`pyinstaller ... --collect-data yolozu.data --collect-data rtdetr_pose`).
+- PyArmor integration is optional (it may require a license). To enable the CI smoke, set a repository Actions variable:
+  - `PYARMOR_SMOKE=1`

@@ -9,6 +9,8 @@ val_split: val2017
 
 seed: 0
 device: cpu
+amp: none
+ddp: false
 
 epochs: 1
 batch_size: 2
@@ -21,7 +23,6 @@ run_contract: true
 # run_id: exp01   # recommended to pass via CLI: --run-id exp01
 # resume: true    # resume from runs/<run_id>/checkpoints/last.pt
 
-# AMP / DDP (optional)
+# AMP / DDP (required keys; set amp:none + ddp:false when unused)
 # amp: bf16       # {none,fp16,bf16}; CPU ignores AMP with a warning
 # ddp: true       # requires torchrun + WORLD_SIZE>1
-

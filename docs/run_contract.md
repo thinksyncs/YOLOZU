@@ -25,12 +25,12 @@ When the run contract is enabled:
 - `--config <train_setting.yaml>` is required (this is the trainer settings file)
 - `config_version: 1` is required (set in the YAML; enforced at startup)
 
-Recommended to set explicitly in the YAML/config:
+Also required (explicit keys in the YAML/config; no implicit defaults):
 - `dataset_root`
 - `seed`
 - `device` (`cpu` / `cuda:0`, ...)
-- `amp` / precision (`none` / `fp16` / `bf16`)
-- distributed settings (`ddp: true` when using `torchrun`)
+- `amp` (or legacy `use_amp`) / precision (`none` / `fp16` / `bf16`)
+- `ddp` (`false` for single-process; `true` when using `torchrun`)
 
 ## Outputs (fixed paths)
 

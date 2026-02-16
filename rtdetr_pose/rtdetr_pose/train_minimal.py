@@ -2690,6 +2690,31 @@ def main(argv: list[str] | None = None) -> int:
     if run_contract is not None:
         if not args.config:
             raise SystemExit("--run-contract requires --config (train_setting.yaml).")
+        # Enforce that contract-critical inputs are explicitly present in the YAML/JSON config
+        # (not just defaulted by argparse). This makes runs reproducible by construction.
+        cfg_obj = load_config_file(str(args.config))
+        if not isinstance(cfg_obj, dict):
+            raise SystemExit(f"{args.config}: config must be an object at top-level")
+
+        missing: list[str] = []
+        if "config_version" not in cfg_obj:
+            missing.append("config_version")
+        if not (isinstance(cfg_obj.get("dataset_root"), str) and str(cfg_obj.get("dataset_root")).strip()):
+            missing.append("dataset_root")
+        if "seed" not in cfg_obj:
+            missing.append("seed")
+        if not (isinstance(cfg_obj.get("device"), str) and str(cfg_obj.get("device")).strip()):
+            missing.append("device")
+        if "ddp" not in cfg_obj:
+            missing.append("ddp")
+        if "amp" not in cfg_obj and "use_amp" not in cfg_obj:
+            missing.append("amp (or use_amp)")
+
+        if missing:
+            raise SystemExit(
+                f"{args.config}: run contract requires explicit keys in the config: {', '.join(missing)}"
+                "\nExample additions:\n  amp: none\n  ddp: false\n"
+            )
         if args.config_version is None:
             raise SystemExit("config_version is required for --run-contract (set config_version: 1 in YAML).")
         if int(args.config_version) != 1:
@@ -2704,6 +2729,15 @@ def main(argv: list[str] | None = None) -> int:
         except Exception:
             print(json.dumps(payload, indent=2, sort_keys=True))
         return 0
+
+    if bool(getattr(args, "dry_run", False)):
+        # Ensure a minimal, fast wiring check that still executes at least one optimizer step
+        # (including logging/checkpoint/export paths).
+        args.epochs = 1
+        try:
+            args.max_steps = max(1, int(getattr(args, "grad_accum", 1) or 1))
+        except Exception:
+            args.max_steps = 1
 
     # Optional DDP (torchrun sets WORLD_SIZE/RANK/LOCAL_RANK)
     world_size_env = int(os.environ.get("WORLD_SIZE", "1") or "1")
@@ -4030,6 +4064,10 @@ def main(argv: list[str] | None = None) -> int:
                     stop_training = bool(int(flag.item()))
                 if stop_training:
                     break
+
+            if bool(getattr(args, "dry_run", False)) and did_optim_step:
+                stop_training = True
+                break
 
             if sync_now:
                 window_idx += 1
