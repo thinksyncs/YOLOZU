@@ -1,5 +1,5 @@
-# Default test settings for yolozu dev test (source checkout)
-# Keys map to tools/run_scenarios.py arguments
+# Default test settings for `yolozu test`
+# Keys map to `yolozu.scenarios_cli` arguments
 adapter: dummy
 dataset: data/coco128
 max_images: 10

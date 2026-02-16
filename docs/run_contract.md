@@ -1,6 +1,6 @@
 # Run Contract (production-style training artifacts)
 
-This repo’s minimal trainer (`rtdetr_pose/tools/train_minimal.py`) supports a **run contract** mode that pins:
+The RT-DETR pose trainer (`rtdetr_pose.train_minimal`, invoked via `yolozu train`) supports a **run contract** mode that pins:
 - reproducibility inputs (config + seed + environment metadata)
 - fixed output paths (checkpoints, metrics JSONL, exports)
 - safety gates (full resume, non-finite guards, parity checks)
@@ -16,7 +16,7 @@ Enable the contract by passing either:
 Recommended (repo checkout):
 
 ```bash
-yolozu dev train configs/examples/train_contract.yaml --run-id exp01
+yolozu train configs/examples/train_contract.yaml --run-id exp01
 ```
 
 ## Required inputs
@@ -57,12 +57,24 @@ Export + verification artifacts (enabled by default):
 
 `best.pt` is updated when validation `map50_95` improves (maximization).
 
+## Safety / operability knobs (implemented)
+
+The contracted trainer is meant to be “hard to break” in production-style runs:
+
+- Resume (full state): `--resume` (contract) or `--resume-from <path>`
+- NaN/Inf guard (loss/grad): `--stop-on-non-finite-loss`, `--non-finite-max-skips`, `--non-finite-lr-decay`
+- Grad clip: `--clip-grad-norm` (recommended >0 for pose/TTT/MIM stability)
+- AMP: `--amp {none,fp16,bf16}` (`bf16` preferred when supported)
+- EMA: `--use-ema`, `--ema-decay`, `--ema-eval`
+- Validation cadence: `--val-every` (epoch) and `--val-every-steps` (optimizer steps)
+- Early stop: `--early-stop-patience`, `--early-stop-min-delta`
+
 ## Resume (full state)
 
 Contract resume is:
 
 ```bash
-yolozu dev train configs/examples/train_contract.yaml --run-id exp01 --resume
+yolozu train configs/examples/train_contract.yaml --run-id exp01 --resume
 ```
 
 This resumes from:
@@ -102,4 +114,3 @@ torchrun --nproc_per_node=2 rtdetr_pose/tools/train_minimal.py \
 ```
 
 Only rank 0 writes contracted artifacts; non-zero ranks run training and synchronize at barriers.
-

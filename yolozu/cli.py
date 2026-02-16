@@ -50,11 +50,11 @@ def _build_args_from_config(cfg: dict) -> list[str]:
 
 def _cmd_train(config_path: Path, extra_args: list[str] | None = None) -> int:
     try:
-        from rtdetr_pose.tools.train_minimal import main as train_main
+        from rtdetr_pose.train_minimal import main as train_main
     except Exception as exc:  # pragma: no cover
         raise SystemExit(
-            "yolozu train is currently supported from a source checkout (e.g. `pip install -e .`) "
-            "because it depends on in-repo trainer scaffolding under rtdetr_pose/tools."
+            "yolozu train requires optional training deps. Install `yolozu[train]` (or `yolozu[full]`) "
+            "to enable the RT-DETR pose trainer."
         ) from exc
 
     argv = ["--config", str(config_path)]
@@ -63,17 +63,18 @@ def _cmd_train(config_path: Path, extra_args: list[str] | None = None) -> int:
     return int(train_main(argv))
 
 
-def _cmd_test(config_path: Path) -> int:
+def _cmd_test(config_path: Path, extra_args: list[str] | None = None) -> int:
     try:
-        from tools.run_scenarios import main as scenarios_main
+        from yolozu.scenarios_cli import main as scenarios_main
     except Exception as exc:  # pragma: no cover
         raise SystemExit(
-            "yolozu test is currently supported from a source checkout (e.g. `pip install -e .`) "
-            "because it depends on in-repo tools/ scripts."
+            "yolozu test failed to import scenario runner."
         ) from exc
 
     cfg = _load_config(config_path)
     args = _build_args_from_config(cfg)
+    if extra_args:
+        args.extend(list(extra_args))
     scenarios_main(args)
     return 0
 
@@ -612,35 +613,21 @@ def main(argv: list[str] | None = None) -> int:
     copy.add_argument("--output", required=True, help="Output file path.")
     copy.add_argument("--force", action="store_true", help="Overwrite output if it exists.")
 
-    repo_root = Path(__file__).resolve().parents[1]
-    dev_enabled = (repo_root / "rtdetr_pose" / "tools" / "train_minimal.py").exists() and (
-        repo_root / "tools" / "run_scenarios.py"
-    ).exists()
-    dev_help = "(dev) Source-checkout-only commands (train/test)."
-    if not dev_enabled:
-        dev_help = argparse.SUPPRESS
-
-    dev = sub.add_parser("dev", help=dev_help)
-    dev_sub = dev.add_subparsers(dest="dev_command", required=True)
-
-    dev_train = dev_sub.add_parser("train", help="Run training using a YAML/JSON config (source checkout only).")
-    dev_train.add_argument("config", type=str, help="Path to train config (e.g. configs/examples/train_setting.yaml).")
-    dev_train.add_argument(
+    train_p = sub.add_parser("train", help="Train with RT-DETR pose scaffold (requires `yolozu[train]`).")
+    train_p.add_argument("config", type=str, help="Path to train config YAML/JSON (train_setting.yaml).")
+    train_p.add_argument(
         "train_args",
         nargs=argparse.REMAINDER,
-        help="Extra args forwarded to rtdetr_pose/tools/train_minimal.py (e.g. --run-contract --run-id exp01).",
+        help="Extra args forwarded to the trainer (e.g. --run-contract --run-id exp01 --resume).",
     )
 
-    dev_test = dev_sub.add_parser("test", help="Run scenario tests using a YAML/JSON config (source checkout only).")
-    dev_test.add_argument("config", type=str, help="Path to test config (e.g. configs/examples/test_setting.yaml).")
-
-    # Backward-compatible hidden aliases.
-    alias_help = argparse.SUPPRESS
-    alias_train = sub.add_parser("train", help=alias_help)
-    alias_train.add_argument("config", type=str, help="Path to train config (e.g. configs/examples/train_setting.yaml).")
-    alias_train.add_argument("train_args", nargs=argparse.REMAINDER)
-    alias_test = sub.add_parser("test", help=alias_help)
-    alias_test.add_argument("config", type=str, help="Path to test config (e.g. configs/examples/test_setting.yaml).")
+    test_p = sub.add_parser("test", help="Run scenario suite (dummy/precomputed adapters are CPU-only).")
+    test_p.add_argument("config", type=str, help="Path to test config YAML/JSON (test_setting.yaml).")
+    test_p.add_argument(
+        "test_args",
+        nargs=argparse.REMAINDER,
+        help="Extra args forwarded to the scenario runner (e.g. --adapter rtdetr_pose --max-images 50).",
+    )
 
     demo = sub.add_parser("demo", help="Run small self-contained demos (CPU-friendly).")
     demo_sub = demo.add_subparsers(dest="demo_command", required=True)
@@ -690,42 +677,15 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
     if args.command == "train":
-        if not dev_enabled:
-            raise SystemExit(
-                "yolozu train is supported only from a source checkout (e.g. `pip install -e .`). "
-                "Use `yolozu dev train <config>` when working in this repo."
-            )
         config_path = Path(args.config)
         if not config_path.exists():
             raise SystemExit(f"config not found: {config_path}")
         return _cmd_train(config_path, extra_args=list(getattr(args, "train_args", []) or []))
     if args.command == "test":
-        if not dev_enabled:
-            raise SystemExit(
-                "yolozu test is supported only from a source checkout (e.g. `pip install -e .`). "
-                "Use `yolozu dev test <config>` when working in this repo."
-            )
         config_path = Path(args.config)
         if not config_path.exists():
             raise SystemExit(f"config not found: {config_path}")
-        return _cmd_test(config_path)
-    if args.command == "dev":
-        if not dev_enabled:
-            raise SystemExit(
-                "yolozu dev is supported only from a source checkout (e.g. `pip install -e .`). "
-                "The pip-installed CLI intentionally hides dev-only commands."
-            )
-        if args.dev_command == "train":
-            config_path = Path(args.config)
-            if not config_path.exists():
-                raise SystemExit(f"config not found: {config_path}")
-            return _cmd_train(config_path, extra_args=list(getattr(args, "train_args", []) or []))
-        if args.dev_command == "test":
-            config_path = Path(args.config)
-            if not config_path.exists():
-                raise SystemExit(f"config not found: {config_path}")
-            return _cmd_test(config_path)
-        raise SystemExit("unknown dev command")
+        return _cmd_test(config_path, extra_args=list(getattr(args, "test_args", []) or []))
     if args.command == "doctor":
         return _cmd_doctor(str(args.output))
     if args.command == "export":

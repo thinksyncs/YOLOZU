@@ -95,7 +95,7 @@ class RTDETRPoseAdapter(ModelAdapter):
 
     def __init__(
         self,
-        config_path="rtdetr_pose/configs/base.json",
+        config_path="builtin:base",
         checkpoint_path=None,
         device="cpu",
         image_size=(320, 320),
@@ -129,12 +129,8 @@ class RTDETRPoseAdapter(ModelAdapter):
         if self._backend is not None:
             return
 
-        # Ensure the in-repo rtdetr_pose package is importable without installation.
         import sys
         from pathlib import Path
-
-        repo_root = Path(__file__).resolve().parents[1]
-        sys.path.insert(0, str(repo_root / "rtdetr_pose"))
 
         try:
             import torch
@@ -146,8 +142,27 @@ class RTDETRPoseAdapter(ModelAdapter):
         from PIL import Image
         import numpy as np
 
-        from rtdetr_pose.config import load_config
-        from rtdetr_pose.factory import build_model
+        try:
+            from rtdetr_pose.config import load_config
+            from rtdetr_pose.factory import build_model
+        except Exception:
+            # Source-checkout fallback (when rtdetr_pose isn't installed as a package).
+            import importlib
+
+            repo_root = Path(__file__).resolve().parents[1]
+            candidate = repo_root / "rtdetr_pose"
+            if candidate.exists():
+                sys.path.insert(0, str(candidate))
+                importlib.invalidate_caches()
+                # If `repo_root` is already on sys.path, Python may have resolved `rtdetr_pose`
+                # as a namespace package (repo_root/rtdetr_pose/*). Force a reload so
+                # `rtdetr_pose.config` resolves to the real package under candidate.
+                sys.modules.pop("rtdetr_pose", None)
+                for key in list(sys.modules.keys()):
+                    if key.startswith("rtdetr_pose."):
+                        sys.modules.pop(key, None)
+            from rtdetr_pose.config import load_config
+            from rtdetr_pose.factory import build_model
 
         cfg = load_config(self.config_path)
         num_classes_fg = int(getattr(cfg.model, "num_classes", 80))

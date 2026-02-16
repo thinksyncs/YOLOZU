@@ -42,8 +42,9 @@ Changelog = "https://github.com/thinksyncs/YOLOZU/blob/main/CHANGELOG.md"
 [project.optional-dependencies]
 demo = ["torch>=2.1"]
 onnxrt = ["onnx>=1.14", "onnxruntime>=1.17"]
+train = ["torch>=2.1", "onnx>=1.14", "onnxruntime>=1.17", "onnxscript>=0.1"]
 coco = ["pycocotools>=2.0.7"]
-full = ["torch>=2.1", "onnx>=1.14", "onnxruntime>=1.17", "pycocotools>=2.0.7"]
+full = ["torch>=2.1", "onnx>=1.14", "onnxruntime>=1.17", "onnxscript>=0.1", "pycocotools>=2.0.7"]
 
 [project.scripts]
 yolozu = "yolozu.cli:main"
@@ -56,7 +57,7 @@ version = { attr = "yolozu.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["yolozu*"]
+include = ["yolozu*", "rtdetr_pose*"]
 
 [tool.setuptools.package-data]
 "yolozu.data" = [
@@ -68,6 +69,7 @@ include = ["yolozu*"]
   "protocols/*.json",
   "schemas/*.json",
 ]
+"rtdetr_pose" = ["configs/*.json"]
 
 [tool.ruff]
 # Exclude common directories

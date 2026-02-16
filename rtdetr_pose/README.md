@@ -15,7 +15,7 @@ This folder contains a minimal PyTorch/TensorRT-oriented scaffolding for the RT-
   - `python3 tools/train_minimal.py --device cuda --amp fp16 --grad-accum 2 --run-dir runs/train_minimal_demo --epochs 1 --max-steps 30`
   - Outputs include `runs/train_minimal_demo/model.onnx` (+ `model.onnx.meta.json`) and checkpoints/metrics.
 - Production-style run contract (fixed artifact paths + full resume + export/parity gate; from repo root):
-  - `yolozu dev train configs/examples/train_contract.yaml --run-id exp01` (see `docs/run_contract.md`)
+  - `yolozu train configs/examples/train_contract.yaml --run-id exp01` (see `docs/run_contract.md`, requires `yolozu[train]`)
 - Continual FT (SDFT-inspired): add a frozen teacher checkpoint via `--self-distill-from <ckpt>` (defaults: keys=logits,bbox; logits uses reverse-KL).
 - Continual learning runner (multi-task sequential FT + replay buffer):
   - `python3 tools/train_continual.py --config ../configs/continual/rtdetr_pose_domain_inc_example.yaml`

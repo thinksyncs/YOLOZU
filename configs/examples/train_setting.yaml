@@ -1,5 +1,5 @@
-# Default training settings for yolozu dev train (source checkout)
-# Keys map to rtdetr_pose/tools/train_minimal.py arguments
+# Default training settings for `yolozu train`
+# Keys map to `rtdetr_pose.train_minimal` arguments
 config_version: 1
 model_config: rtdetr_pose/configs/base.json
 dataset_root: data/coco128

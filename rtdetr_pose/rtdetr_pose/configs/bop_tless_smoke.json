@@ -1,0 +1,44 @@
+{
+  "dataset": {
+    "root": "../data/bop-yolozu-tless-train",
+    "split": "train2017",
+    "format": "yolo"
+  },
+  "model": {
+    "num_classes": 30,
+    "num_keypoints": 0,
+    "hidden_dim": 256,
+    "num_queries": 100,
+    "use_uncertainty": false,
+    "backbone_name": "cspresnet",
+    "stem_channels": 32,
+    "backbone_channels": [64, 128, 256],
+    "stage_blocks": [1, 2, 2],
+    "use_sppf": true,
+    "use_level_embed": true,
+    "num_encoder_layers": 1,
+    "num_decoder_layers": 3,
+    "nhead": 8,
+    "encoder_dim_feedforward": null,
+    "decoder_dim_feedforward": null,
+    "backbone_kwargs": {}
+  },
+  "loss": {
+    "name": "default",
+    "task_aligner": "none",
+    "weights": {
+      "cls": 1.0,
+      "box": 1.0,
+      "z": 0.1,
+      "rot": 0.1,
+      "off": 0.0,
+      "t": 0.0
+    }
+  },
+  "train": {
+    "batch_size": 8,
+    "lr": 0.001,
+    "epochs": 1
+  }
+}
+

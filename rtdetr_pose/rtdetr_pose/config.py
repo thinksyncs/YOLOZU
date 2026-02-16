@@ -1,5 +1,6 @@
 import json
 from dataclasses import dataclass, field
+import importlib.resources
 from pathlib import Path
 from typing import Any
 
@@ -57,8 +58,30 @@ class Config:
 
 
 def load_config(path):
-    path = Path(path)
-    data = json.loads(path.read_text())
+    text = None
+    if isinstance(path, str):
+        value = str(path)
+        if value.startswith("builtin:") or value.startswith("pkg:"):
+            name = value.split(":", 1)[1].strip()
+            if not name:
+                raise ValueError("builtin config name is empty")
+            if not name.endswith(".json"):
+                name = f"{name}.json"
+            rel = name if "/" in name else f"configs/{name}"
+            try:
+                text = (
+                    importlib.resources.files("rtdetr_pose")
+                    .joinpath(rel)
+                    .read_text(encoding="utf-8")
+                )
+            except Exception as exc:
+                raise FileNotFoundError(f"builtin config not found: {rel}") from exc
+
+    if text is None:
+        path = Path(path)
+        text = path.read_text(encoding="utf-8")
+
+    data = json.loads(text)
     dataset = DatasetConfig(**data["dataset"])
     model = ModelConfig(**data.get("model", {}))
     train = TrainConfig(**data.get("train", {}))

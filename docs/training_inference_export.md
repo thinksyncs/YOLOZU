@@ -75,10 +75,10 @@ Common options:
 For reproducible runs with fixed artifact paths, full resume, best/last checkpoints, and an ONNX parity gate:
 
 ```bash
-yolozu dev train configs/examples/train_contract.yaml --run-id exp01
+yolozu train configs/examples/train_contract.yaml --run-id exp01
 
 # Resume (from runs/exp01/checkpoints/last.pt)
-yolozu dev train configs/examples/train_contract.yaml --run-id exp01 --resume
+yolozu train configs/examples/train_contract.yaml --run-id exp01 --resume
 ```
 
 Contracted artifacts live under `runs/<run_id>/...`:
@@ -233,7 +233,8 @@ Then validate and evaluate in this repo.
 
 ## Scenario suite (local evaluation)
 
-- python3 tools/run_scenarios.py --adapter precomputed --predictions reports/predictions.json --max-images 50
+- `yolozu test configs/examples/test_setting.yaml --adapter precomputed --predictions reports/predictions.json --max-images 50`
+- (source checkout) `python3 tools/run_scenarios.py --adapter precomputed --predictions reports/predictions.json --max-images 50`
 
 ## Notes
 - When using GPU, install CUDA-enabled PyTorch and use --device cuda:0.

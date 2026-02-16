@@ -143,6 +143,7 @@ Start here: [docs/training_inference_export.md](docs/training_inference_export.m
 - License policy: [docs/license_policy.md](docs/license_policy.md)
 - Tools index (AI-friendly): [docs/tools_index.md](docs/tools_index.md) / [tools/manifest.json](tools/manifest.json)
 - AI-first usage guide: [docs/ai_first.md](docs/ai_first.md)
+- PyInstaller/PyArmor packaging notes: [deploy/pyinstaller/README.md](deploy/pyinstaller/README.md)
 
 ## Roadmap (priorities)
 
@@ -164,7 +165,7 @@ Start here: [docs/training_inference_export.md](docs/training_inference_export.m
 ### Operational notes and mitigations
 - Training remains scaffold-first in `rtdetr_pose/` (data/loss/export wiring), while continual-learning behavior is
   immediately testable from pip with `yolozu demo continual --compare --markdown` and source training stays available via
-  `yolozu dev train <config>` (`docs/training_inference_export.md`).
+  `yolozu train <config>` (`docs/training_inference_export.md`, requires `yolozu[train]`).
 - A one-command folder inference path is available from pip: `yolozu predict-images --backend onnxrt --input-dir <dir> --onnx <model.onnx>`,
   which writes predictions JSON + overlays + HTML in one run.
 - TensorRT remains NVIDIA/Linux-centric, while macOS can run CPU validation and ONNXRuntime export:
@@ -230,10 +231,8 @@ python3 -m unittest -q
 | COCOeval mAP | `yolozu eval-coco --dataset /path/to/yolo --predictions reports/predictions.json` (requires `yolozu[coco]`) | `python3 tools/eval_coco.py ...` |
 | Instance-seg eval (PNG masks) | `yolozu eval-instance-seg --dataset /path --predictions preds.json --output reports/instance_seg_eval.json` | `python3 tools/eval_instance_segmentation.py ...` |
 | ONNXRuntime CPU export | `yolozu onnxrt export ...` (requires `yolozu[onnxrt]`) | `python3 tools/export_predictions_onnxrt.py ...` |
-| Training scaffold | `yolozu dev train configs/examples/train_contract.yaml --run-id exp01` (source checkout only) | `python3 rtdetr_pose/tools/train_minimal.py ...` |
-| Scenario suite | — | `python3 tools/run_scenarios.py ...` |
-
-Dev-only commands (source checkout): `yolozu dev train`, `yolozu dev test` (aliases: `yolozu train/test`).
+| Training scaffold | `yolozu train configs/examples/train_contract.yaml --run-id exp01` (requires `yolozu[train]`) | `python3 rtdetr_pose/tools/train_minimal.py ...` |
+| Scenario suite | `yolozu test configs/examples/test_setting.yaml` | `python3 tools/run_scenarios.py ...` |
 
 The “power-user” unified CLI lives in-repo: `python3 tools/yolozu.py --help`.
 
@@ -268,7 +267,7 @@ Details: [deploy/docker/README.md](deploy/docker/README.md)
 
 ## Training scaffold (RT-DETR pose)
 
-The minimal trainer is implemented in `rtdetr_pose/tools/train_minimal.py`.
+The trainer implementation lives in `rtdetr_pose/rtdetr_pose/train_minimal.py` (source-checkout wrapper: `rtdetr_pose/tools/train_minimal.py`).
 
 Quickest path (source checkout):
 
@@ -285,7 +284,7 @@ python3 rtdetr_pose/tools/train_minimal.py \
 Config-driven path (recommended for repeatability):
 
 ```bash
-yolozu dev train configs/examples/train_setting.yaml
+yolozu train configs/examples/train_setting.yaml
 ```
 
 For quick experiments, set `--run-dir`, which writes a standard artifact set:
@@ -297,13 +296,13 @@ For quick experiments, set `--run-dir`, which writes a standard artifact set:
 For production-style repeatability (fixed paths, resume, best/last, parity gate), use the **run contract**:
 
 ```bash
-yolozu dev train configs/examples/train_contract.yaml --run-id exp01
+yolozu train configs/examples/train_contract.yaml --run-id exp01
 
 # Resume (full state: model/optim/sched/amp/ema/step + RNG)
-yolozu dev train configs/examples/train_contract.yaml --run-id exp01 --resume
+yolozu train configs/examples/train_contract.yaml --run-id exp01 --resume
 
 # Smoke wiring check (1 step then exit 0)
-yolozu dev train configs/examples/train_contract.yaml --run-id exp01 --dry-run
+yolozu train configs/examples/train_contract.yaml --run-id exp01 --dry-run
 ```
 
 Contracted artifacts (fixed paths):
@@ -318,6 +317,14 @@ Contracted artifacts (fixed paths):
 Best definition: max `map50_95` on validation.
 
 Run contract spec: [`docs/run_contract.md`](docs/run_contract.md)
+
+Trainer core features (implemented):
+- Full resume (model/optim/sched/AMP scaler/EMA/progress + RNG) via `--resume-from` or contracted `--resume`.
+- NaN/Inf guard with skip + LR decay knobs (`--stop-on-non-finite-loss`, `--non-finite-max-skips`, `--non-finite-lr-decay`).
+- Grad clipping (`--clip-grad-norm`, recommended >0 for pose/TTT/MIM stability).
+- AMP (`--amp {none,fp16,bf16}`), EMA (`--use-ema` + `--ema-eval`), DDP (`--ddp` via `torchrun`).
+- Validation cadence: epoch (`--val-every`) and step-based (`--val-every-steps`).
+- Early stop: `--early-stop-patience` (+ `--early-stop-min-delta`).
 
 Common next checks:
 
@@ -399,6 +406,7 @@ If you run real inference elsewhere (PyTorch/ONNXRuntime/TensorRT/etc.), you can
 - Validate the JSON:
   - `python3 tools/validate_predictions.py reports/predictions.json`
 - Consume predictions locally:
+  - `yolozu test configs/examples/test_setting.yaml --adapter precomputed --predictions reports/predictions.json --max-images 50`
   - `python3 tools/run_scenarios.py --adapter precomputed --predictions reports/predictions.json --max-images 50`
 
 ### B) Export predictions in this repo (Torch/ONNXRuntime/TensorRT)

@@ -9,4 +9,6 @@ include CONTRIBUTING.md
 include CITATION.cff
 
 recursive-include yolozu/data *.json *.yaml *.yml
-
+recursive-include rtdetr_pose/rtdetr_pose/configs *.json
+recursive-include rtdetr_pose/configs *.json
+recursive-include rtdetr_pose/tools *.py

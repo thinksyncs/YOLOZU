@@ -64,9 +64,9 @@ and reproducible evaluation.
   - See `docs/ttt_integration_plan.md` for the up-to-date interface notes.
 
 ### 9) CLI convenience
-- Installed CLI: `yolozu doctor`, `yolozu export`, `yolozu validate`, `yolozu eval-instance-seg`, `yolozu resources`, `yolozu demo`.
+- Installed CLI: `yolozu doctor`, `yolozu export`, `yolozu validate`, `yolozu eval-instance-seg`, `yolozu resources`, `yolozu demo`, `yolozu test`.
+- Training scaffold: `yolozu train ...` (requires `yolozu[train]`).
 - Optional extra: `yolozu onnxrt export ...` (install `yolozu[onnxrt]`).
-- Dev-only (source checkout): `yolozu dev train configs/examples/train_contract.yaml --run-id exp01`, `yolozu dev test configs/examples/test_setting.yaml` (aliases: `yolozu train/test`).
 - Power-user in-repo CLI (source checkout): `python3 tools/yolozu.py ...`
 
 ## Contracts

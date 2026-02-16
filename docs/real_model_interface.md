@@ -14,7 +14,8 @@ Inference / predictions export:
 - `python3 tools/export_predictions.py --adapter rtdetr_pose --dataset data/coco128 --checkpoint /path/to/checkpoint.pt --max-images 50 --wrap`
 
 Scenario runner (metrics pipeline):
-- `python3 tools/run_scenarios.py --adapter rtdetr_pose --dataset data/coco128 --checkpoint /path/to/checkpoint.pt --max-images 50`
+- `yolozu test configs/examples/test_setting.yaml --adapter rtdetr_pose --dataset data/coco128 --checkpoint /path/to/checkpoint.pt --max-images 50`
+- (source checkout) `python3 tools/run_scenarios.py --adapter rtdetr_pose --dataset data/coco128 --checkpoint /path/to/checkpoint.pt --max-images 50`
 
 Baseline report (real outputs + fps):
 - `python3 tools/run_baseline.py --adapter rtdetr_pose --dataset data/coco128 --max-images 50 --output reports/baseline.json`
@@ -41,6 +42,13 @@ using **precomputed** predictions JSON:
 - Run scenario runner with the precomputed adapter:
 
 ```bash
+yolozu test configs/examples/test_setting.yaml \
+  --adapter precomputed \
+  --predictions /path/to/predictions.json \
+  --dataset /path/to/coco-yolo \
+  --max-images 50
+
+# (source checkout)
 python3 tools/run_scenarios.py \
   --adapter precomputed \
   --predictions /path/to/predictions.json \
