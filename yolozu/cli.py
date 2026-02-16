@@ -48,7 +48,7 @@ def _build_args_from_config(cfg: dict) -> list[str]:
     return args
 
 
-def _cmd_train(config_path: Path) -> int:
+def _cmd_train(config_path: Path, extra_args: list[str] | None = None) -> int:
     try:
         from rtdetr_pose.tools.train_minimal import main as train_main
     except Exception as exc:  # pragma: no cover
@@ -57,7 +57,10 @@ def _cmd_train(config_path: Path) -> int:
             "because it depends on in-repo trainer scaffolding under rtdetr_pose/tools."
         ) from exc
 
-    return int(train_main(["--config", str(config_path)]))
+    argv = ["--config", str(config_path)]
+    if extra_args:
+        argv.extend(list(extra_args))
+    return int(train_main(argv))
 
 
 def _cmd_test(config_path: Path) -> int:
@@ -622,6 +625,11 @@ def main(argv: list[str] | None = None) -> int:
 
     dev_train = dev_sub.add_parser("train", help="Run training using a YAML/JSON config (source checkout only).")
     dev_train.add_argument("config", type=str, help="Path to train config (e.g. configs/examples/train_setting.yaml).")
+    dev_train.add_argument(
+        "train_args",
+        nargs=argparse.REMAINDER,
+        help="Extra args forwarded to rtdetr_pose/tools/train_minimal.py (e.g. --run-contract --run-id exp01).",
+    )
 
     dev_test = dev_sub.add_parser("test", help="Run scenario tests using a YAML/JSON config (source checkout only).")
     dev_test.add_argument("config", type=str, help="Path to test config (e.g. configs/examples/test_setting.yaml).")
@@ -630,6 +638,7 @@ def main(argv: list[str] | None = None) -> int:
     alias_help = argparse.SUPPRESS
     alias_train = sub.add_parser("train", help=alias_help)
     alias_train.add_argument("config", type=str, help="Path to train config (e.g. configs/examples/train_setting.yaml).")
+    alias_train.add_argument("train_args", nargs=argparse.REMAINDER)
     alias_test = sub.add_parser("test", help=alias_help)
     alias_test.add_argument("config", type=str, help="Path to test config (e.g. configs/examples/test_setting.yaml).")
 
@@ -689,7 +698,7 @@ def main(argv: list[str] | None = None) -> int:
         config_path = Path(args.config)
         if not config_path.exists():
             raise SystemExit(f"config not found: {config_path}")
-        return _cmd_train(config_path)
+        return _cmd_train(config_path, extra_args=list(getattr(args, "train_args", []) or []))
     if args.command == "test":
         if not dev_enabled:
             raise SystemExit(
@@ -710,7 +719,7 @@ def main(argv: list[str] | None = None) -> int:
             config_path = Path(args.config)
             if not config_path.exists():
                 raise SystemExit(f"config not found: {config_path}")
-            return _cmd_train(config_path)
+            return _cmd_train(config_path, extra_args=list(getattr(args, "train_args", []) or []))
         if args.dev_command == "test":
             config_path = Path(args.config)
             if not config_path.exists():

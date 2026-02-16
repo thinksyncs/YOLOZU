@@ -1,0 +1,27 @@
+# Production-style training run contract example (reproducible artifacts under runs/<run_id>/)
+# Keys map to rtdetr_pose/tools/train_minimal.py arguments
+config_version: 1
+model_config: rtdetr_pose/configs/base.json
+
+dataset_root: data/coco128
+split: train2017
+val_split: val2017
+
+seed: 0
+device: cpu
+
+epochs: 1
+batch_size: 2
+max_steps: 30
+image_size: 64
+use_matcher: true
+
+# Run contract: fixed artifact layout under runs/<run_id>/...
+run_contract: true
+# run_id: exp01   # recommended to pass via CLI: --run-id exp01
+# resume: true    # resume from runs/<run_id>/checkpoints/last.pt
+
+# AMP / DDP (optional)
+# amp: bf16       # {none,fp16,bf16}; CPU ignores AMP with a warning
+# ddp: true       # requires torchrun + WORLD_SIZE>1
+

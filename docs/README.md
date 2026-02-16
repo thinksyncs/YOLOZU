@@ -39,7 +39,8 @@ Read next:
 ### 2) Train → Export → Evaluate (minimal RT-DETR scaffold)
 
 The repo includes a minimal RT-DETR-style scaffold (`rtdetr_pose/`) that exists to wire data,
-losses, export, and metrics. It is **not** a production-grade training stack.
+losses, export, and metrics. It is scaffold-first, but includes a **production-style run contract**
+(fixed artifact paths, full resume, export + parity gate).
 
 Shortest command:
 
@@ -49,6 +50,7 @@ python3 tools/run_yolo26n_smoke_rtdetr_pose.py
 
 Read next:
 - [Training / inference / export](training_inference_export.md)
+- [Run contract (training artifacts)](run_contract.md)
 - [Real model interface](real_model_interface.md)
 - [Continual learning (rtdetr_pose)](continual_learning.md)
 

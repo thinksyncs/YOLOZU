@@ -230,7 +230,7 @@ python3 -m unittest -q
 | COCOeval mAP | `yolozu eval-coco --dataset /path/to/yolo --predictions reports/predictions.json` (requires `yolozu[coco]`) | `python3 tools/eval_coco.py ...` |
 | Instance-seg eval (PNG masks) | `yolozu eval-instance-seg --dataset /path --predictions preds.json --output reports/instance_seg_eval.json` | `python3 tools/eval_instance_segmentation.py ...` |
 | ONNXRuntime CPU export | `yolozu onnxrt export ...` (requires `yolozu[onnxrt]`) | `python3 tools/export_predictions_onnxrt.py ...` |
-| Training scaffold | `yolozu dev train configs/examples/train_setting.yaml` (source checkout only) | `python3 rtdetr_pose/tools/train_minimal.py ...` |
+| Training scaffold | `yolozu dev train configs/examples/train_contract.yaml --run-id exp01` (source checkout only) | `python3 rtdetr_pose/tools/train_minimal.py ...` |
 | Scenario suite | — | `python3 tools/run_scenarios.py ...` |
 
 Dev-only commands (source checkout): `yolozu dev train`, `yolozu dev test` (aliases: `yolozu train/test`).
@@ -288,11 +288,36 @@ Config-driven path (recommended for repeatability):
 yolozu dev train configs/examples/train_setting.yaml
 ```
 
-Recommended usage is to set `--run-dir`, which writes a standard, reproducible artifact set:
+For quick experiments, set `--run-dir`, which writes a standard artifact set:
 - `metrics.jsonl` (+ final `metrics.json` / `metrics.csv`)
 - `checkpoint.pt` (+ optional `checkpoint_bundle.pt`)
 - `model.onnx` (+ `model.onnx.meta.json`)
 - `run_record.json` (git SHA / platform / args)
+
+For production-style repeatability (fixed paths, resume, best/last, parity gate), use the **run contract**:
+
+```bash
+yolozu dev train configs/examples/train_contract.yaml --run-id exp01
+
+# Resume (full state: model/optim/sched/amp/ema/step + RNG)
+yolozu dev train configs/examples/train_contract.yaml --run-id exp01 --resume
+
+# Smoke wiring check (1 step then exit 0)
+yolozu dev train configs/examples/train_contract.yaml --run-id exp01 --dry-run
+```
+
+Contracted artifacts (fixed paths):
+- `runs/<run_id>/checkpoints/{last,best}.pt`
+- `runs/<run_id>/reports/train_metrics.jsonl` (1 line per optimizer step)
+- `runs/<run_id>/reports/val_metrics.jsonl`
+- `runs/<run_id>/reports/config_resolved.yaml`
+- `runs/<run_id>/reports/run_meta.json`
+- `runs/<run_id>/reports/onnx_parity.json` (Torch vs ONNXRuntime; fails run on drift by default)
+- `runs/<run_id>/exports/model.onnx` (+ `model.onnx.meta.json`)
+
+Best definition: max `map50_95` on validation.
+
+Run contract spec: [`docs/run_contract.md`](docs/run_contract.md)
 
 Common next checks:
 
@@ -325,6 +350,13 @@ Base dataset format:
 - Images: `images/<split>/*.(jpg|png|...)`
 - Labels: `labels/<split>/*.txt` (YOLO: `class cx cy w h` normalized)
 
+### Compatibility (YOLOv8 / YOLO11 / YOLOX)
+
+- Ultralytics YOLOv8 / YOLO11: if your dataset root contains `images/train` + `labels/train` (and `images/val` + `labels/val`),
+  it is already compatible. Use `yolozu validate dataset /path/to/dataset --strict`.
+- YOLOX: common setups use COCO JSON (`instances_*.json`). Convert once with `tools/prepare_coco_yolo.py`
+  to generate YOLO-format labels (and an optional `dataset.json` descriptor) under a YOLOZU-compatible dataset root.
+
 Optional per-image metadata (JSON): `labels/<split>/<image>.json`
 - Masks/seg: `mask_path` / `mask` / `M`
 - Depth: `depth_path` / `depth` / `D_obj`
@@ -339,6 +371,13 @@ Notes on units (pixels vs mm/m) and intrinsics coordinate frames:
 If YOLO txt labels are missing and a mask is provided, bbox+class can be derived from masks.
 Details (including color/instance modes and multi-PNG-per-class options) are documented in:
 - [rtdetr_pose/README.md](rtdetr_pose/README.md)
+
+## Symmetry-aware utilities (object symmetry checks)
+
+- Symmetry specs live in `configs/runtime/symmetry.json` (validated loader: `yolozu.config.load_symmetry_map`).
+- Core ops: `yolozu/symmetry.py` (types: `none`, `Cn`/`C2`/`C4`, `Cinf`).
+- Symmetry-aware template verification: `yolozu/template_verification.py`.
+- Tests: `python3 -m pytest -q tests/test_symmetry.py tests/test_template_verification.py`.
 
 ## Evaluation / contracts (stable)
 
@@ -368,6 +407,8 @@ If you run real inference elsewhere (PyTorch/ONNXRuntime/TensorRT/etc.), you can
   - Baseline: `python3 tools/yolozu.py export --backend torch --checkpoint /path/to.ckpt --device cuda --max-images 50 --output reports/predictions.json`
   - TTT (Tent, safe preset): `python3 tools/yolozu.py export --backend torch --checkpoint /path/to.ckpt --device cuda --max-images 50 --ttt --ttt-preset safe --ttt-reset sample --ttt-log-out reports/ttt_log_safe.json --output reports/predictions_ttt_safe.json`
   - Note: `tools/yolozu.py export` always writes the wrapped `{ "predictions": [...] }` form (so `--wrap` is not needed).
+  - Note: TTT is supported in the repo tooling (`python3 tools/yolozu.py ...`) on the torch backend; the pip CLI `yolozu export`
+    is intentionally smoke-only (dummy/labels).
   - Recommended protocol + rationale (domain shift, presets, guards): [docs/ttt_protocol.md](docs/ttt_protocol.md)
 - ONNXRuntime/TensorRT backends: use `python3 tools/yolozu.py export --backend onnxrt|trt ...` (TTT is torch-only; use TTA or export precomputed predictions for other backends).
 

@@ -26,6 +26,7 @@ and reproducible evaluation.
 
 ### 3) Training scaffold (RT‑DETR pose)
 - Minimal training loop scaffold (`rtdetr_pose/tools/train_minimal.py`).
+- Production-style run contract (`--run-contract`): fixed artifact paths under `runs/<run_id>/...`, full resume, export + parity gate.
 - Optional matcher (Hungarian) with staged cost terms.
 - MIM masking + teacher distillation schedules.
 - Denoising target augmentation.
@@ -65,7 +66,7 @@ and reproducible evaluation.
 ### 9) CLI convenience
 - Installed CLI: `yolozu doctor`, `yolozu export`, `yolozu validate`, `yolozu eval-instance-seg`, `yolozu resources`, `yolozu demo`.
 - Optional extra: `yolozu onnxrt export ...` (install `yolozu[onnxrt]`).
-- Dev-only (source checkout): `yolozu dev train configs/examples/train_setting.yaml`, `yolozu dev test configs/examples/test_setting.yaml` (aliases: `yolozu train/test`).
+- Dev-only (source checkout): `yolozu dev train configs/examples/train_contract.yaml --run-id exp01`, `yolozu dev test configs/examples/test_setting.yaml` (aliases: `yolozu train/test`).
 - Power-user in-repo CLI (source checkout): `python3 tools/yolozu.py ...`
 
 ## Contracts
@@ -73,7 +74,7 @@ and reproducible evaluation.
 - **Adapter Contract**: `docs/adapter_contract.md`
 
 ## Non‑goals
-- Full production training stack (this repo provides a scaffold, not a production trainer).
+- A full training framework. The repo provides a minimal trainer core plus a production-style artifact contract, not a full-featured training stack.
 - Heavy dependencies required for local evaluation.
 
 ## Versioning

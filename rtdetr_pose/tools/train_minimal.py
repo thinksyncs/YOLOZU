@@ -2,6 +2,10 @@ import argparse
 import json
 import math
 import os
+import random
+import signal
+import shutil
+import socket
 import sys
 import time
 from contextlib import nullcontext
@@ -26,11 +30,14 @@ from rtdetr_pose.factory import build_losses, build_model
 from rtdetr_pose.losses import Losses
 from rtdetr_pose.training import build_query_aligned_targets
 from rtdetr_pose.model import RTDETRPose
+from rtdetr_pose.optim_factory import build_optimizer
+from rtdetr_pose.sched_factory import EMA, build_scheduler
 
 from yolozu.metrics_report import append_jsonl, build_report, write_csv_row, write_json
 from yolozu.jitter import default_jitter_profile, sample_intrinsics_jitter, sample_extrinsics_jitter
 from yolozu.run_record import build_run_record
 from yolozu.sdft import SdftConfig, compute_sdft_loss
+from yolozu.simple_map import evaluate_map
 
 
 def _now_utc() -> str:
@@ -74,8 +81,65 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Optional YAML/JSON config file. Values become argparse defaults; explicit CLI flags override.",
     )
+    parser.add_argument(
+        "--model-config",
+        default=None,
+        help="Optional RTDETRPose model config (e.g., rtdetr_pose/configs/base.json). Used to infer model defaults.",
+    )
+    parser.add_argument(
+        "--config-version",
+        type=int,
+        default=None,
+        help="Optional config schema version (recommended: 1).",
+    )
+    parser.add_argument(
+        "--print-config",
+        action="store_true",
+        help="Print resolved config (after applying defaults) and exit 0.",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Run a single training step (including logging/checkpoint wiring) then exit 0.",
+    )
     parser.add_argument("--dataset-root", type=str, default="", help="Path to data/coco128")
     parser.add_argument("--split", type=str, default="train2017")
+    parser.add_argument(
+        "--val-split",
+        type=str,
+        default=None,
+        help="Optional validation split (default: val2017 if it exists, else disabled).",
+    )
+    parser.add_argument(
+        "--val-every",
+        type=int,
+        default=1,
+        help="Run validation every N epochs (0 disables; default: 1).",
+    )
+    parser.add_argument(
+        "--val-max-images",
+        type=int,
+        default=0,
+        help="Optional cap on number of validation images (0 = all).",
+    )
+    parser.add_argument(
+        "--val-batch-size",
+        type=int,
+        default=None,
+        help="Validation batch size (default: --batch-size).",
+    )
+    parser.add_argument(
+        "--val-score-thresh",
+        type=float,
+        default=0.001,
+        help="Score threshold for decoding detections during validation (default: 0.001).",
+    )
+    parser.add_argument(
+        "--val-topk",
+        type=int,
+        default=300,
+        help="Top-K detections per image for validation decode (default: 300).",
+    )
     parser.add_argument(
         "--records-json",
         default=None,
@@ -90,11 +154,98 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--batch-size", type=int, default=2)
     parser.add_argument(
         "--grad-accum",
+        "--gradient-accumulation-steps",
+        dest="gradient_accumulation_steps",
         type=int,
         default=1,
         help="Gradient accumulation steps (default: 1). Optimizer steps happen every N batches.",
     )
     parser.add_argument("--lr", type=float, default=1e-4)
+    parser.add_argument(
+        "--optimizer",
+        choices=("adamw", "sgd"),
+        default="adamw",
+        help="Optimizer type (default: adamw).",
+    )
+    parser.add_argument(
+        "--weight-decay",
+        type=float,
+        default=0.01,
+        help="Weight decay for optimizer (default: 0.01).",
+    )
+    parser.add_argument(
+        "--momentum",
+        type=float,
+        default=0.9,
+        help="Momentum for SGD optimizer (default: 0.9).",
+    )
+    parser.add_argument(
+        "--nesterov",
+        action="store_true",
+        help="Enable Nesterov momentum (SGD only).",
+    )
+    parser.add_argument(
+        "--use-param-groups",
+        action="store_true",
+        help="Split parameters into backbone/head groups with configurable lr/wd multipliers.",
+    )
+    parser.add_argument("--backbone-lr-mult", type=float, default=1.0, help="Backbone lr multiplier (default: 1.0).")
+    parser.add_argument("--head-lr-mult", type=float, default=1.0, help="Head lr multiplier (default: 1.0).")
+    parser.add_argument("--backbone-wd-mult", type=float, default=1.0, help="Backbone wd multiplier (default: 1.0).")
+    parser.add_argument("--head-wd-mult", type=float, default=1.0, help="Head wd multiplier (default: 1.0).")
+    parser.add_argument(
+        "--wd-exclude-bias",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Exclude bias parameters from weight decay (default: true).",
+    )
+    parser.add_argument(
+        "--wd-exclude-norm",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Exclude normalization layers from weight decay (default: true).",
+    )
+    parser.add_argument(
+        "--scheduler",
+        choices=("none", "cosine", "onecycle", "multistep"),
+        default="none",
+        help="Learning-rate scheduler (default: none).",
+    )
+    parser.add_argument(
+        "--min-lr",
+        type=float,
+        default=0.0,
+        help="Minimum LR for cosine scheduler (default: 0.0).",
+    )
+    parser.add_argument(
+        "--scheduler-milestones",
+        type=str,
+        default="",
+        help="Comma-separated milestone steps for multistep scheduler (e.g., 1000,2000).",
+    )
+    parser.add_argument(
+        "--scheduler-gamma",
+        type=float,
+        default=0.1,
+        help="Gamma for multistep scheduler (default: 0.1).",
+    )
+    parser.add_argument(
+        "--use-ema",
+        action="store_true",
+        help="Enable EMA tracking of model weights.",
+    )
+    parser.add_argument(
+        "--ema-decay",
+        type=float,
+        default=0.999,
+        help="EMA decay (default: 0.999).",
+    )
+    parser.add_argument(
+        "--ema-eval",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Use EMA weights for evaluation/export when EMA is enabled (default: false).",
+    )
     parser.add_argument(
         "--device",
         type=str,
@@ -106,6 +257,11 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("none", "fp16", "bf16"),
         default="none",
         help="Automatic mixed precision (cuda only): none|fp16|bf16 (default: none).",
+    )
+    parser.add_argument(
+        "--use-amp",
+        action="store_true",
+        help="Alias for --amp fp16 (back-compat).",
     )
     parser.add_argument(
         "--ddp",
@@ -133,6 +289,18 @@ def build_parser() -> argparse.ArgumentParser:
         action=argparse.BooleanOptionalAction,
         default=True,
         help="Stop training when the loss becomes non-finite (default: true).",
+    )
+    parser.add_argument(
+        "--non-finite-max-skips",
+        type=int,
+        default=3,
+        help="When non-finite guard is enabled (--no-stop-on-non-finite-loss), stop after this many skips (default: 3).",
+    )
+    parser.add_argument(
+        "--non-finite-lr-decay",
+        type=float,
+        default=0.5,
+        help="When non-finite guard is enabled, multiply LR by this factor on each non-finite event (default: 0.5).",
     )
     parser.add_argument(
         "--lr-warmup-steps",
@@ -244,6 +412,25 @@ def build_parser() -> argparse.ArgumentParser:
         "--real-images",
         action="store_true",
         help="Load real images via record['image_path'] (requires Pillow). Default uses synthetic images.",
+    )
+    parser.add_argument("--num-workers", type=int, default=0, help="DataLoader num_workers (default: 0).")
+    parser.add_argument(
+        "--pin-memory",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="DataLoader pin_memory (default: false).",
+    )
+    parser.add_argument(
+        "--persistent-workers",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="DataLoader persistent_workers (requires --num-workers>0; default: false).",
+    )
+    parser.add_argument(
+        "--prefetch-factor",
+        type=int,
+        default=2,
+        help="DataLoader prefetch_factor (requires --num-workers>0; default: 2).",
     )
     parser.add_argument("--num-queries", type=int, default=10)
     parser.add_argument("--hidden-dim", type=int, default=64)
@@ -404,8 +591,24 @@ def build_parser() -> argparse.ArgumentParser:
         help="Multi-task loss alignment strategy (default: none).",
     )
     parser.add_argument("--metrics-jsonl", default=None, help="Append per-step loss/metric report JSONL here.")
+    parser.add_argument("--val-metrics-jsonl", default=None, help="Append validation metrics JSONL here.")
     parser.add_argument("--metrics-json", default=None, help="Write final run summary JSON here.")
     parser.add_argument("--metrics-csv", default=None, help="Write final run summary CSV (single row) here.")
+    parser.add_argument(
+        "--config-resolved-out",
+        default=None,
+        help="Write resolved config YAML here (useful for run contracts).",
+    )
+    parser.add_argument(
+        "--run-meta-out",
+        default=None,
+        help="Write run metadata JSON here (useful for run contracts).",
+    )
+    parser.add_argument(
+        "--best-checkpoint-out",
+        default=None,
+        help="Optional path to write the best checkpoint bundle (model+optimizer+state).",
+    )
 
     # Continual learning / self-distillation (SDFT-inspired)
     parser.add_argument(
@@ -544,15 +747,39 @@ def build_parser() -> argparse.ArgumentParser:
         default=0,
         help="If >0 and --checkpoint-bundle-out is set, also save intermediate bundles every N steps.",
     )
+    parser.add_argument(
+        "--save-last-every",
+        type=int,
+        default=0,
+        help="If >0 and --checkpoint-bundle-out is set, periodically overwrite the last checkpoint every N optimizer steps.",
+    )
 
     # Back-compat: weights-only checkpoint
     parser.add_argument("--checkpoint-out", default=None, help="Write model state_dict to this path at end.")
 
     # Reproducible artifacts
     parser.add_argument(
+        "--run-contract",
+        action="store_true",
+        help="Enable production-style run contract layout under --runs-dir/<run-id>/.",
+    )
+    parser.add_argument("--runs-dir", default="runs", help="Base directory for --run-contract (default: runs).")
+    parser.add_argument("--run-id", default=None, help="Run identifier (default: <utc timestamp> when --run-contract).")
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume from the contracted last checkpoint (requires --run-contract).",
+    )
+    parser.add_argument(
         "--run-dir",
         default=None,
         help="If set, write standard artifacts into this folder (run_record.json, metrics.jsonl/json/csv, checkpoint*.pt, model.onnx).",
+    )
+    parser.add_argument(
+        "--export-onnx",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Export ONNX when --onnx-out is set (default: true).",
     )
     parser.add_argument(
         "--onnx-out",
@@ -570,7 +797,97 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Export ONNX with dynamic height/width axes (batch is always dynamic).",
     )
+    parser.add_argument(
+        "--parity-json-out",
+        default=None,
+        help="Optional JSON path to write Torch vs ONNXRuntime parity stats.",
+    )
+    parser.add_argument(
+        "--parity-score-atol",
+        type=float,
+        default=1e-4,
+        help="Absolute tolerance for derived score parity (default: 1e-4).",
+    )
+    parser.add_argument(
+        "--parity-bbox-atol",
+        type=float,
+        default=1e-4,
+        help="Absolute tolerance for sigmoid(bbox) parity (default: 1e-4).",
+    )
+    parser.add_argument(
+        "--parity-policy",
+        choices=("warn", "fail"),
+        default=None,
+        help="Parity gate behavior (warn|fail). Default: warn (non-contract) / fail (run-contract).",
+    )
     return parser
+
+
+def _default_run_id() -> str:
+    return time.strftime("%Y-%m-%dT%H-%M-%SZ", time.gmtime())
+
+
+def apply_run_contract_defaults(args: argparse.Namespace) -> tuple[argparse.Namespace, dict[str, Path] | None]:
+    enabled = bool(getattr(args, "run_contract", False)) or bool(getattr(args, "run_id", None))
+    if not enabled:
+        return args, None
+
+    if getattr(args, "run_dir", None):
+        raise SystemExit("--run-contract cannot be combined with --run-dir (choose one artifact layout).")
+
+    run_id = str(getattr(args, "run_id", "") or "").strip()
+    if not run_id:
+        run_id = _default_run_id()
+        args.run_id = run_id
+
+    runs_dir = Path(str(getattr(args, "runs_dir", "runs") or "runs"))
+    run_dir = runs_dir / run_id
+    checkpoints_dir = run_dir / "checkpoints"
+    reports_dir = run_dir / "reports"
+    exports_dir = run_dir / "exports"
+    checkpoints_dir.mkdir(parents=True, exist_ok=True)
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    exports_dir.mkdir(parents=True, exist_ok=True)
+
+    def _default_path(current: str | None, path: Path) -> str:
+        return current if current else str(path)
+
+    args.metrics_jsonl = _default_path(getattr(args, "metrics_jsonl", None), reports_dir / "train_metrics.jsonl")
+    args.val_metrics_jsonl = _default_path(getattr(args, "val_metrics_jsonl", None), reports_dir / "val_metrics.jsonl")
+    args.config_resolved_out = _default_path(getattr(args, "config_resolved_out", None), reports_dir / "config_resolved.yaml")
+    args.run_meta_out = _default_path(getattr(args, "run_meta_out", None), reports_dir / "run_meta.json")
+    args.parity_json_out = _default_path(getattr(args, "parity_json_out", None), reports_dir / "onnx_parity.json")
+    if getattr(args, "parity_policy", None) is None:
+        args.parity_policy = "fail"
+
+    args.checkpoint_bundle_out = _default_path(getattr(args, "checkpoint_bundle_out", None), checkpoints_dir / "last.pt")
+    args.best_checkpoint_out = _default_path(getattr(args, "best_checkpoint_out", None), checkpoints_dir / "best.pt")
+
+    # Default ONNX export path (can still be disabled via --no-export-onnx).
+    args.onnx_out = _default_path(getattr(args, "onnx_out", None), exports_dir / "model.onnx")
+    args.onnx_meta_out = _default_path(
+        getattr(args, "onnx_meta_out", None),
+        exports_dir / "model.onnx.meta.json",
+    )
+
+    # Convenience: --resume means resume from contracted last checkpoint.
+    if bool(getattr(args, "resume", False)) and not getattr(args, "resume_from", None):
+        args.resume_from = str(checkpoints_dir / "last.pt")
+
+    if int(getattr(args, "save_last_every", 0) or 0) <= 0:
+        args.save_last_every = 100
+    try:
+        if float(getattr(args, "clip_grad_norm", 0.0) or 0.0) <= 0.0:
+            args.clip_grad_norm = 1.0
+    except Exception:
+        pass
+
+    return args, {
+        "run_dir": run_dir,
+        "checkpoints_dir": checkpoints_dir,
+        "reports_dir": reports_dir,
+        "exports_dir": exports_dir,
+    }
 
 
 def apply_run_dir_defaults(args: argparse.Namespace) -> tuple[argparse.Namespace, Path | None]:
@@ -593,6 +910,9 @@ def apply_run_dir_defaults(args: argparse.Namespace) -> tuple[argparse.Namespace
         if getattr(args, "si", False):
             args.si_state_out = _default_path(getattr(args, "si_state_out", None), "si_state.pt")
 
+    if not bool(getattr(args, "export_onnx", True)):
+        args.onnx_out = None
+
     return args, run_dir
 
 
@@ -603,6 +923,219 @@ def unwrap_model(model: "torch.nn.Module") -> "torch.nn.Module":
         except Exception:
             return model
     return model
+
+
+def _quantiles(values: "Any", qs: tuple[int, ...] = (50, 90, 95, 99)) -> dict[str, float]:
+    import numpy as np  # type: ignore
+
+    flat = np.asarray(values, dtype=np.float64).reshape(-1)
+    out: dict[str, float] = {}
+    if flat.size == 0:
+        for q in qs:
+            out[f"p{int(q)}"] = 0.0
+        return out
+    for q in qs:
+        out[f"p{int(q)}"] = float(np.quantile(flat, float(q) / 100.0))
+    return out
+
+
+def _diff_stats(a: "Any", b: "Any") -> dict[str, Any]:
+    import numpy as np  # type: ignore
+
+    a = np.asarray(a)
+    b = np.asarray(b)
+    if a.shape != b.shape:
+        return {"ok": False, "reason": "shape_mismatch", "a_shape": list(a.shape), "b_shape": list(b.shape)}
+    diff = np.abs(a.astype(np.float64) - b.astype(np.float64))
+    finite = np.isfinite(diff)
+    if not bool(finite.all()):
+        return {
+            "ok": False,
+            "reason": "non_finite_diff",
+            "shape": list(diff.shape),
+            "non_finite": int((~finite).sum()),
+        }
+    out: dict[str, Any] = {
+        "ok": True,
+        "shape": list(diff.shape),
+        "max": float(diff.max()) if diff.size else 0.0,
+        "mean": float(diff.mean()) if diff.size else 0.0,
+    }
+    out.update(_quantiles(diff))
+    return out
+
+
+def _softmax(x: "Any", axis: int = -1) -> "Any":
+    import numpy as np  # type: ignore
+
+    x = np.asarray(x, dtype=np.float64)
+    x = x - x.max(axis=axis, keepdims=True)
+    ex = np.exp(x)
+    denom = ex.sum(axis=axis, keepdims=True)
+    denom = np.where(denom <= 0.0, 1.0, denom)
+    return (ex / denom).astype(np.float32)
+
+
+def _sigmoid(x: "Any") -> "Any":
+    import numpy as np  # type: ignore
+
+    x = np.asarray(x, dtype=np.float64)
+    y = 1.0 / (1.0 + np.exp(-x))
+    return y.astype(np.float32)
+
+
+def _derive_score_bbox(outputs: dict[str, "Any"]) -> tuple["Any", "Any"]:
+    logits = outputs.get("logits")
+    bbox = outputs.get("bbox")
+    if logits is None or bbox is None:
+        raise ValueError("outputs must contain logits and bbox")
+    probs = _softmax(logits, axis=-1)
+    score = probs.max(axis=-1)
+    bbox_sig = _sigmoid(bbox)
+    return score.astype("float32"), bbox_sig.astype("float32")
+
+
+def run_onnxrt_parity(
+    *,
+    model: "torch.nn.Module",
+    onnx_path: Path,
+    image_size: int,
+    seed: int,
+    score_atol: float,
+    bbox_atol: float,
+    out_path: Path,
+    policy: str,
+    run_record: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    report: dict[str, Any] = {
+        "timestamp_utc": _now_utc(),
+        "onnx": str(onnx_path),
+        "thresholds": {"score_atol": float(score_atol), "bbox_atol": float(bbox_atol)},
+        "policy": str(policy),
+        "passed": False,
+        "available": False,
+        "reason": None,
+        "run_record": run_record,
+    }
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        import numpy as np  # type: ignore
+    except Exception as exc:
+        report["reason"] = f"missing_numpy:{exc}"
+        out_path.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
+        if str(policy) == "fail":
+            raise SystemExit(f"ONNX parity unavailable (numpy missing). See: {out_path}")
+        print(f"WARNING: ONNX parity unavailable (numpy missing). See: {out_path}", file=sys.stderr)
+        return report
+
+    try:
+        import onnxruntime as ort  # type: ignore
+    except Exception as exc:
+        report["reason"] = f"missing_onnxruntime:{exc}"
+        out_path.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
+        if str(policy) == "fail":
+            raise SystemExit(f"ONNX parity unavailable (onnxruntime missing). See: {out_path}")
+        print(f"WARNING: ONNX parity unavailable (onnxruntime missing). See: {out_path}", file=sys.stderr)
+        return report
+
+    if not onnx_path.exists():
+        report["reason"] = "onnx_not_found"
+        out_path.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
+        if str(policy) == "fail":
+            raise SystemExit(f"ONNX parity unavailable (onnx not found). See: {out_path}")
+        print(f"WARNING: ONNX parity unavailable (onnx not found). See: {out_path}", file=sys.stderr)
+        return report
+
+    report["available"] = True
+    try:
+        sess = ort.InferenceSession(str(onnx_path), providers=["CPUExecutionProvider"])
+    except Exception as exc:
+        report["available"] = False
+        report["reason"] = f"onnxruntime_init_failed:{exc}"
+        out_path.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
+        if str(policy) == "fail":
+            raise SystemExit(f"ONNX parity unavailable (onnxruntime init failed). See: {out_path}") from exc
+        print(f"WARNING: ONNX parity unavailable (onnxruntime init failed). See: {out_path}", file=sys.stderr)
+        return report
+
+    input_name = None
+    try:
+        if sess.get_inputs():
+            input_name = sess.get_inputs()[0].name
+    except Exception:
+        input_name = None
+    if not input_name:
+        input_name = "images"
+
+    gen = torch.Generator(device="cpu")
+    try:
+        gen.manual_seed(int(seed))
+    except Exception:
+        pass
+    x = torch.rand((1, 3, int(image_size), int(image_size)), generator=gen, dtype=torch.float32, device="cpu")
+    report["input"] = {"shape": [1, 3, int(image_size), int(image_size)], "dtype": "float32", "seed": int(seed)}
+
+    ref = model.eval().cpu()
+    with torch.no_grad():
+        out_torch = ref(x)
+    if not isinstance(out_torch, dict):
+        raise SystemExit("unexpected torch output type for parity (expected dict).")
+
+    torch_outputs: dict[str, Any] = {}
+    for key in ("logits", "bbox"):
+        value = out_torch.get(key)
+        if value is None:
+            continue
+        if hasattr(value, "detach"):
+            torch_outputs[key] = value.detach().cpu().numpy()
+
+    ort_outputs = sess.run(None, {str(input_name): np.asarray(x.numpy(), dtype=np.float32)})
+    names = []
+    try:
+        names = [o.name for o in sess.get_outputs()]
+    except Exception:
+        names = []
+    if not names:
+        names = ["logits", "bbox"]
+    cand_outputs: dict[str, Any] = {str(name): val for name, val in zip(names, ort_outputs)}
+
+    score_t, bbox_t = _derive_score_bbox(torch_outputs)
+    score_o, bbox_o = _derive_score_bbox(cand_outputs)
+    score_stats = _diff_stats(score_t, score_o)
+    bbox_stats = _diff_stats(bbox_t, bbox_o)
+
+    score_max = float(score_stats.get("max", float("inf"))) if bool(score_stats.get("ok")) else float("inf")
+    bbox_max = float(bbox_stats.get("max", float("inf"))) if bool(bbox_stats.get("ok")) else float("inf")
+    passed = bool(
+        bool(score_stats.get("ok"))
+        and bool(bbox_stats.get("ok"))
+        and score_max <= float(score_atol)
+        and bbox_max <= float(bbox_atol)
+    )
+
+    report["derived"] = {
+        "score": score_stats,
+        "bbox_sigmoid": bbox_stats,
+        "score_max": score_max,
+        "bbox_max": bbox_max,
+    }
+    report["onnxrt"] = {"providers": list(sess.get_providers()), "input_name": str(input_name)}
+    report["passed"] = passed
+
+    out_path.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
+
+    if not passed:
+        msg = (
+            f"ONNX parity failed: score_max={score_max:.6g} bbox_max={bbox_max:.6g} "
+            f"(score_atol={float(score_atol):.6g}, bbox_atol={float(bbox_atol):.6g}). See: {out_path}"
+        )
+        if str(policy) == "fail":
+            raise SystemExit(msg)
+        print(f"WARNING: {msg}", file=sys.stderr)
+
+    return report
 
 
 def collect_torch_cuda_meta() -> dict[str, Any]:
@@ -624,6 +1157,62 @@ def collect_torch_cuda_meta() -> dict[str, Any]:
         "cudnn_version": (torch.backends.cudnn.version() if hasattr(torch.backends, "cudnn") else None),
     }
     return meta
+
+
+def collect_rng_state() -> dict[str, Any]:
+    state: dict[str, Any] = {"python": random.getstate()}
+    try:
+        import numpy as np  # type: ignore
+
+        state["numpy"] = np.random.get_state()
+    except Exception:
+        state["numpy"] = None
+    if torch is not None:
+        try:
+            state["torch"] = torch.get_rng_state()
+        except Exception:
+            state["torch"] = None
+        if torch.cuda.is_available():
+            try:
+                state["torch_cuda"] = torch.cuda.get_rng_state_all()
+            except Exception:
+                state["torch_cuda"] = None
+        else:
+            state["torch_cuda"] = None
+    return state
+
+
+def restore_rng_state(state: dict[str, Any] | None) -> None:
+    if not state:
+        return
+    py_state = state.get("python")
+    if py_state is not None:
+        try:
+            random.setstate(py_state)
+        except Exception:
+            pass
+    np_state = state.get("numpy")
+    if np_state is not None:
+        try:
+            import numpy as np  # type: ignore
+
+            np.random.set_state(np_state)
+        except Exception:
+            pass
+    if torch is None:
+        return
+    torch_state = state.get("torch")
+    if torch_state is not None:
+        try:
+            torch.set_rng_state(torch_state)
+        except Exception:
+            pass
+    cuda_state = state.get("torch_cuda")
+    if cuda_state is not None and torch.cuda.is_available():
+        try:
+            torch.cuda.set_rng_state_all(cuda_state)
+        except Exception:
+            pass
 
 
 def _rotation_matrix_from_rpy(roll_rad: float, pitch_rad: float, yaw_rad: float) -> "torch.Tensor":
@@ -648,6 +1237,193 @@ def compute_warmup_lr(base_lr: float, step: int, warmup_steps: int, warmup_init:
         return float(base_lr)
     alpha = float(step) / float(warmup_steps)
     return float(warmup_init + (base_lr - warmup_init) * alpha)
+
+
+def parse_milestones(value: Any) -> list[int]:
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple)):
+        out: list[int] = []
+        for item in value:
+            try:
+                out.append(int(item))
+            except Exception:
+                continue
+        return out
+    text = str(value).strip()
+    if not text:
+        return []
+    out = []
+    for part in text.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            out.append(int(part))
+        except Exception:
+            continue
+    return out
+
+
+def apply_denoise_targets(
+    targets: list[dict[str, Any]],
+    *,
+    num_classes: int,
+    denoise_count: int,
+    bbox_noise: float = 0.0,
+    label_noise: float = 0.0,
+) -> list[dict[str, Any]]:
+    """Append noisy copies of GT targets for denoising-style training.
+
+    This is a lightweight utility used by unit tests and optional training
+    extensions. It duplicates `gt_*` tensors (labels/bbox/z/...) `denoise_count`
+    times and appends them to the originals.
+    """
+
+    if torch is None:  # pragma: no cover
+        raise RuntimeError("torch is required for apply_denoise_targets")
+
+    copies = max(0, int(denoise_count))
+    if copies <= 0:
+        return targets
+
+    out: list[dict[str, Any]] = []
+    for tgt in targets:
+        if not isinstance(tgt, dict):
+            out.append(tgt)
+            continue
+
+        updated = dict(tgt)
+
+        gt_labels = tgt.get("gt_labels")
+        gt_bbox = tgt.get("gt_bbox")
+        gt_z = tgt.get("gt_z")
+
+        if not isinstance(gt_labels, torch.Tensor) or gt_labels.numel() == 0:
+            out.append(updated)
+            continue
+
+        label_list = [gt_labels]
+        bbox_list = [gt_bbox] if isinstance(gt_bbox, torch.Tensor) else None
+        z_list = [gt_z] if isinstance(gt_z, torch.Tensor) else None
+
+        for _ in range(copies):
+            noisy_labels = gt_labels.clone()
+            if float(label_noise) > 0.0 and int(num_classes) > 0:
+                mask = torch.rand_like(noisy_labels.to(dtype=torch.float32)) < float(label_noise)
+                if bool(mask.any()):
+                    noisy = torch.randint(0, int(num_classes), (int(mask.sum().item()),), device=noisy_labels.device)
+                    noisy_labels = noisy_labels.clone()
+                    noisy_labels[mask] = noisy
+
+            label_list.append(noisy_labels)
+
+            if bbox_list is not None and isinstance(gt_bbox, torch.Tensor):
+                noisy_bbox = gt_bbox.clone()
+                if float(bbox_noise) > 0.0:
+                    noisy_bbox = noisy_bbox + torch.randn_like(noisy_bbox) * float(bbox_noise)
+                    noisy_bbox = noisy_bbox.clamp(0.0, 1.0)
+                bbox_list.append(noisy_bbox)
+
+            if z_list is not None and isinstance(gt_z, torch.Tensor):
+                z_list.append(gt_z.clone())
+
+        updated["gt_labels"] = torch.cat(label_list, dim=0)
+        if bbox_list is not None:
+            updated["gt_bbox"] = torch.cat(bbox_list, dim=0)
+        if z_list is not None:
+            updated["gt_z"] = torch.cat(z_list, dim=0)
+
+        out.append(updated)
+
+    return out
+
+
+def flatten_records_for_map(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Convert rtdetr_pose manifest records into YOLOZU/simple_map GT records."""
+
+    flat: list[dict[str, Any]] = []
+    for rec in records or []:
+        if not isinstance(rec, dict):
+            continue
+        image = rec.get("image_path") or rec.get("image") or ""
+        image = str(image) if image is not None else ""
+        labels_out: list[dict[str, Any]] = []
+        for inst in rec.get("labels", []) or []:
+            if not isinstance(inst, dict):
+                continue
+            bb = inst.get("bbox") or {}
+            try:
+                labels_out.append(
+                    {
+                        "class_id": int(inst.get("class_id", 0)),
+                        "cx": float(bb.get("cx", 0.0)),
+                        "cy": float(bb.get("cy", 0.0)),
+                        "w": float(bb.get("w", 0.0)),
+                        "h": float(bb.get("h", 0.0)),
+                    }
+                )
+            except Exception:
+                continue
+        flat.append({"image": image, "labels": labels_out})
+    return flat
+
+
+def decode_detections_from_outputs(
+    outputs: dict[str, Any],
+    image_paths: list[str],
+    *,
+    score_thresh: float,
+    topk: int,
+) -> list[dict[str, Any]]:
+    if torch is None:  # pragma: no cover
+        raise RuntimeError("torch is required for decode_detections_from_outputs")
+
+    logits = outputs.get("logits")
+    bbox = outputs.get("bbox")
+    if not isinstance(logits, torch.Tensor) or not isinstance(bbox, torch.Tensor):
+        return [{"image": str(p), "detections": []} for p in image_paths]
+
+    probs = logits.softmax(dim=-1)
+    scores, class_ids = probs.max(dim=-1)  # (B,Q)
+    bg_idx = int(logits.shape[-1]) - 1
+    bbox_norm = bbox.sigmoid().clamp(0.0, 1.0)
+
+    batch = int(scores.shape[0])
+    out: list[dict[str, Any]] = []
+    for i in range(batch):
+        image = str(image_paths[i]) if i < len(image_paths) else ""
+        sc = scores[i]
+        cls = class_ids[i]
+        bb = bbox_norm[i]
+        keep = (cls != bg_idx) & (sc >= float(score_thresh))
+        dets: list[dict[str, Any]] = []
+        if bool(keep.any()):
+            sc_k = sc[keep]
+            cls_k = cls[keep]
+            bb_k = bb[keep]
+
+            if int(sc_k.numel()) > int(topk):
+                sc_k, idx = torch.topk(sc_k, k=int(topk))
+                cls_k = cls_k[idx]
+                bb_k = bb_k[idx]
+            else:
+                order = torch.argsort(sc_k, descending=True)
+                sc_k = sc_k[order]
+                cls_k = cls_k[order]
+                bb_k = bb_k[order]
+
+            for j in range(int(sc_k.shape[0])):
+                cx, cy, w, h = [float(v) for v in bb_k[j].tolist()]
+                dets.append(
+                    {
+                        "class_id": int(cls_k[j].item()),
+                        "score": float(sc_k[j].item()),
+                        "bbox": {"cx": float(cx), "cy": float(cy), "w": float(w), "h": float(h)},
+                    }
+                )
+        out.append({"image": image, "detections": dets})
+    return out
 
 
 def plan_accumulation_windows(*, max_micro_steps: int, grad_accum: int) -> list[int]:
@@ -845,11 +1621,20 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         known = {a.dest for a in parser._actions if getattr(a, "dest", None)}
         defaults: dict[str, Any] = {}
         for key, value in cfg.items():
-            if key in known:
-                defaults[key] = value
+            dest = str(key)
+            if dest == "grad_accum":
+                dest = "gradient_accumulation_steps"
+            if dest in known:
+                defaults[dest] = value
         parser.set_defaults(**defaults)
 
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    # Back-compat alias used throughout this script.
+    try:
+        args.grad_accum = int(getattr(args, "gradient_accumulation_steps", 1) or 1)
+    except Exception:
+        args.grad_accum = 1
+    return args
 
 
 def compute_grad_norm(parameters) -> "torch.Tensor":
@@ -875,7 +1660,16 @@ def compute_grad_norm(parameters) -> "torch.Tensor":
     return torch.norm(torch.stack(norms), 2)
 
 
-def load_checkpoint_into(model: "torch.nn.Module", optim: "torch.optim.Optimizer | None", path: str | Path) -> dict[str, Any]:
+def load_checkpoint_into(
+    model: "torch.nn.Module",
+    optim: "torch.optim.Optimizer | None",
+    path: str | Path,
+    *,
+    sched: Any | None = None,
+    scaler: Any | None = None,
+    ema: Any | None = None,
+    restore_rng: bool = True,
+) -> dict[str, Any]:
     path = Path(path)
     if not path.exists():
         raise SystemExit(f"checkpoint not found: {path}")
@@ -890,7 +1684,32 @@ def load_checkpoint_into(model: "torch.nn.Module", optim: "torch.optim.Optimizer
                 meta["optim_loaded"] = True
             except Exception:
                 meta["optim_loaded"] = False
+        if sched is not None and isinstance(obj.get("sched_state_dict"), dict):
+            try:
+                sched.load_state_dict(obj["sched_state_dict"])
+                meta["sched_loaded"] = True
+            except Exception:
+                meta["sched_loaded"] = False
+        if scaler is not None and isinstance(obj.get("scaler_state_dict"), dict):
+            try:
+                scaler.load_state_dict(obj["scaler_state_dict"])
+                meta["scaler_loaded"] = True
+            except Exception:
+                meta["scaler_loaded"] = False
+        if ema is not None and isinstance(obj.get("ema_state_dict"), dict):
+            try:
+                ema.load_state_dict(obj["ema_state_dict"])
+                meta["ema_loaded"] = True
+            except Exception:
+                meta["ema_loaded"] = False
+        if restore_rng:
+            try:
+                restore_rng_state(obj.get("rng_state"))
+                meta["rng_restored"] = True
+            except Exception:
+                meta["rng_restored"] = False
         meta.update({k: obj.get(k) for k in ("epoch", "global_step") if k in obj})
+        meta["schema_version"] = obj.get("schema_version")
         return meta
 
     # Assume weights-only state_dict
@@ -907,6 +1726,9 @@ def save_checkpoint_bundle(
     *,
     model: "torch.nn.Module",
     optim: "torch.optim.Optimizer | None",
+    sched: Any | None = None,
+    scaler: Any | None = None,
+    ema: Any | None = None,
     args: argparse.Namespace,
     epoch: int,
     global_step: int,
@@ -914,11 +1736,12 @@ def save_checkpoint_bundle(
     last_epoch_avg: float | None,
     last_loss_dict: dict[str, Any] | None,
     run_record: dict[str, Any] | None = None,
+    rng_state: dict[str, Any] | None = None,
 ) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     payload: dict[str, Any] = {
-        "schema_version": 1,
+        "schema_version": 2,
         "epoch": int(epoch),
         "global_step": int(global_step),
         "last_epoch_steps": int(last_epoch_steps),
@@ -935,6 +1758,23 @@ def save_checkpoint_bundle(
     }
     if optim is not None:
         payload["optim_state_dict"] = optim.state_dict()
+    if sched is not None and hasattr(sched, "state_dict"):
+        try:
+            payload["sched_state_dict"] = sched.state_dict()
+        except Exception:
+            payload["sched_state_dict"] = None
+    if scaler is not None and hasattr(scaler, "state_dict"):
+        try:
+            payload["scaler_state_dict"] = scaler.state_dict()
+        except Exception:
+            payload["scaler_state_dict"] = None
+    if ema is not None and hasattr(ema, "state_dict"):
+        try:
+            payload["ema_state_dict"] = ema.state_dict()
+        except Exception:
+            payload["ema_state_dict"] = None
+    if rng_state is not None:
+        payload["rng_state"] = rng_state
     if last_loss_dict is not None:
         payload["last_loss"] = {
             k: float(v.detach().cpu()) for k, v in last_loss_dict.items() if hasattr(v, "detach")
@@ -1212,6 +2052,94 @@ class ManifestDataset(Dataset):
                 image = image.masked_fill(mask.unsqueeze(0).expand_as(image), float(self.mim_mask_value))
 
         instances = record.get("labels") or []
+        if not instances:
+            mask_value = record.get("mask")
+            if mask_value is None:
+                mask_value = record.get("M")
+            if mask_value is None:
+                mask_value = record.get("mask_path")
+            mask_format = str(record.get("mask_format") or "")
+            if not mask_format and bool(record.get("mask_instances", False)):
+                mask_format = "instance"
+            mask_class_id = record.get("mask_class_id")
+
+            # Minimal mask-to-labels support for unit tests and inline-record use.
+            if mask_value is not None and isinstance(mask_value, (list, tuple)) and mask_value:
+                try:
+                    h = len(mask_value)
+                    w = len(mask_value[0]) if isinstance(mask_value[0], (list, tuple)) else 0
+                except Exception:
+                    h = 0
+                    w = 0
+
+                if h > 0 and w > 0:
+                    unique_vals = set()
+                    for row in mask_value:
+                        if not isinstance(row, (list, tuple)):
+                            continue
+                        for v in row:
+                            try:
+                                unique_vals.add(int(v))
+                            except Exception:
+                                continue
+                    unique_vals.discard(0)
+
+                    derived = []
+                    if mask_format.lower() in ("instance", "instances"):
+                        class_id = int(mask_class_id) if mask_class_id is not None else 0
+                        for inst_id in sorted(unique_vals):
+                            x_min = y_min = None
+                            x_max = y_max = None
+                            for y, row in enumerate(mask_value):
+                                if not isinstance(row, (list, tuple)):
+                                    continue
+                                for x, v in enumerate(row):
+                                    try:
+                                        if int(v) != int(inst_id):
+                                            continue
+                                    except Exception:
+                                        continue
+                                    x_min = x if x_min is None else min(x_min, x)
+                                    x_max = x if x_max is None else max(x_max, x)
+                                    y_min = y if y_min is None else min(y_min, y)
+                                    y_max = y if y_max is None else max(y_max, y)
+                            if x_min is None or y_min is None or x_max is None or y_max is None:
+                                continue
+                            cx = (x_min + x_max + 1) / 2.0 / float(w)
+                            cy = (y_min + y_max + 1) / 2.0 / float(h)
+                            bw = (x_max - x_min + 1) / float(w)
+                            bh = (y_max - y_min + 1) / float(h)
+                            derived.append({"class_id": class_id, "bbox": {"cx": cx, "cy": cy, "w": bw, "h": bh}})
+                    else:
+                        # Treat mask values as class ids (semantic mask -> one bbox per class).
+                        for class_val in sorted(unique_vals):
+                            x_min = y_min = None
+                            x_max = y_max = None
+                            for y, row in enumerate(mask_value):
+                                if not isinstance(row, (list, tuple)):
+                                    continue
+                                for x, v in enumerate(row):
+                                    try:
+                                        if int(v) != int(class_val):
+                                            continue
+                                    except Exception:
+                                        continue
+                                    x_min = x if x_min is None else min(x_min, x)
+                                    x_max = x if x_max is None else max(x_max, x)
+                                    y_min = y if y_min is None else min(y_min, y)
+                                    y_max = y if y_max is None else max(y_max, y)
+                            if x_min is None or y_min is None or x_max is None or y_max is None:
+                                continue
+                            cx = (x_min + x_max + 1) / 2.0 / float(w)
+                            cy = (y_min + y_max + 1) / 2.0 / float(h)
+                            bw = (x_max - x_min + 1) / float(w)
+                            bh = (y_max - y_min + 1) / float(h)
+                            derived.append(
+                                {"class_id": int(class_val), "bbox": {"cx": cx, "cy": cy, "w": bw, "h": bh}}
+                            )
+
+                    if derived:
+                        instances = derived
         if self.use_matcher:
             full = extract_full_gt_targets(record, num_instances=len(instances))
             gt_labels = []
@@ -1519,6 +2447,7 @@ class ManifestDataset(Dataset):
                 gt_D_obj_mask_t = torch.tensor(gt_D_obj_mask, dtype=torch.bool)
 
             targets = {
+                "image_path": str(record.get("image_path", "") or ""),
                 "gt_labels": gt_labels_t,
                 "gt_bbox": gt_bbox_t,
                 "gt_z": gt_z_t,
@@ -1563,6 +2492,7 @@ class ManifestDataset(Dataset):
             bbox[qi, 3] = float(bb.get("h", 0.0))
 
         targets = {"labels": labels, "bbox": bbox}
+        targets["image_path"] = str(record.get("image_path", "") or "")
         derpp_teacher = self._load_derpp_teacher(record.get(self.derpp_teacher_key))
         if derpp_teacher is not None:
             targets["derpp_teacher"] = derpp_teacher
@@ -1680,7 +2610,30 @@ def main(argv: list[str] | None = None) -> int:
     if torch is None:  # pragma: no cover
         raise SystemExit("torch is required; install requirements-test.txt")
     args = parse_args(sys.argv[1:] if argv is None else argv)
+    if bool(getattr(args, "use_amp", False)) and str(getattr(args, "amp", "none") or "none").lower() == "none":
+        args.amp = "fp16"
+
+    args, run_contract = apply_run_contract_defaults(args)
     args, run_dir = apply_run_dir_defaults(args)
+    artifact_root = (run_contract.get("run_dir") if run_contract else None) or run_dir
+
+    if run_contract is not None:
+        if not args.config:
+            raise SystemExit("--run-contract requires --config (train_setting.yaml).")
+        if args.config_version is None:
+            raise SystemExit("config_version is required for --run-contract (set config_version: 1 in YAML).")
+        if int(args.config_version) != 1:
+            raise SystemExit(f"unsupported config_version: {args.config_version} (expected: 1)")
+
+    if bool(getattr(args, "print_config", False)):
+        payload = vars(args)
+        try:
+            import yaml  # type: ignore
+
+            print(yaml.safe_dump(payload, sort_keys=True))
+        except Exception:
+            print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0
 
     # Optional DDP (torchrun sets WORLD_SIZE/RANK/LOCAL_RANK)
     world_size_env = int(os.environ.get("WORLD_SIZE", "1") or "1")
@@ -1717,10 +2670,43 @@ def main(argv: list[str] | None = None) -> int:
             "timestamp_utc": _now_utc(),
             "ddp": {"enabled": bool(ddp_enabled), "backend": (str(args.ddp_backend) if args.ddp_backend else None), "rank": rank, "local_rank": local_rank, "world_size": world_size},
             "cuda": collect_torch_cuda_meta(),
+            "host": {"hostname": socket.gethostname(), "pid": os.getpid()},
         },
     )
 
-    torch.manual_seed(args.seed)
+    seed = int(getattr(args, "seed", 0) or 0)
+    random.seed(seed)
+    try:
+        import numpy as np  # type: ignore
+
+        np.random.seed(seed)
+    except Exception:
+        pass
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        try:
+            torch.cuda.manual_seed_all(seed)
+        except Exception:
+            pass
+    if bool(getattr(args, "deterministic", False)) and hasattr(torch.backends, "cudnn"):
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+
+    if is_main and getattr(args, "config_resolved_out", None):
+        out_path = Path(str(args.config_resolved_out))
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        payload = vars(args)
+        try:
+            import yaml  # type: ignore
+
+            out_path.write_text(yaml.safe_dump(payload, sort_keys=True), encoding="utf-8")
+        except Exception:
+            out_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+
+    if is_main and getattr(args, "run_meta_out", None):
+        out_path = Path(str(args.run_meta_out))
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(json.dumps(run_record, indent=2, sort_keys=True), encoding="utf-8")
 
     if args.dataset_root:
         dataset_root = Path(args.dataset_root)
@@ -1731,14 +2717,15 @@ def main(argv: list[str] | None = None) -> int:
 
     model_cfg = None
     loss_cfg = None
-    if args.config:
+    model_cfg_path = getattr(args, "model_config", None) or getattr(args, "config", None)
+    if model_cfg_path:
         try:
             from rtdetr_pose.config import load_config
         except Exception:
             load_config = None
         if load_config is not None:
             try:
-                cfg_obj = load_config(args.config)
+                cfg_obj = load_config(model_cfg_path)
                 model_cfg = cfg_obj.model
                 loss_cfg = getattr(cfg_obj, "loss", None)
             except Exception:
@@ -1810,6 +2797,26 @@ def main(argv: list[str] | None = None) -> int:
             + " ".join(f"{key}={value}" for key, value in sorted(stats.items()))
         )
 
+    val_split = str(args.val_split) if args.val_split else None
+    if val_split is None:
+        candidate = dataset_root / "images" / "val2017"
+        if candidate.exists():
+            val_split = "val2017"
+
+    val_records: list[dict[str, Any]] = []
+    if val_split:
+        try:
+            val_manifest = build_manifest(dataset_root, split=val_split)
+            val_records = val_manifest.get("images") or []
+            if not isinstance(val_records, list):
+                val_records = []
+        except Exception:
+            val_records = []
+
+    if val_records and int(getattr(args, "val_max_images", 0) or 0) > 0:
+        val_records = list(val_records)[: int(args.val_max_images)]
+    val_records_map = flatten_records_for_map(val_records)
+
     derpp_keys = ()
     if bool(args.derpp):
         derpp_keys = tuple(k.strip() for k in str(args.derpp_keys).split(",") if k.strip())
@@ -1859,16 +2866,22 @@ def main(argv: list[str] | None = None) -> int:
             seed=int(args.seed),
             drop_last=False,
         )
-    loader = DataLoader(
-        ds,
-        batch_size=args.batch_size,
-        shuffle=(bool(args.shuffle) if sampler is None else False),
-        sampler=sampler,
-        num_workers=0,
-        collate_fn=collate,
-        drop_last=False,
-        generator=(torch.Generator().manual_seed(int(args.seed)) if args.deterministic and sampler is None else None),
-    )
+    num_workers = int(getattr(args, "num_workers", 0) or 0)
+    persistent_workers = bool(getattr(args, "persistent_workers", False)) if num_workers > 0 else False
+    loader_kwargs: dict[str, Any] = {
+        "batch_size": int(args.batch_size),
+        "shuffle": (bool(args.shuffle) if sampler is None else False),
+        "sampler": sampler,
+        "num_workers": num_workers,
+        "collate_fn": collate,
+        "drop_last": False,
+        "pin_memory": bool(getattr(args, "pin_memory", False)),
+        "persistent_workers": persistent_workers,
+        "generator": (torch.Generator().manual_seed(int(args.seed)) if args.deterministic and sampler is None else None),
+    }
+    if num_workers > 0:
+        loader_kwargs["prefetch_factor"] = int(getattr(args, "prefetch_factor", 2) or 2)
+    loader = DataLoader(ds, **loader_kwargs)
 
     model_num_queries = model_cfg.num_queries if model_cfg is not None else args.num_queries
     args.num_queries = int(model_num_queries)
@@ -1942,12 +2955,85 @@ def main(argv: list[str] | None = None) -> int:
                 f"trainable_params={int(count_trainable_params(unwrap_model(model)))} trainable_info={trainable_info}",
             )
 
-    optim = torch.optim.AdamW(model.parameters(), lr=args.lr)
+    ema = None
+    if bool(getattr(args, "use_ema", False)):
+        ema = EMA(unwrap_model(model), decay=float(getattr(args, "ema_decay", 0.999)))
+
+    optim = build_optimizer(
+        unwrap_model(model),
+        optimizer=str(getattr(args, "optimizer", "adamw") or "adamw"),
+        lr=float(getattr(args, "lr", 1e-4) or 1e-4),
+        weight_decay=float(getattr(args, "weight_decay", 0.01) or 0.0),
+        momentum=float(getattr(args, "momentum", 0.9) or 0.0),
+        nesterov=bool(getattr(args, "nesterov", False)),
+        use_param_groups=bool(getattr(args, "use_param_groups", False)),
+        backbone_lr_mult=float(getattr(args, "backbone_lr_mult", 1.0) or 1.0),
+        head_lr_mult=float(getattr(args, "head_lr_mult", 1.0) or 1.0),
+        backbone_wd_mult=float(getattr(args, "backbone_wd_mult", 1.0) or 1.0),
+        head_wd_mult=float(getattr(args, "head_wd_mult", 1.0) or 1.0),
+        wd_exclude_bias=bool(getattr(args, "wd_exclude_bias", True)),
+        wd_exclude_norm=bool(getattr(args, "wd_exclude_norm", True)),
+    )
+
+    micro_steps_per_epoch = int(getattr(args, "max_steps", 0) or 0)
+    grad_accum = max(1, int(getattr(args, "grad_accum", 1) or 1))
+    optim_steps_per_epoch = max(1, (micro_steps_per_epoch + grad_accum - 1) // grad_accum) if micro_steps_per_epoch > 0 else 1
+    total_optim_steps = max(1, int(getattr(args, "epochs", 1) or 1) * optim_steps_per_epoch)
+    milestones = parse_milestones(getattr(args, "scheduler_milestones", None))
+    sched = build_scheduler(
+        optim,
+        scheduler=str(getattr(args, "scheduler", "none") or "none"),
+        total_steps=int(total_optim_steps),
+        warmup_steps=int(getattr(args, "lr_warmup_steps", 0) or 0),
+        warmup_init_lr=float(getattr(args, "lr_warmup_init", 0.0) or 0.0),
+        min_lr=float(getattr(args, "min_lr", 0.0) or 0.0),
+        milestones=milestones,
+        gamma=float(getattr(args, "scheduler_gamma", 0.1) or 0.1),
+    )
+
+    # AMP setup (needed early so resume can restore scaler state).
+    amp_mode = str(args.amp or "none").lower()
+    scaler = None
+    if amp_mode != "none" and device.type != "cuda":
+        if is_main:
+            print("warning: --amp requested on non-cuda device; disabling AMP")
+        amp_mode = "none"
+        args.amp = "none"
+    if amp_mode != "none":
+        if amp_mode == "fp16":
+            if hasattr(torch, "amp") and hasattr(torch.amp, "GradScaler"):
+                try:
+                    scaler = torch.amp.GradScaler("cuda")
+                except TypeError:
+                    scaler = torch.amp.GradScaler(device="cuda")
+            else:  # pragma: no cover
+                scaler = torch.cuda.amp.GradScaler()
+            if hasattr(torch, "amp") and hasattr(torch.amp, "autocast"):
+                autocast = torch.amp.autocast(device_type="cuda", dtype=torch.float16)
+            else:  # pragma: no cover
+                autocast = torch.cuda.amp.autocast(dtype=torch.float16)
+        elif amp_mode == "bf16":
+            if hasattr(torch, "amp") and hasattr(torch.amp, "autocast"):
+                autocast = torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16)
+            else:  # pragma: no cover
+                autocast = torch.cuda.amp.autocast(dtype=torch.bfloat16)
+        else:
+            raise SystemExit(f"unknown --amp mode: {args.amp}")
+    else:
+        autocast = nullcontext()
 
     start_epoch = 0
     global_step = 0
     if args.resume_from:
-        meta = load_checkpoint_into(model, optim, args.resume_from)
+        meta = load_checkpoint_into(
+            unwrap_model(model),
+            optim,
+            args.resume_from,
+            sched=sched,
+            scaler=scaler,
+            ema=ema,
+            restore_rng=True,
+        )
         if meta.get("epoch") is not None:
             try:
                 start_epoch = int(meta["epoch"]) + 1
@@ -2068,40 +3154,85 @@ def main(argv: list[str] | None = None) -> int:
             output_device=int(local_rank) if device.type == "cuda" else None,
         )
 
-    # AMP setup
-    amp_mode = str(args.amp or "none").lower()
-    scaler = None
-    if amp_mode != "none":
-        if device.type != "cuda":
-            raise SystemExit("--amp requires --device cuda")
-        if amp_mode == "fp16":
-            if hasattr(torch, "amp") and hasattr(torch.amp, "GradScaler"):
-                try:
-                    scaler = torch.amp.GradScaler("cuda")
-                except TypeError:
-                    scaler = torch.amp.GradScaler(device="cuda")
-            else:  # pragma: no cover
-                scaler = torch.cuda.amp.GradScaler()
-            if hasattr(torch, "amp") and hasattr(torch.amp, "autocast"):
-                autocast = torch.amp.autocast(device_type="cuda", dtype=torch.float16)
-            else:  # pragma: no cover
-                autocast = torch.cuda.amp.autocast(dtype=torch.float16)
-        elif amp_mode == "bf16":
-            if hasattr(torch, "amp") and hasattr(torch.amp, "autocast"):
-                autocast = torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16)
-            else:  # pragma: no cover
-                autocast = torch.cuda.amp.autocast(dtype=torch.bfloat16)
-        else:
-            raise SystemExit(f"unknown --amp mode: {args.amp}")
-    else:
-        autocast = nullcontext()
+    terminate_requested = False
+
+    def _handle_term(signum, _frame):  # type: ignore[no-untyped-def]
+        nonlocal terminate_requested
+        terminate_requested = True
+        if is_main:
+            print(f"signal_received={int(signum)} saving_last_checkpoint_and_exiting")
+
+    try:
+        signal.signal(signal.SIGTERM, _handle_term)
+        signal.signal(signal.SIGINT, _handle_term)
+    except Exception:
+        pass
+
+    val_loader = None
+    if val_records:
+        val_ds = ManifestDataset(
+            val_records,
+            num_queries=args.num_queries,
+            num_classes=args.num_classes,
+            num_keypoints=args.num_keypoints,
+            image_size=args.image_size,
+            seed=args.seed,
+            use_matcher=False,
+            synthetic_pose=False,
+            z_from_dobj=False,
+            load_aux=False,
+            real_images=bool(args.real_images),
+            multiscale=False,
+            scale_min=1.0,
+            scale_max=1.0,
+            hflip_prob=0.0,
+            intrinsics_jitter=False,
+            jitter_dfx=0.0,
+            jitter_dfy=0.0,
+            jitter_dcx=0.0,
+            jitter_dcy=0.0,
+            sim_jitter=False,
+            sim_jitter_profile=None,
+            sim_jitter_extrinsics=False,
+            extrinsics_jitter=False,
+            jitter_dx=0.0,
+            jitter_dy=0.0,
+            jitter_dz=0.0,
+            jitter_droll=0.0,
+            jitter_dpitch=0.0,
+            jitter_dyaw=0.0,
+        )
+        val_batch_size = int(args.batch_size)
+        if args.val_batch_size is not None:
+            try:
+                val_batch_size = int(args.val_batch_size)
+            except Exception:
+                val_batch_size = int(args.batch_size)
+        val_loader_kwargs = dict(loader_kwargs)
+        val_loader_kwargs.update(
+            {
+                "batch_size": int(val_batch_size),
+                "shuffle": False,
+                "sampler": None,
+            }
+        )
+        val_loader = DataLoader(val_ds, **val_loader_kwargs)
 
     model.train()
     last_loss_dict = None
     last_epoch_avg = None
     last_epoch_steps = 0
     last_grad_norm = None
+    non_finite_skips = 0
+    best_map50_95 = -float("inf")
+    last_data_time_s = None
+    last_step_time_s = None
+    last_throughput = None
+    last_max_vram_mb = None
+    stop_training = False
     for epoch in range(int(start_epoch), int(args.epochs)):
+        if stop_training:
+            break
         if sampler is not None:
             sampler.set_epoch(int(epoch))
         if args.hflip_prob_start is not None and args.hflip_prob_end is not None:
@@ -2123,8 +3254,37 @@ def main(argv: list[str] | None = None) -> int:
         step_in_window = 0
         window_size = windows[0] if windows else int(grad_accum)
 
+        prev_step_end = time.time()
         for images, targets in loader:
             if max_micro_steps and steps >= int(max_micro_steps):
+                break
+
+            step_start = time.time()
+            data_time_s = float(step_start - prev_step_end)
+            if device.type == "cuda":
+                try:
+                    torch.cuda.reset_peak_memory_stats(device)
+                except Exception:
+                    pass
+            if terminate_requested:
+                if is_main and args.checkpoint_bundle_out:
+                    save_checkpoint_bundle(
+                        args.checkpoint_bundle_out,
+                        model=unwrap_model(model),
+                        optim=optim,
+                        sched=sched,
+                        scaler=scaler,
+                        ema=ema,
+                        args=args,
+                        epoch=int(epoch),
+                        global_step=int(global_step),
+                        last_epoch_steps=int(steps),
+                        last_epoch_avg=(running / max(1, steps)) if steps > 0 else None,
+                        last_loss_dict=last_loss_dict,
+                        run_record=run_record,
+                        rng_state=collect_rng_state(),
+                    )
+                stop_training = True
                 break
 
             if step_in_window == 0:
@@ -2137,6 +3297,9 @@ def main(argv: list[str] | None = None) -> int:
                 per_sample_targets = None
 
             sync_step = step_in_window == int(window_size) - 1
+            skip_backward = False
+            skip_optim_step = False
+            force_sync = False
             ddp_nosync = ddp_enabled and hasattr(model, "no_sync") and not sync_step
             sync_context = model.no_sync() if ddp_nosync else nullcontext()
 
@@ -2378,13 +3541,52 @@ def main(argv: list[str] | None = None) -> int:
                     loss_dict["loss"] = loss
                     last_loss_dict = loss_dict
 
-                    if bool(args.stop_on_non_finite_loss):
-                        if not bool(torch.isfinite(loss).all()):
-                            try:
-                                loss_scalar = float(loss.detach().cpu())
-                            except Exception:
-                                loss_scalar = None
+                    if not bool(torch.isfinite(loss).all()):
+                        try:
+                            loss_scalar = float(loss.detach().cpu())
+                        except Exception:
+                            loss_scalar = None
+
+                        if bool(args.stop_on_non_finite_loss):
                             raise SystemExit(f"non-finite loss at epoch={epoch} step={steps + 1}: {loss_scalar}")
+
+                        non_finite_skips += 1
+                        max_skips = max(1, int(getattr(args, "non_finite_max_skips", 3) or 3))
+                        decay = float(getattr(args, "non_finite_lr_decay", 0.5) or 0.0)
+                        if 0.0 < decay < 1.0:
+                            for group in optim.param_groups:
+                                try:
+                                    group["lr"] = float(group.get("lr", 0.0)) * decay
+                                except Exception:
+                                    pass
+                        if is_main and args.metrics_jsonl:
+                            lr_now = None
+                            try:
+                                lr_now = float(optim.param_groups[0].get("lr"))
+                            except Exception:
+                                lr_now = None
+                            metrics = {"non_finite_skips": int(non_finite_skips)}
+                            if lr_now is not None:
+                                metrics["lr"] = float(lr_now)
+                            report = build_report(
+                                losses={"loss": loss_scalar} if loss_scalar is not None else {},
+                                metrics=metrics,
+                                meta={
+                                    "kind": "non_finite_loss",
+                                    "epoch": int(epoch),
+                                    "step": int(steps + 1),
+                                    "optim_step": int(global_step),
+                                },
+                            )
+                            append_jsonl(args.metrics_jsonl, report)
+                        optim.zero_grad(set_to_none=True)
+                        skip_backward = True
+                        skip_optim_step = True
+                        force_sync = True
+                        if non_finite_skips >= max_skips:
+                            raise SystemExit(
+                                f"non-finite loss persisted: skips={non_finite_skips} (max={max_skips})"
+                            )
 
                     if steps == 0 and args.debug_losses and is_main:
                         printable = {
@@ -2394,16 +3596,21 @@ def main(argv: list[str] | None = None) -> int:
                         }
                         print("loss_breakdown", " ".join(f"{k}={v:.6g}" for k, v in sorted(printable.items())))
 
-                    loss_value = float(loss.detach().cpu())
-                    running += loss_value
-                    loss_for_backward = loss / float(window_size)
+                    loss_for_backward = None
+                    if not skip_backward:
+                        loss_value = float(loss.detach().cpu())
+                        running += loss_value
+                        loss_for_backward = loss / float(window_size)
 
-                if scaler is not None:
-                    scaler.scale(loss_for_backward).backward()
-                else:
-                    loss_for_backward.backward()
+                if not skip_backward and loss_for_backward is not None:
+                    if scaler is not None:
+                        scaler.scale(loss_for_backward).backward()
+                    else:
+                        loss_for_backward.backward()
 
-            if sync_step:
+            sync_now = bool(sync_step or force_sync)
+            did_optim_step = False
+            if sync_now:
                 if scaler is not None:
                     scaler.unscale_(optim)
 
@@ -2423,58 +3630,127 @@ def main(argv: list[str] | None = None) -> int:
                     except Exception:
                         last_grad_norm = None
 
-                if scaler is not None:
-                    scaler.step(optim)
-                    scaler.update()
-                else:
-                    optim.step()
+                if grad_norm is not None and not bool(torch.isfinite(grad_norm).all()):
+                    if bool(args.stop_on_non_finite_loss):
+                        raise SystemExit(f"non-finite grad_norm at epoch={epoch} step={steps + 1}: {last_grad_norm}")
+                    non_finite_skips += 1
+                    max_skips = max(1, int(getattr(args, "non_finite_max_skips", 3) or 3))
+                    decay = float(getattr(args, "non_finite_lr_decay", 0.5) or 0.0)
+                    if 0.0 < decay < 1.0:
+                        for group in optim.param_groups:
+                            try:
+                                group["lr"] = float(group.get("lr", 0.0)) * decay
+                            except Exception:
+                                pass
+                    if is_main and args.metrics_jsonl:
+                        lr_now = None
+                        try:
+                            lr_now = float(optim.param_groups[0].get("lr"))
+                        except Exception:
+                            lr_now = None
+                        metrics = {"non_finite_skips": int(non_finite_skips)}
+                        if lr_now is not None:
+                            metrics["lr"] = float(lr_now)
+                        report = build_report(
+                            losses={},
+                            metrics=metrics,
+                            meta={
+                                "kind": "non_finite_grad",
+                                "epoch": int(epoch),
+                                "step": int(steps + 1),
+                                "optim_step": int(global_step),
+                            },
+                        )
+                        append_jsonl(args.metrics_jsonl, report)
+                    optim.zero_grad(set_to_none=True)
+                    skip_optim_step = True
+                    if non_finite_skips >= max_skips:
+                        raise SystemExit(
+                            f"non-finite grad persisted: skips={non_finite_skips} (max={max_skips})"
+                        )
 
-                if si_accum is not None:
-                    si_accum.update_after_step(unwrap_model(model))
+                if not skip_backward and not skip_optim_step:
+                    if scaler is not None:
+                        scaler.step(optim)
+                        scaler.update()
+                    else:
+                        optim.step()
+                    did_optim_step = True
 
-                global_step += 1
-                if args.lr_warmup_steps and int(args.lr_warmup_steps) > 0:
-                    lr_now = compute_warmup_lr(
-                        float(args.lr),
-                        int(global_step),
-                        int(args.lr_warmup_steps),
-                        float(args.lr_warmup_init),
-                    )
-                    for group in optim.param_groups:
-                        group["lr"] = lr_now
+                if did_optim_step:
+                    if sched is not None:
+                        try:
+                            sched.step()
+                        except Exception:
+                            pass
+
+                    if ema is not None:
+                        try:
+                            ema.update()
+                        except Exception:
+                            pass
+
+                    if si_accum is not None:
+                        si_accum.update_after_step(unwrap_model(model))
+
+                    non_finite_skips = 0
+                    global_step += 1
+
+            step_end = time.time()
+            last_data_time_s = float(data_time_s)
+            last_step_time_s = float(step_end - step_start)
+            prev_step_end = step_end
+            if last_step_time_s > 0:
+                scale = int(world_size) if ddp_enabled else 1
+                last_throughput = float(int(images.shape[0]) * scale / last_step_time_s)
+            if device.type == "cuda":
+                try:
+                    last_max_vram_mb = float(torch.cuda.max_memory_allocated(device) / (1024 * 1024))
+                except Exception:
+                    last_max_vram_mb = None
 
             steps += 1
 
+            avg = running / max(1, steps)
             if is_main and (steps == 1 or (args.log_every and steps % int(args.log_every) == 0)):
-                avg = running / steps
                 print(f"epoch={epoch} step={steps} optim_step={global_step} loss={avg:.4f}")
-                if args.metrics_jsonl:
-                    losses_out = {k: float(v.detach().cpu()) for k, v in last_loss_dict.items() if hasattr(v, "detach")} if last_loss_dict is not None else {}
+            if is_main and args.metrics_jsonl and did_optim_step:
+                losses_out = {k: float(v.detach().cpu()) for k, v in last_loss_dict.items() if hasattr(v, "detach")} if last_loss_dict is not None else {}
+                lr_now = None
+                try:
+                    lr_now = float(optim.param_groups[0].get("lr"))
+                except Exception:
                     lr_now = None
-                    try:
-                        lr_now = float(optim.param_groups[0].get("lr"))
-                    except Exception:
-                        lr_now = None
-                    metrics = {"loss_avg": float(avg), "optim_step": int(global_step)}
-                    if last_grad_norm is not None:
-                        metrics["grad_norm"] = float(last_grad_norm)
-                    if lr_now is not None:
-                        metrics["lr"] = float(lr_now)
-                    report = build_report(
-                        losses=losses_out,
-                        metrics=metrics,
-                        meta={
-                            "kind": "train_step",
-                            "epoch": int(epoch),
-                            "step": int(steps),
-                            "optim_step": int(global_step),
-                        },
-                    )
-                    append_jsonl(args.metrics_jsonl, report)
+                metrics = {"loss_avg": float(avg), "optim_step": int(global_step)}
+                if last_grad_norm is not None:
+                    metrics["grad_norm"] = float(last_grad_norm)
+                if lr_now is not None:
+                    metrics["lr"] = float(lr_now)
+                if last_data_time_s is not None:
+                    metrics["data_time_s"] = float(last_data_time_s)
+                if last_step_time_s is not None:
+                    metrics["step_time_s"] = float(last_step_time_s)
+                if last_throughput is not None:
+                    metrics["throughput_img_s"] = float(last_throughput)
+                if last_max_vram_mb is not None:
+                    metrics["max_vram_mb"] = float(last_max_vram_mb)
+                if ema is not None:
+                    metrics["ema_decay"] = float(getattr(ema, "decay", 0.0))
+                report = build_report(
+                    losses=losses_out,
+                    metrics=metrics,
+                    meta={
+                        "kind": "train_step",
+                        "epoch": int(epoch),
+                        "step": int(steps),
+                        "optim_step": int(global_step),
+                    },
+                )
+                append_jsonl(args.metrics_jsonl, report)
 
             if (
                 is_main
-                and sync_step
+                and did_optim_step
                 and args.checkpoint_bundle_out
                 and args.checkpoint_every
                 and int(args.checkpoint_every) > 0
@@ -2487,6 +3763,9 @@ def main(argv: list[str] | None = None) -> int:
                         stepped,
                         model=unwrap_model(model),
                         optim=optim,
+                        sched=sched,
+                        scaler=scaler,
+                        ema=ema,
                         args=args,
                         epoch=epoch,
                         global_step=global_step,
@@ -2494,9 +3773,36 @@ def main(argv: list[str] | None = None) -> int:
                         last_epoch_avg=(running / max(1, steps)),
                         last_loss_dict=last_loss_dict,
                         run_record=run_record,
+                        rng_state=collect_rng_state(),
                     )
 
-            if sync_step:
+            if (
+                is_main
+                and did_optim_step
+                and args.checkpoint_bundle_out
+                and args.save_last_every
+                and int(args.save_last_every) > 0
+            ):
+                every = int(args.save_last_every)
+                if global_step % every == 0:
+                    save_checkpoint_bundle(
+                        args.checkpoint_bundle_out,
+                        model=unwrap_model(model),
+                        optim=optim,
+                        sched=sched,
+                        scaler=scaler,
+                        ema=ema,
+                        args=args,
+                        epoch=epoch,
+                        global_step=global_step,
+                        last_epoch_steps=steps,
+                        last_epoch_avg=(running / max(1, steps)),
+                        last_loss_dict=last_loss_dict,
+                        run_record=run_record,
+                        rng_state=collect_rng_state(),
+                    )
+
+            if sync_now:
                 window_idx += 1
                 step_in_window = 0
             else:
@@ -2509,12 +3815,119 @@ def main(argv: list[str] | None = None) -> int:
             print(f"epoch={epoch} done steps={steps} optim_step={global_step} loss={avg:.4f}")
         if is_main and args.metrics_jsonl and last_loss_dict is not None:
             losses_out = {k: float(v.detach().cpu()) for k, v in last_loss_dict.items() if hasattr(v, "detach")}
+            lr_now = None
+            try:
+                lr_now = float(optim.param_groups[0].get("lr"))
+            except Exception:
+                lr_now = None
+            metrics = {"loss_avg": float(avg), "steps": int(steps)}
+            if last_grad_norm is not None:
+                metrics["grad_norm"] = float(last_grad_norm)
+            if lr_now is not None:
+                metrics["lr"] = float(lr_now)
+            if last_data_time_s is not None:
+                metrics["data_time_s"] = float(last_data_time_s)
+            if last_step_time_s is not None:
+                metrics["step_time_s"] = float(last_step_time_s)
+            if last_throughput is not None:
+                metrics["throughput_img_s"] = float(last_throughput)
+            if last_max_vram_mb is not None:
+                metrics["max_vram_mb"] = float(last_max_vram_mb)
+            if ema is not None:
+                metrics["ema_decay"] = float(getattr(ema, "decay", 0.0))
             report = build_report(
                 losses=losses_out,
-                metrics={"loss_avg": float(avg), "steps": int(steps)},
+                metrics=metrics,
                 meta={"kind": "train_epoch", "epoch": int(epoch)},
             )
             append_jsonl(args.metrics_jsonl, report)
+
+        val_every = int(getattr(args, "val_every", 0) or 0)
+        val_due = bool(val_every > 0 and ((int(epoch) + 1) % val_every == 0 or (int(epoch) + 1) >= int(args.epochs)))
+        if getattr(args, "val_metrics_jsonl", None) and val_due:
+            if ddp_enabled and not is_main:
+                torch.distributed.barrier()
+            if is_main:
+                if val_loader is None or not val_records_map:
+                    report = build_report(
+                        losses={},
+                        metrics={"skipped": True, "reason": "no_val_split"},
+                        meta={"kind": "val_skipped", "epoch": int(epoch), "optim_step": int(global_step)},
+                    )
+                    append_jsonl(args.val_metrics_jsonl, report)
+                else:
+                    model_was_training = bool(model.training)
+                    model.eval()
+                    if ema is not None and bool(getattr(args, "ema_eval", False)):
+                        ema.apply_shadow()
+                    preds: list[dict[str, Any]] = []
+                    thresholds = [0.5 + 0.05 * i for i in range(10)]
+                    with torch.no_grad():
+                        for v_images, v_targets in val_loader:
+                            v_images = v_images.to(device)
+                            v_out = model(v_images)
+                            image_paths = []
+                            if isinstance(v_targets, list):
+                                image_paths = [
+                                    str(t.get("image_path", "") or "")
+                                    for t in v_targets
+                                    if isinstance(t, dict)
+                                ]
+                            elif isinstance(v_targets, dict):
+                                per = v_targets.get("per_sample")
+                                if isinstance(per, list):
+                                    image_paths = [
+                                        str(t.get("image_path", "") or "")
+                                        for t in per
+                                        if isinstance(t, dict)
+                                    ]
+                            preds.extend(
+                                decode_detections_from_outputs(
+                                    v_out,
+                                    image_paths,
+                                    score_thresh=float(getattr(args, "val_score_thresh", 0.001) or 0.0),
+                                    topk=int(getattr(args, "val_topk", 300) or 300),
+                                )
+                            )
+                    res = evaluate_map(val_records_map, preds, iou_thresholds=thresholds)
+                    map50_95 = float(getattr(res, "map50_95", 0.0))
+                    is_best = bool(map50_95 > best_map50_95)
+                    if is_best:
+                        best_map50_95 = float(map50_95)
+                        if getattr(args, "best_checkpoint_out", None):
+                            save_checkpoint_bundle(
+                                args.best_checkpoint_out,
+                                model=unwrap_model(model),
+                                optim=optim,
+                                sched=sched,
+                                scaler=scaler,
+                                ema=ema,
+                                args=args,
+                                epoch=int(epoch),
+                                global_step=int(global_step),
+                                last_epoch_steps=int(last_epoch_steps),
+                                last_epoch_avg=last_epoch_avg,
+                                last_loss_dict=last_loss_dict,
+                                run_record=run_record,
+                                rng_state=collect_rng_state(),
+                            )
+                    report = build_report(
+                        losses={},
+                        metrics={
+                            "map50": float(getattr(res, "map50", 0.0)),
+                            "map50_95": float(map50_95),
+                            "images": int(len(val_records_map)),
+                            "best": bool(is_best),
+                        },
+                        meta={"kind": "val_epoch", "epoch": int(epoch), "optim_step": int(global_step)},
+                    )
+                    append_jsonl(args.val_metrics_jsonl, report)
+                    if ema is not None and bool(getattr(args, "ema_eval", False)):
+                        ema.restore()
+                    if model_was_training:
+                        model.train()
+            if ddp_enabled and is_main:
+                torch.distributed.barrier()
 
     if is_main and (args.metrics_json or args.metrics_csv):
         losses_out = {}
@@ -2543,6 +3956,9 @@ def main(argv: list[str] | None = None) -> int:
             args.checkpoint_bundle_out,
             model=unwrap_model(model),
             optim=optim,
+            sched=sched,
+            scaler=scaler,
+            ema=ema,
             args=args,
             epoch=int(args.epochs) - 1,
             global_step=int(global_step),
@@ -2550,7 +3966,32 @@ def main(argv: list[str] | None = None) -> int:
             last_epoch_avg=last_epoch_avg,
             last_loss_dict=last_loss_dict,
             run_record=run_record,
+            rng_state=collect_rng_state(),
         )
+
+    if is_main and getattr(args, "best_checkpoint_out", None) and args.checkpoint_bundle_out:
+        best_path = Path(str(args.best_checkpoint_out))
+        if not best_path.exists():
+            best_path.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                shutil.copyfile(str(args.checkpoint_bundle_out), str(best_path))
+            except Exception:
+                save_checkpoint_bundle(
+                    str(best_path),
+                    model=unwrap_model(model),
+                    optim=optim,
+                    sched=sched,
+                    scaler=scaler,
+                    ema=ema,
+                    args=args,
+                    epoch=int(args.epochs) - 1,
+                    global_step=int(global_step),
+                    last_epoch_steps=int(last_epoch_steps),
+                    last_epoch_avg=last_epoch_avg,
+                    last_loss_dict=last_loss_dict,
+                    run_record=run_record,
+                    rng_state=collect_rng_state(),
+                )
 
     if is_main and ewc_accum is not None and args.ewc_state_out:
         save_ewc_state(str(args.ewc_state_out), ewc_accum.finalize(unwrap_model(model)))
@@ -2558,6 +3999,7 @@ def main(argv: list[str] | None = None) -> int:
     if is_main and si_accum is not None and args.si_state_out:
         save_si_state(str(args.si_state_out), si_accum.finalize(unwrap_model(model)))
 
+    onnx_path = None
     if is_main and args.onnx_out:
         try:
             from rtdetr_pose.export import export_onnx
@@ -2566,6 +4008,10 @@ def main(argv: list[str] | None = None) -> int:
 
         onnx_path = Path(str(args.onnx_out))
         onnx_path.parent.mkdir(parents=True, exist_ok=True)
+        if run_contract is not None and getattr(args, "best_checkpoint_out", None):
+            best_path = Path(str(args.best_checkpoint_out))
+            if best_path.exists():
+                load_checkpoint_into(unwrap_model(model), None, str(best_path), restore_rng=False)
         dummy = torch.zeros((1, 3, int(args.image_size), int(args.image_size)), dtype=torch.float32, device=device)
         export_onnx(
             unwrap_model(model).eval(),
@@ -2585,6 +4031,39 @@ def main(argv: list[str] | None = None) -> int:
             "run_record": run_record,
         }
         meta_path.write_text(json.dumps(meta, indent=2, sort_keys=True), encoding="utf-8")
+
+    parity_out = getattr(args, "parity_json_out", None)
+    if is_main and parity_out:
+        out_path = Path(str(parity_out))
+        policy = str(args.parity_policy or ("fail" if run_contract is not None else "warn"))
+        if onnx_path is None:
+            report = {
+                "timestamp_utc": _now_utc(),
+                "onnx": None,
+                "thresholds": {"score_atol": float(args.parity_score_atol), "bbox_atol": float(args.parity_bbox_atol)},
+                "policy": policy,
+                "passed": False,
+                "available": False,
+                "reason": "onnx_export_disabled",
+                "run_record": run_record,
+            }
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
+            if policy == "fail":
+                raise SystemExit(f"ONNX parity requested but ONNX export disabled. See: {out_path}")
+            print(f"WARNING: ONNX parity requested but ONNX export disabled. See: {out_path}", file=sys.stderr)
+        else:
+            run_onnxrt_parity(
+                model=unwrap_model(model),
+                onnx_path=onnx_path,
+                image_size=int(args.image_size),
+                seed=int(getattr(args, "seed", 0) or 0),
+                score_atol=float(args.parity_score_atol),
+                bbox_atol=float(args.parity_bbox_atol),
+                out_path=out_path,
+                policy=policy,
+                run_record=run_record,
+            )
 
     if is_main and run_dir is not None:
         (run_dir / "run_record.json").write_text(

@@ -19,7 +19,8 @@ class TestModelShapes(unittest.TestCase):
     @unittest.skipIf(torch is None, "torch not installed")
     def test_forward_shapes(self):
         model = RTDETRPose(
-            num_classes=5,
+            # RT-DETR-style: include an explicit "no-object" / background class.
+            num_classes=6,
             hidden_dim=64,
             num_queries=10,
             num_decoder_layers=2,
@@ -27,7 +28,6 @@ class TestModelShapes(unittest.TestCase):
         )
         x = torch.zeros(2, 3, 64, 64)
         out = model(x)
-        # Factory reserves the last class as "no-object"/background.
         self.assertEqual(out["logits"].shape, (2, 10, 6))
         self.assertEqual(out["bbox"].shape, (2, 10, 4))
         self.assertEqual(out["log_z"].shape, (2, 10, 1))
@@ -51,7 +51,8 @@ class TestModelShapes(unittest.TestCase):
         model = build_model(cfg)
         x = torch.zeros(2, 3, 64, 64)
         out = model(x)
-        self.assertEqual(out["logits"].shape, (2, 10, 5))
+        # build_model() treats cfg.num_classes as foreground and adds +1 background.
+        self.assertEqual(out["logits"].shape, (2, 10, 6))
         self.assertEqual(out["bbox"].shape, (2, 10, 4))
 
 

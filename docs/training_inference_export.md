@@ -2,8 +2,8 @@
 
 This note provides a minimal, end-to-end path for training, inference, and exporting predictions.
 
-Note: the in-repo trainer under `rtdetr_pose/` is a **scaffold** (wires data/loss/export/metrics),
-not a production-grade training stack.
+Note: the in-repo trainer under `rtdetr_pose/` is scaffold-first, but supports a **production-style run contract**
+(fixed artifact paths, full resume, safety guards, export + parity checks).
 
 ## TL;DR (copy-paste)
 
@@ -69,6 +69,27 @@ Common options:
 - --metrics-jsonl reports/train_metrics.jsonl
 - --metrics-csv reports/train_metrics.csv
 - --tensorboard-logdir reports/tb
+
+### Production run contract (recommended)
+
+For reproducible runs with fixed artifact paths, full resume, best/last checkpoints, and an ONNX parity gate:
+
+```bash
+yolozu dev train configs/examples/train_contract.yaml --run-id exp01
+
+# Resume (from runs/exp01/checkpoints/last.pt)
+yolozu dev train configs/examples/train_contract.yaml --run-id exp01 --resume
+```
+
+Contracted artifacts live under `runs/<run_id>/...`:
+- `checkpoints/{last,best}.pt`
+- `reports/{train_metrics,val_metrics}.jsonl`
+- `reports/config_resolved.yaml`
+- `reports/run_meta.json`
+- `reports/onnx_parity.json`
+- `exports/model.onnx` (+ meta JSON)
+
+Full spec: [run_contract.md](run_contract.md)
 
 ### Optimizer options
 
