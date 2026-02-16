@@ -81,7 +81,6 @@ python3 tools/yolozu.py export \
   --checkpoint /path/to.ckpt \
   --device cuda \
   --max-images 50 \
-  --wrap \
   --output reports/pred_baseline.json
 ```
 
@@ -99,7 +98,6 @@ python3 tools/yolozu.py export \
   --ttt-preset safe \
   --ttt-reset sample \
   --ttt-log-out reports/ttt_log_safe.json \
-  --wrap \
   --output reports/pred_ttt_safe.json
 ```
 

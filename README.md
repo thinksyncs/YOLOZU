@@ -59,10 +59,12 @@ Docs index (start here): [`docs/README.md`](docs/README.md)
 - Unified CLI:
   - pip: `yolozu` (install-safe commands + CPU demos)
   - repo: `python3 tools/yolozu.py` (power-user research/eval workflows)
-- Inference/export: `tools/export_predictions.py` (torch adapter), `tools/export_predictions_onnxrt.py`, `tools/export_predictions_trt.py`.
+- Inference/export: `python3 tools/yolozu.py export --backend {torch,onnxrt,trt}` (wrapper) or the low-level scripts
+  (`tools/export_predictions*.py`).
 - Test-time adaptation options:
   - TTA: lightweight prediction-space post-transform (`--tta`).
-  - TTT: pre-prediction test-time training (Tent or MIM) via `--ttt` (adapter + torch required).
+  - TTT: pre-prediction test-time training (Tent or MIM) via `--ttt` on the **torch backend**
+    (see `docs/ttt_protocol.md`).
 - Hessian solver: per-detection iterative refinement of regression outputs (depth, rotation, offsets) using Gauss-Newton optimization.
 - Evaluation: COCO mAP conversion/eval and scenario suite reporting.
 - Keypoints: YOLO pose-style keypoints in labels/predictions + PCK evaluation + optional COCO OKS mAP (`tools/eval_keypoints.py --oks`), plus parity/benchmark helpers.
@@ -347,22 +349,27 @@ This repo evaluates models through a stable predictions JSON format:
 Adapters power `tools/export_predictions.py --adapter <name>` and follow:
 - [docs/adapter_contract.md](docs/adapter_contract.md)
 
-## Precomputed predictions workflow (no torch required)
+## Export + evaluate predictions (TTT supported)
 
-If you run real inference elsewhere (PyTorch/TensorRT/etc.), you can evaluate this repo without installing heavy deps locally.
+There are two common workflows:
 
-- Export predictions (in an environment where the adapter can run):
-  - `python3 tools/export_predictions.py --adapter rtdetr_pose --checkpoint /path/to.ckpt --max-images 50 --wrap --output reports/predictions.json`
-  - TTA (post-transform): `python3 tools/export_predictions.py --adapter rtdetr_pose --tta --tta-seed 0 --tta-flip-prob 0.5 --wrap --output reports/predictions_tta.json`
-  - TTT (pre-prediction test-time training; updates model weights in-memory):
-    - Tent (safe preset + guard rails): `python3 tools/export_predictions.py --adapter rtdetr_pose --ttt --ttt-preset safe --ttt-reset sample --wrap --output reports/predictions_ttt_safe.json`
-    - MIM (safe preset + guard rails): `python3 tools/export_predictions.py --adapter rtdetr_pose --ttt --ttt-preset mim_safe --ttt-reset sample --wrap --output reports/predictions_ttt_mim_safe.json`
-    - Optional log: add `--ttt-log-out reports/ttt_log.json`
-    - Recommended protocol: [docs/ttt_protocol.md](docs/ttt_protocol.md)
+### A) Evaluate precomputed `predictions.json` (no torch required)
+
+If you run real inference elsewhere (PyTorch/ONNXRuntime/TensorRT/etc.), you can evaluate this repo without installing heavy deps locally.
+
 - Validate the JSON:
   - `python3 tools/validate_predictions.py reports/predictions.json`
 - Consume predictions locally:
   - `python3 tools/run_scenarios.py --adapter precomputed --predictions reports/predictions.json --max-images 50`
+
+### B) Export predictions in this repo (Torch/ONNXRuntime/TensorRT)
+
+- Torch backend (`rtdetr_pose`, supports **TTA + TTT**):
+  - Baseline: `python3 tools/yolozu.py export --backend torch --checkpoint /path/to.ckpt --device cuda --max-images 50 --output reports/predictions.json`
+  - TTT (Tent, safe preset): `python3 tools/yolozu.py export --backend torch --checkpoint /path/to.ckpt --device cuda --max-images 50 --ttt --ttt-preset safe --ttt-reset sample --ttt-log-out reports/ttt_log_safe.json --output reports/predictions_ttt_safe.json`
+  - Note: `tools/yolozu.py export` always writes the wrapped `{ "predictions": [...] }` form (so `--wrap` is not needed).
+  - Recommended protocol + rationale (domain shift, presets, guards): [docs/ttt_protocol.md](docs/ttt_protocol.md)
+- ONNXRuntime/TensorRT backends: use `python3 tools/yolozu.py export --backend onnxrt|trt ...` (TTT is torch-only; use TTA or export precomputed predictions for other backends).
 
 Supported predictions JSON shapes:
 - `[{"image": "...", "detections": [...]}, ...]`
