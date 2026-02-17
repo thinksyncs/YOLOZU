@@ -1,5 +1,7 @@
 # YOLOZU (萬)
 
+日本語: [`Readme_jp.md`](Readme_jp.md)
+
 [![CI](https://github.com/thinksyncs/YOLOZU/actions/workflows/ci.yml/badge.svg)](https://github.com/thinksyncs/YOLOZU/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/yolozu?logo=pypi&logoColor=white)](https://pypi.org/project/yolozu/)
 [![Python >=3.10](https://img.shields.io/badge/python-%3E%3D3.10-3776AB?logo=python&logoColor=white)](https://pypi.org/project/yolozu/)
