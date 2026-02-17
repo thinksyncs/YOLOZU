@@ -311,6 +311,45 @@ Config-driven path (recommended for repeatability):
 yolozu train configs/examples/train_setting.yaml
 ```
 
+### Custom data training (recommended flow)
+
+1) Prepare YOLO-format dataset root:
+- `images/<split>/...`
+- `labels/<split>/...` (YOLO txt: `class cx cy w h`)
+
+2) Validate dataset before training:
+
+```bash
+yolozu validate dataset /path/to/your_dataset --split train --strict
+yolozu validate dataset /path/to/your_dataset --split val --strict
+```
+
+3) Copy and edit contract config (set dataset root/splits and training knobs):
+
+```bash
+cp configs/examples/train_contract.yaml configs/runtime/train_contract_custom.yaml
+```
+
+4) Launch run-contract training:
+
+```bash
+yolozu train configs/runtime/train_contract_custom.yaml --run-id custom_exp01
+```
+
+5) Resume / dry-run when needed:
+
+```bash
+yolozu train configs/runtime/train_contract_custom.yaml --run-id custom_exp01 --resume
+yolozu train configs/runtime/train_contract_custom.yaml --run-id custom_exp01 --dry-run
+```
+
+6) Export predictions from your trained checkpoint and evaluate:
+
+```bash
+python3 tools/export_predictions.py --adapter rtdetr_pose --config rtdetr_pose/configs/base.json --checkpoint runs/custom_exp01/checkpoints/best.pt --dataset /path/to/your_dataset --split val --wrap --output reports/custom_exp01_predictions_val.json
+yolozu eval-coco --dataset /path/to/your_dataset --split val --predictions reports/custom_exp01_predictions_val.json --bbox-format cxcywh_norm
+```
+
 For quick experiments, set `--run-dir`, which writes a standard artifact set:
 - `metrics.jsonl` (+ final `metrics.json` / `metrics.csv`)
 - `checkpoint.pt` (+ optional `checkpoint_bundle.pt`)
