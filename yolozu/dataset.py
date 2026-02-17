@@ -349,10 +349,37 @@ def _derive_labels_from_mask(record: dict[str, Any]) -> list[dict[str, Any]]:
     )
 
 
-def load_yolo_dataset(images_dir, labels_dir, *, dataset_root: Path | None = None):
+def _bbox_from_poly(coords: list[float]) -> tuple[float, float, float, float] | None:
+    if len(coords) < 6 or len(coords) % 2 != 0:
+        return None
+    xs = coords[0::2]
+    ys = coords[1::2]
+    if not xs or not ys:
+        return None
+    x_min = min(xs)
+    x_max = max(xs)
+    y_min = min(ys)
+    y_max = max(ys)
+    w = float(x_max - x_min)
+    h = float(y_max - y_min)
+    if w <= 0.0 or h <= 0.0:
+        return None
+    cx = float(x_min + x_max) / 2.0
+    cy = float(y_min + y_max) / 2.0
+    return cx, cy, w, h
+
+
+def load_yolo_dataset(
+    images_dir,
+    labels_dir,
+    *,
+    dataset_root: Path | None = None,
+    label_format: str | None = None,
+):
     images_dir = Path(images_dir)
     labels_dir = Path(labels_dir)
     dataset_root = Path(dataset_root) if dataset_root is not None else labels_dir.parent.parent
+    label_format = str(label_format or "detect").strip().lower()
     images: list[Path] = []
     for ext in ("*.jpg", "*.jpeg", "*.png"):
         images.extend(images_dir.glob(ext))
@@ -368,17 +395,36 @@ def load_yolo_dataset(images_dir, labels_dir, *, dataset_root: Path | None = Non
                 if not stripped:
                     continue
                 parts = stripped.split()
+                class_id = int(float(parts[0]))
+                if label_format in ("segment", "seg", "polygon", "yolo-seg", "yolo_seg"):
+                    values = [float(value) for value in parts[1:]]
+                    # Support both:
+                    #  A) class + poly(x1 y1 x2 y2 ...)
+                    #  B) class + bbox(cx cy w h) + poly(...)
+                    if len(values) >= 10 and (len(values) - 4) >= 6 and (len(values) - 4) % 2 == 0:
+                        poly = values[4:]
+                    else:
+                        poly = values
+                    bbox = _bbox_from_poly(poly)
+                    if bbox is None:
+                        raise ValueError(f"invalid segmentation label line: {line}")
+                    cx, cy, bw, bh = bbox
+                    label: dict[str, Any] = {
+                        "class_id": class_id,
+                        "cx": float(cx),
+                        "cy": float(cy),
+                        "w": float(bw),
+                        "h": float(bh),
+                        "polygon": [float(v) for v in poly],
+                    }
+                    labels.append(label)
+                    continue
+
                 if len(parts) < 5:
                     raise ValueError(f"invalid label line: {line}")
-                class_id = int(float(parts[0]))
+
                 coords = [float(value) for value in parts[1:5]]
-                label: dict[str, Any] = {
-                    "class_id": class_id,
-                    "cx": coords[0],
-                    "cy": coords[1],
-                    "w": coords[2],
-                    "h": coords[3],
-                }
+                label = {"class_id": class_id, "cx": coords[0], "cy": coords[1], "w": coords[2], "h": coords[3]}
 
                 # Optional: YOLO pose-style keypoints appended to the label line.
                 # Supported:
@@ -434,7 +480,7 @@ def _pick_split(dataset_root: Path, split: str | None) -> str:
 def _resolve_ultralytics_data_yaml(
     config_path: Path,
     split: str | None,
-) -> tuple[Path, Path, str, Path] | None:
+) -> tuple[Path, Path, str, Path, str | None] | None:
     """Resolve images/labels directories from an Ultralytics-style data.yaml.
 
     Supports the common pattern:
@@ -462,6 +508,17 @@ def _resolve_ultralytics_data_yaml(
         return None
     if not isinstance(data, dict):
         return None
+
+    label_format: str | None = None
+    raw_task = data.get("task") or data.get("label_format")
+    if isinstance(raw_task, str) and raw_task.strip():
+        lowered = raw_task.strip().lower()
+        if lowered in ("detect", "det", "bbox"):
+            label_format = "detect"
+        elif lowered in ("pose", "keypoints"):
+            label_format = "detect"
+        elif lowered in ("segment", "seg", "polygon", "yolo-seg", "yolo_seg"):
+            label_format = "segment"
 
     base_raw = data.get("path")
     base = Path(str(base_raw)) if isinstance(base_raw, str) and str(base_raw).strip() else config_path.parent
@@ -501,17 +558,30 @@ def _resolve_ultralytics_data_yaml(
     if split:
         key = str(split)
         if key in layouts:
-            return layouts[key]
+            img, lbl, split_name, root = layouts[key]
+            return img, lbl, split_name, root, label_format
         lowered = key.lower()
         if lowered in ("train", "tr"):
-            return layouts.get("train")
+            resolved = layouts.get("train")
+            if resolved is None:
+                return None
+            img, lbl, split_name, root = resolved
+            return img, lbl, split_name, root, label_format
         if lowered in ("val", "valid", "validation", "eval"):
-            return layouts.get("val")
+            resolved = layouts.get("val")
+            if resolved is None:
+                return None
+            img, lbl, split_name, root = resolved
+            return img, lbl, split_name, root, label_format
 
-    return layouts.get("val") or layouts.get("train")
+    resolved = layouts.get("val") or layouts.get("train")
+    if resolved is None:
+        return None
+    img, lbl, split_name, root = resolved
+    return img, lbl, split_name, root, label_format
 
 
-def _resolve_dataset_json_layout(dataset_root: Path, split: str | None) -> tuple[Path, Path, str] | None:
+def _resolve_dataset_json_layout(dataset_root: Path, split: str | None) -> tuple[Path, Path, str, str | None] | None:
     """Resolve images/labels directories from a dataset.json descriptor (optional).
 
     Some prepare tools write a dataset.json with absolute paths to avoid copying
@@ -531,6 +601,7 @@ def _resolve_dataset_json_layout(dataset_root: Path, split: str | None) -> tuple
     images_dir = data.get("images_dir")
     labels_dir = data.get("labels_dir")
     split_from_desc = data.get("split")
+    label_format = data.get("label_format") or data.get("task")
     if not images_dir or not labels_dir:
         return None
 
@@ -554,27 +625,41 @@ def _resolve_dataset_json_layout(dataset_root: Path, split: str | None) -> tuple
         # Best-effort: infer from labels dir name.
         effective_split = lbl.name
 
-    return img, lbl, effective_split
+    label_format_out = None
+    if isinstance(label_format, str) and label_format.strip():
+        label_format_out = label_format.strip()
+
+    return img, lbl, effective_split, label_format_out
 
 
-def build_manifest(dataset_root, *, split: str | None = None):
+def build_manifest(dataset_root, *, split: str | None = None, label_format: str | None = None):
     dataset_root = Path(dataset_root)
     if dataset_root.exists() and dataset_root.is_file():
         resolved = _resolve_ultralytics_data_yaml(dataset_root, split)
         if resolved is not None:
-            images_dir, labels_dir, split_effective, inferred_root = resolved
-            records = load_yolo_dataset(images_dir, labels_dir, dataset_root=inferred_root)
+            images_dir, labels_dir, split_effective, inferred_root, yaml_label_format = resolved
+            records = load_yolo_dataset(
+                images_dir,
+                labels_dir,
+                dataset_root=inferred_root,
+                label_format=label_format or yaml_label_format,
+            )
             return {"images": records, "split": split_effective}
         raise FileNotFoundError(f"unsupported dataset descriptor file: {dataset_root}")
 
     resolved = _resolve_dataset_json_layout(dataset_root, split)
     if resolved is not None:
-        images_dir, labels_dir, split_effective = resolved
-        records = load_yolo_dataset(images_dir, labels_dir, dataset_root=dataset_root)
+        images_dir, labels_dir, split_effective, json_label_format = resolved
+        records = load_yolo_dataset(
+            images_dir,
+            labels_dir,
+            dataset_root=dataset_root,
+            label_format=label_format or json_label_format,
+        )
         return {"images": records, "split": split_effective}
 
     split_effective = _pick_split(dataset_root, split)
     images_dir = dataset_root / "images" / split_effective
     labels_dir = dataset_root / "labels" / split_effective
-    records = load_yolo_dataset(images_dir, labels_dir, dataset_root=dataset_root)
+    records = load_yolo_dataset(images_dir, labels_dir, dataset_root=dataset_root, label_format=label_format)
     return {"images": records, "split": split_effective}

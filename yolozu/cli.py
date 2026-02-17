@@ -131,7 +131,11 @@ def _cmd_validate(args: argparse.Namespace) -> int:
         from yolozu.dataset_validator import validate_dataset_records
 
         try:
-            manifest = build_manifest(str(args.dataset), split=str(args.split) if args.split else None)
+            manifest = build_manifest(
+                str(args.dataset),
+                split=str(args.split) if args.split else None,
+                label_format=str(getattr(args, "label_format", "")).strip() or None,
+            )
         except Exception as exc:
             raise SystemExit(str(exc)) from exc
         records = manifest.get("images") or []
@@ -167,6 +171,17 @@ def _cmd_validate(args: argparse.Namespace) -> int:
 
         try:
             res = validate_predictions_payload(payload, strict=bool(args.strict))
+        except Exception as exc:
+            raise SystemExit(str(exc)) from exc
+        for w in res.warnings:
+            print(w, file=sys.stderr)
+        return 0
+
+    if args.validate_command == "seg":
+        from yolozu.segmentation_predictions import validate_segmentation_predictions_payload
+
+        try:
+            res = validate_segmentation_predictions_payload(payload)
         except Exception as exc:
             raise SystemExit(str(exc)) from exc
         for w in res.warnings:
@@ -438,6 +453,42 @@ def _cmd_resources(args: argparse.Namespace) -> int:
     raise SystemExit("unknown resources command")
 
 
+def _cmd_migrate(args: argparse.Namespace) -> int:
+    from yolozu.migrate import migrate_seg_dataset_descriptor, migrate_ultralytics_dataset_wrapper
+
+    if args.migrate_command == "dataset":
+        if str(args.from_format) != "ultralytics":
+            raise SystemExit("unsupported --from for migrate dataset")
+        out = migrate_ultralytics_dataset_wrapper(
+            data_yaml=str(args.data) if args.data else None,
+            args_yaml=str(args.args) if args.args else None,
+            split=str(args.split) if args.split else None,
+            task=str(args.task) if args.task else None,
+            output=str(args.output),
+            force=bool(args.force),
+        )
+        print(str(out))
+        return 0
+
+    if args.migrate_command == "seg-dataset":
+        out = migrate_seg_dataset_descriptor(
+            from_format=str(args.from_format),
+            root=str(args.root),
+            split=str(args.split),
+            output=str(args.output),
+            path_type=str(args.path_type),
+            mode=str(args.mode),
+            force=bool(args.force),
+            voc_year=str(args.year) if args.year else None,
+            voc_masks_dirname=str(args.masks_dirname),
+            cityscapes_label_type=str(args.label_type),
+        )
+        print(str(out))
+        return 0
+
+    raise SystemExit("unknown migrate command")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="yolozu")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
@@ -524,12 +575,21 @@ def main(argv: list[str] | None = None) -> int:
     val_pred.add_argument("path", type=str, help="Path to predictions JSON (list or wrapper).")
     val_pred.add_argument("--strict", action="store_true", help="Strict validation (types, required keys).")
 
+    val_seg = validate_sub.add_parser("seg", help="Validate semantic segmentation predictions JSON (id->mask mapping).")
+    val_seg.add_argument("path", type=str, help="Path to segmentation predictions JSON.")
+
     val_is = validate_sub.add_parser("instance-seg", help="Validate instance-segmentation predictions JSON (PNG masks).")
     val_is.add_argument("path", type=str, help="Path to instance-seg predictions JSON.")
 
     val_ds = validate_sub.add_parser("dataset", help="Validate a YOLO-format dataset layout + labels.")
     val_ds.add_argument("dataset", type=str, help="YOLO-format dataset root (contains images/ + labels/).")
     val_ds.add_argument("--split", default=None, help="Split under images/ and labels/ (default: auto).")
+    val_ds.add_argument(
+        "--label-format",
+        choices=("detect", "segment"),
+        default=None,
+        help="How to parse label txt files (default: detect). Use segment for YOLO polygon labels.",
+    )
     val_ds.add_argument("--max-images", type=int, default=None, help="Optional cap for number of images checked.")
     val_ds.add_argument("--strict", action="store_true", help="Strict bbox checks (range + inside-image).")
     val_ds.add_argument("--mode", choices=("fail", "warn"), default="fail", help="fail=exit nonzero on errors; warn=always exit 0.")
@@ -656,6 +716,50 @@ def main(argv: list[str] | None = None) -> int:
     copy.add_argument("--output", required=True, help="Output file path.")
     copy.add_argument("--force", action="store_true", help="Overwrite output if it exists.")
 
+    migrate = sub.add_parser("migrate", help="Migration helpers (dataset/config/predictions).")
+    migrate_sub = migrate.add_subparsers(dest="migrate_command", required=True)
+
+    mig_dataset = migrate_sub.add_parser("dataset", help="Generate dataset.json wrapper for external dataset layouts.")
+    mig_dataset.add_argument("--from", dest="from_format", choices=("ultralytics",), required=True, help="Source ecosystem.")
+    mig_dataset.add_argument("--data", default=None, help="Ultralytics data.yaml path (preferred).")
+    mig_dataset.add_argument("--args", default=None, help="Ultralytics args.yaml (optional; used for task/data inference).")
+    mig_dataset.add_argument("--split", default=None, help="Split to select from data.yaml (default: prefer val then train).")
+    mig_dataset.add_argument(
+        "--task",
+        choices=("detect", "segment", "pose"),
+        default=None,
+        help="Override task inference (segment enables polygon label parsing).",
+    )
+    mig_dataset.add_argument("--output", required=True, help="Output directory or dataset.json file path.")
+    mig_dataset.add_argument("--force", action="store_true", help="Overwrite output if it exists.")
+
+    mig_seg = migrate_sub.add_parser("seg-dataset", help="Generate semantic segmentation dataset descriptor JSON.")
+    mig_seg.add_argument(
+        "--from",
+        dest="from_format",
+        choices=("voc", "cityscapes", "ade20k"),
+        required=True,
+        help="Source dataset type.",
+    )
+    mig_seg.add_argument("--root", required=True, help="Dataset root path.")
+    mig_seg.add_argument("--split", default="val", help="Split name (train|val|test, dataset-specific aliases allowed).")
+    mig_seg.add_argument("--output", required=True, help="Output descriptor JSON path.")
+    mig_seg.add_argument("--path-type", choices=("absolute", "relative"), default="absolute", help="Emit absolute or relative paths.")
+    mig_seg.add_argument("--mode", choices=("manifest", "symlink", "copy"), default="manifest", help="Descriptor mode hint.")
+    mig_seg.add_argument("--force", action="store_true", help="Overwrite output if it exists.")
+    mig_seg.add_argument("--year", default=None, help="(VOC) Optional year selector (e.g. 2012).")
+    mig_seg.add_argument(
+        "--masks-dirname",
+        default="SegmentationClass",
+        help="(VOC) Mask directory name under VOC year root (default: SegmentationClass).",
+    )
+    mig_seg.add_argument(
+        "--label-type",
+        choices=("labelTrainIds", "labelIds"),
+        default="labelTrainIds",
+        help="(Cityscapes) Mask suffix type (default: labelTrainIds).",
+    )
+
     train_p = sub.add_parser("train", help="Train with RT-DETR pose scaffold (requires `yolozu[train]`).")
     train_p.add_argument("config", type=str, help="Path to train config YAML/JSON (train_setting.yaml).")
     train_p.add_argument(
@@ -751,6 +855,8 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit("unknown onnxrt command")
     if args.command == "resources":
         return _cmd_resources(args)
+    if args.command == "migrate":
+        return _cmd_migrate(args)
     if args.command == "demo":
         if args.demo_command == "instance-seg":
             from yolozu.demos.instance_seg import run_instance_seg_demo

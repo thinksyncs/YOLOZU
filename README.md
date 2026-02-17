@@ -142,6 +142,7 @@ Start here: [docs/training_inference_export.md](docs/training_inference_export.m
 - Hessian solver for regression refinement: [docs/hessian_solver.md](docs/hessian_solver.md)
 - Predictions schema (stable): [docs/predictions_schema.md](docs/predictions_schema.md)
 - Adapter contract (stable): [docs/adapter_contract.md](docs/adapter_contract.md)
+- Migration helpers: [docs/migrate.md](docs/migrate.md)
 - License policy: [docs/license_policy.md](docs/license_policy.md)
 - Tools index (AI-friendly): [docs/tools_index.md](docs/tools_index.md) / [tools/manifest.json](tools/manifest.json)
 - AI-first usage guide: [docs/ai_first.md](docs/ai_first.md)
