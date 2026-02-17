@@ -9,6 +9,65 @@ from .config import simple_yaml_load
 from .coco_convert import build_category_map_from_coco
 
 
+def _extract_keypoint_schema_from_coco(instances_doc: dict[str, Any]) -> dict[str, Any]:
+    categories = instances_doc.get("categories") or []
+    if not isinstance(categories, list):
+        return {}
+
+    for category in categories:
+        if not isinstance(category, dict):
+            continue
+
+        raw_names = category.get("keypoints") or []
+        if not isinstance(raw_names, list) or not raw_names:
+            continue
+
+        keypoint_names: list[str] = []
+        for name in raw_names:
+            text = str(name).strip()
+            if text:
+                keypoint_names.append(text)
+        if not keypoint_names:
+            continue
+
+        k_count = int(len(keypoint_names))
+        raw_skeleton = category.get("skeleton") or []
+        skeleton: list[list[int]] = []
+        seen: set[tuple[int, int]] = set()
+        if isinstance(raw_skeleton, list):
+            for edge in raw_skeleton:
+                if not isinstance(edge, (list, tuple)) or len(edge) != 2:
+                    continue
+                try:
+                    a = int(edge[0])
+                    b = int(edge[1])
+                except Exception:
+                    continue
+                if a <= 0 or b <= 0 or a == b:
+                    continue
+                if a > k_count or b > k_count:
+                    continue
+                key = (a, b) if a <= b else (b, a)
+                if key in seen:
+                    continue
+                seen.add(key)
+                skeleton.append([a, b])
+
+        out: dict[str, Any] = {
+            "keypoint_names": keypoint_names,
+            "num_keypoints": int(k_count),
+        }
+        if skeleton:
+            out["skeleton"] = skeleton
+        try:
+            out["keypoint_category_id"] = int(category.get("id"))
+        except Exception:
+            pass
+        return out
+
+    return {}
+
+
 def _load_config(path: Path) -> dict[str, Any]:
     text = path.read_text(encoding="utf-8")
     if path.suffix.lower() in (".yaml", ".yml"):
@@ -309,6 +368,7 @@ def import_coco_instances_dataset(
 
     instances_doc = json.loads(instances_path.read_text(encoding="utf-8"))
     cat_map = build_category_map_from_coco(instances_doc)
+    keypoint_schema = _extract_keypoint_schema_from_coco(instances_doc)
 
     # Persist a stable classes.json mapping under labels/<split>/ for downstream tools.
     labels_dir = out_root / "labels" / str(split)
@@ -318,6 +378,8 @@ def import_coco_instances_dataset(
         "class_id_to_category_id": cat_map.class_id_to_category_id,
         "class_names": cat_map.class_names,
     }
+    if keypoint_schema:
+        mapping.update(keypoint_schema)
     (labels_dir / "classes.json").write_text(json.dumps(mapping, indent=2, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
     (labels_dir / "classes.txt").write_text("\n".join(cat_map.class_names) + "\n", encoding="utf-8")
 
@@ -329,6 +391,8 @@ def import_coco_instances_dataset(
         "include_crowd": bool(include_crowd),
         "source": {"from": "coco-instances"},
     }
+    if keypoint_schema:
+        payload.update(keypoint_schema)
     out_path.write_text(json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
     return out_path
 

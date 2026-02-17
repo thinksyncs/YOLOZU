@@ -69,7 +69,7 @@ Docs index (start here): [`docs/README.md`](docs/README.md)
     (see `docs/ttt_protocol.md`).
 - Hessian solver: per-detection iterative refinement of regression outputs (depth, rotation, offsets) using Gauss-Newton optimization.
 - Evaluation: COCO mAP conversion/eval and scenario suite reporting.
-- Keypoints: YOLO pose-style keypoints in labels/predictions + PCK evaluation + optional COCO OKS mAP (`tools/eval_keypoints.py --oks`), plus parity/benchmark helpers.
+- Keypoints: YOLO pose-style keypoints in labels/predictions + PCK evaluation + optional COCO OKS mAP (`tools/eval_keypoints.py --oks`), plus parity/benchmark helpers. COCO/Detectron2 keypoint schema (`categories[].keypoints` / `skeleton`) is auto-ingested into wrapper metadata so training can auto-set `num_keypoints` and left/right flip pairs.
 - Semantic seg: dataset prep helpers + `tools/eval_segmentation.py` (mIoU/per-class IoU/ignore_index + optional HTML overlays).
 - Instance seg: `tools/eval_instance_segmentation.py` (mask mAP from per-instance binary PNG masks + optional HTML overlays).
 - Training pipeline: RT-DETR pose trainer with run contract, metrics output, ONNX export, and optional SDFT-style self-distillation.

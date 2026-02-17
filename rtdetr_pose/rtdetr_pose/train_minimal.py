@@ -42,6 +42,90 @@ def _now_utc() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
+def _normalize_keypoint_names(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    out: list[str] = []
+    for item in value:
+        text = str(item).strip()
+        if text:
+            out.append(text)
+    return out
+
+
+def _derive_keypoint_flip_pairs(keypoint_names: list[str]) -> list[list[int]]:
+    if not keypoint_names:
+        return []
+
+    index_by_name = {str(name).strip().lower(): idx for idx, name in enumerate(keypoint_names)}
+    pairs: list[list[int]] = []
+    seen: set[tuple[int, int]] = set()
+
+    for idx, name in enumerate(keypoint_names):
+        lower = str(name).strip().lower()
+        if not lower:
+            continue
+
+        partner_name = None
+        if "left" in lower:
+            partner_name = lower.replace("left", "right")
+        elif "right" in lower:
+            partner_name = lower.replace("right", "left")
+        elif lower.startswith("l_"):
+            partner_name = "r_" + lower[2:]
+        elif lower.startswith("r_"):
+            partner_name = "l_" + lower[2:]
+        elif lower.endswith("_l"):
+            partner_name = lower[:-2] + "_r"
+        elif lower.endswith("_r"):
+            partner_name = lower[:-2] + "_l"
+
+        if not partner_name:
+            continue
+        j = index_by_name.get(partner_name)
+        if j is None or j == idx:
+            continue
+        key = (idx, j) if idx <= j else (j, idx)
+        if key in seen:
+            continue
+        seen.add(key)
+        pairs.append([int(key[0]), int(key[1])])
+
+    return pairs
+
+
+def _extract_manifest_keypoints_meta(manifest: dict[str, Any] | None) -> tuple[list[str], list[list[int]]]:
+    if not isinstance(manifest, dict):
+        return [], []
+    meta = manifest.get("keypoints_meta")
+    if not isinstance(meta, dict):
+        return [], []
+
+    names = _normalize_keypoint_names(meta.get("keypoint_names") or [])
+    skeleton: list[list[int]] = []
+    raw_skeleton = meta.get("skeleton") or []
+    if isinstance(raw_skeleton, list) and names:
+        seen: set[tuple[int, int]] = set()
+        for edge in raw_skeleton:
+            if not isinstance(edge, (list, tuple)) or len(edge) != 2:
+                continue
+            try:
+                a = int(edge[0])
+                b = int(edge[1])
+            except Exception:
+                continue
+            if a <= 0 or b <= 0 or a == b:
+                continue
+            if a > len(names) or b > len(names):
+                continue
+            key = (a, b) if a <= b else (b, a)
+            if key in seen:
+                continue
+            seen.add(key)
+            skeleton.append([a, b])
+    return names, skeleton
+
+
 def load_config_file(path: str | Path) -> dict[str, Any]:
     path = Path(path)
     if not path.exists():
@@ -2127,6 +2211,7 @@ class ManifestDataset(Dataset):
         num_queries=300,
         num_classes=80,
         num_keypoints=0,
+        keypoint_flip_pairs=(),
         image_size=640,
         seed=0,
         use_matcher=False,
@@ -2174,6 +2259,26 @@ class ManifestDataset(Dataset):
         self.num_queries = int(num_queries)
         self.num_classes = int(num_classes)
         self.num_keypoints = int(num_keypoints)
+        normalized_pairs = []
+        seen_pairs = set()
+        for pair in keypoint_flip_pairs or ():
+            if not isinstance(pair, (list, tuple)) or len(pair) != 2:
+                continue
+            try:
+                a = int(pair[0])
+                b = int(pair[1])
+            except Exception:
+                continue
+            if a == b:
+                continue
+            if not (0 <= a < self.num_keypoints and 0 <= b < self.num_keypoints):
+                continue
+            key = (a, b) if a <= b else (b, a)
+            if key in seen_pairs:
+                continue
+            seen_pairs.add(key)
+            normalized_pairs.append((int(key[0]), int(key[1])))
+        self.keypoint_flip_pairs = tuple(normalized_pairs)
         self.image_size = int(image_size)
         self.seed = int(seed)
         self.use_matcher = bool(use_matcher)
@@ -2673,6 +2778,10 @@ class ManifestDataset(Dataset):
                                 x = 1.0 - x
                             kp_xy[ki] = [x, y]
                             kp_mask[ki] = v_i > 0
+                    if flip and self.keypoint_flip_pairs:
+                        for a, b in self.keypoint_flip_pairs:
+                            kp_xy[a], kp_xy[b] = kp_xy[b], kp_xy[a]
+                            kp_mask[a], kp_mask[b] = kp_mask[b], kp_mask[a]
                     gt_keypoints.append(kp_xy)
                     gt_keypoints_mask.append(kp_mask)
 
@@ -3210,6 +3319,8 @@ def main(argv: list[str] | None = None) -> int:
             args.num_keypoints = int(getattr(model_cfg, "num_keypoints"))
 
     records = None
+    keypoint_names: list[str] = []
+    keypoint_skeleton: list[list[int]] = []
     if args.records_json:
         records_path = Path(str(args.records_json))
         if not records_path.is_absolute():
@@ -3227,6 +3338,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         manifest = build_manifest(dataset_root, split=args.split)
         records = manifest.get("images") or []
+        keypoint_names, keypoint_skeleton = _extract_manifest_keypoints_meta(manifest)
     if args.extra_records_json:
         extra_path = Path(str(args.extra_records_json))
         if not extra_path.is_absolute():
@@ -3247,6 +3359,21 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit(
             f"No records found under {dataset_root}. "
             "Fetch coco128 first: bash tools/fetch_coco128.sh"
+        )
+
+    if int(getattr(args, "num_keypoints", 0) or 0) <= 0 and keypoint_names:
+        args.num_keypoints = int(len(keypoint_names))
+        if is_main:
+            print(
+                "auto_num_keypoints "
+                f"count={int(args.num_keypoints)} source=dataset_meta"
+            )
+
+    keypoint_flip_pairs = _derive_keypoint_flip_pairs(keypoint_names) if keypoint_names else []
+    if is_main and keypoint_names:
+        print(
+            "keypoint_meta "
+            f"count={int(len(keypoint_names))} skeleton_edges={int(len(keypoint_skeleton))} flip_pairs={int(len(keypoint_flip_pairs))}"
         )
 
     if is_main:
@@ -3302,6 +3429,7 @@ def main(argv: list[str] | None = None) -> int:
         num_queries=args.num_queries,
         num_classes=args.num_classes,
         num_keypoints=args.num_keypoints,
+        keypoint_flip_pairs=keypoint_flip_pairs,
         image_size=args.image_size,
         seed=args.seed,
         use_matcher=args.use_matcher,
@@ -3711,6 +3839,7 @@ def main(argv: list[str] | None = None) -> int:
             num_queries=args.num_queries,
             num_classes=args.num_classes,
             num_keypoints=args.num_keypoints,
+            keypoint_flip_pairs=keypoint_flip_pairs,
             image_size=args.image_size,
             seed=args.seed,
             use_matcher=False,

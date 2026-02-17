@@ -444,9 +444,137 @@ def _availability_stats(records):
     return stats
 
 
+def _normalize_keypoint_names(value):
+    if not isinstance(value, list):
+        return []
+    names = []
+    for item in value:
+        text = str(item).strip()
+        if text:
+            names.append(text)
+    return names
+
+
+def _normalize_skeleton(value, *, num_keypoints=0):
+    if not isinstance(value, list):
+        return []
+    edges = []
+    seen = set()
+    for edge in value:
+        if not isinstance(edge, (list, tuple)) or len(edge) != 2:
+            continue
+        try:
+            a = int(edge[0])
+            b = int(edge[1])
+        except Exception:
+            continue
+        if a <= 0 or b <= 0 or a == b:
+            continue
+        if int(num_keypoints) > 0 and (a > int(num_keypoints) or b > int(num_keypoints)):
+            continue
+        key = (a, b) if a <= b else (b, a)
+        if key in seen:
+            continue
+        seen.add(key)
+        edges.append([a, b])
+    return edges
+
+
+def _extract_keypoints_meta_from_categories(categories):
+    if not isinstance(categories, list):
+        return {}
+    for cat in categories:
+        if not isinstance(cat, dict):
+            continue
+        keypoint_names = _normalize_keypoint_names(cat.get("keypoints") or [])
+        if not keypoint_names:
+            continue
+        skeleton = _normalize_skeleton(cat.get("skeleton") or [], num_keypoints=len(keypoint_names))
+        out = {
+            "keypoint_names": keypoint_names,
+            "num_keypoints": int(len(keypoint_names)),
+        }
+        if skeleton:
+            out["skeleton"] = skeleton
+        try:
+            out["keypoint_category_id"] = int(cat.get("id"))
+        except Exception:
+            pass
+        return out
+    return {}
+
+
+def _load_keypoints_meta(root, split):
+    root = Path(root)
+    split = str(split)
+
+    keypoint_names = []
+    skeleton = []
+    source = None
+
+    classes_path = root / "labels" / split / "classes.json"
+    if classes_path.exists():
+        try:
+            classes_doc = json.loads(classes_path.read_text(encoding="utf-8"))
+        except Exception:
+            classes_doc = {}
+        if isinstance(classes_doc, dict):
+            keypoint_names = _normalize_keypoint_names(classes_doc.get("keypoint_names") or [])
+            if keypoint_names:
+                skeleton = _normalize_skeleton(classes_doc.get("skeleton") or [], num_keypoints=len(keypoint_names))
+                source = "classes_json"
+
+    dataset_json_path = root / "dataset.json"
+    if dataset_json_path.exists() and (not keypoint_names):
+        try:
+            dataset_doc = json.loads(dataset_json_path.read_text(encoding="utf-8"))
+        except Exception:
+            dataset_doc = {}
+        if isinstance(dataset_doc, dict):
+            direct_names = _normalize_keypoint_names(dataset_doc.get("keypoint_names") or [])
+            if direct_names:
+                keypoint_names = direct_names
+                skeleton = _normalize_skeleton(dataset_doc.get("skeleton") or [], num_keypoints=len(keypoint_names))
+                source = "dataset_json"
+            elif str(dataset_doc.get("format") or "").strip().lower() in ("coco_instances", "coco-instances", "coco"):
+                instances_path = dataset_doc.get("instances_json")
+                if isinstance(instances_path, str) and instances_path.strip():
+                    instances_file = Path(instances_path)
+                    if not instances_file.is_absolute():
+                        instances_file = (dataset_json_path.parent / instances_file).resolve()
+                    if instances_file.exists():
+                        try:
+                            coco_doc = json.loads(instances_file.read_text(encoding="utf-8"))
+                        except Exception:
+                            coco_doc = {}
+                        if isinstance(coco_doc, dict):
+                            extracted = _extract_keypoints_meta_from_categories(coco_doc.get("categories") or [])
+                            if extracted:
+                                keypoint_names = list(extracted.get("keypoint_names") or [])
+                                skeleton = list(extracted.get("skeleton") or [])
+                                source = "coco_categories"
+
+    if not keypoint_names:
+        return {}
+
+    meta = {
+        "keypoint_names": keypoint_names,
+        "num_keypoints": int(len(keypoint_names)),
+    }
+    if skeleton:
+        meta["skeleton"] = skeleton
+    if source:
+        meta["source"] = source
+    return meta
+
+
 def build_manifest(root, split="train2017"):
     images = load_yolo_dataset(root, split=split)
-    return {"images": images, "stats": _availability_stats(images)}
+    manifest = {"images": images, "stats": _availability_stats(images)}
+    keypoints_meta = _load_keypoints_meta(root, split)
+    if keypoints_meta:
+        manifest["keypoints_meta"] = keypoints_meta
+    return manifest
 
 
 def _k_to_3x3(k):

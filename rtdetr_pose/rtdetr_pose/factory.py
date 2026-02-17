@@ -49,8 +49,19 @@ def _resolve_activation_pair(cfg: ModelConfig) -> tuple[str, str]:
         )
 
     back, head = preset_map[preset]
-    back = _normalize_activation_name(str(getattr(cfg, "backbone_activation", back) or back))
-    head = _normalize_activation_name(str(getattr(cfg, "head_activation", head) or head))
+
+    user_back_raw = str(getattr(cfg, "backbone_activation", "") or "").strip()
+    user_head_raw = str(getattr(cfg, "head_activation", "") or "").strip()
+    default_back = str(getattr(ModelConfig, "backbone_activation", "silu") or "silu").strip().lower()
+    default_head = str(getattr(ModelConfig, "head_activation", "silu") or "silu").strip().lower()
+
+    if user_back_raw and (user_back_raw.strip().lower() != default_back or preset == "default"):
+        back = user_back_raw
+    if user_head_raw and (user_head_raw.strip().lower() != default_head or preset == "default"):
+        head = user_head_raw
+
+    back = _normalize_activation_name(back)
+    head = _normalize_activation_name(head)
     valid = {"silu", "gelu", "hardswish", "leakyrelu"}
     if back not in valid:
         raise ValueError(f"unsupported model.backbone_activation: {back}")

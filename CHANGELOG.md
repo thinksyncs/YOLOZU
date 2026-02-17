@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-02-17
+
+### Added
+- COCO/Detectron2 keypoint schema ingest on dataset import: `categories[].keypoints` and `categories[].skeleton` are persisted into wrapper metadata (`dataset.json` and `labels/<split>/classes.json`).
+- RT-DETR pose trainer auto keypoint setup from dataset metadata: when `--num-keypoints` is not provided, it is inferred from imported keypoint schema.
+- Horizontal flip keypoint pairing support based on left/right keypoint names to keep keypoint semantics consistent during augmentation.
+
+### Tests
+- Added regression coverage for keypoint schema import persistence and trainer keypoint flip-pair derivation.
+
 ## [0.1.1] - 2026-02-15
 
 ### Added
