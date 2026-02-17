@@ -101,6 +101,7 @@ class RTDETRPoseAdapter(ModelAdapter):
         image_size=(320, 320),
         score_threshold=0.3,
         max_detections=50,
+        infer_batch_size: int = 1,
         *,
         lora_r: int = 0,
         lora_alpha: float | None = None,
@@ -115,6 +116,7 @@ class RTDETRPoseAdapter(ModelAdapter):
         self.image_size = tuple(image_size)
         self.score_threshold = float(score_threshold)
         self.max_detections = int(max_detections)
+        self.infer_batch_size = int(infer_batch_size) if infer_batch_size is not None else 1
         self._backend = None
         self._lora_report: dict | None = None
 
@@ -293,29 +295,36 @@ class RTDETRPoseAdapter(ModelAdapter):
         model = self._backend["model"]
         preprocess = self._backend["preprocess"]
 
-        outputs = []
-        for record in records:
-            image_path = record["image"]
-            x, pp_meta, intrinsics = preprocess(record)
-            x = x.to(self.device)
-            with torch.no_grad():
-                out = model(x)
+        batch_size = int(getattr(self, "infer_batch_size", 1) or 1)
+        if batch_size <= 0:
+            raise ValueError("infer_batch_size must be > 0")
 
-            logits = out["logits"][0]
-            bbox = out["bbox"][0]
-            log_z = out["log_z"][0]
-            rot6d = out["rot6d"][0]
+        def _decode_single(
+            *,
+            idx: int,
+            out: dict,
+            image_path: str,
+            pp_meta: dict,
+            intrinsics: dict | None,
+        ) -> dict:
+            logits = out["logits"][idx]
+            bbox = out["bbox"][idx]
+            log_z = out["log_z"][idx]
+            rot6d = out["rot6d"][idx]
+
             log_sigma_z = out.get("log_sigma_z")
             log_sigma_rot = out.get("log_sigma_rot")
             if log_sigma_z is not None:
-                log_sigma_z = log_sigma_z[0].squeeze(-1)
+                log_sigma_z = log_sigma_z[idx].squeeze(-1)
             if log_sigma_rot is not None:
-                log_sigma_rot = log_sigma_rot[0].squeeze(-1)
-            offsets = out["offsets"][0]
-            k_delta = out["k_delta"][0]
+                log_sigma_rot = log_sigma_rot[idx].squeeze(-1)
+
+            offsets = out["offsets"][idx]
+            k_delta = out["k_delta"][idx]
+
             keypoints = out.get("keypoints")
             if keypoints is not None:
-                keypoints = keypoints[0]
+                keypoints = keypoints[idx]
 
             probs = torch.softmax(logits, dim=-1)
 
@@ -326,35 +335,44 @@ class RTDETRPoseAdapter(ModelAdapter):
             k = min(self.max_detections, int(scores.shape[0]))
             top_scores, top_idx = torch.topk(scores, k=k)
 
-            detections = []
-            for score, idx in zip(top_scores.tolist(), top_idx.tolist()):
+            detections: list[dict] = []
+            for score, q_idx in zip(top_scores.tolist(), top_idx.tolist()):
                 if score < self.score_threshold:
                     continue
-                cls_id = int(class_ids[idx].item())
-                box = torch.sigmoid(bbox[idx]).tolist()
+                cls_id = int(class_ids[q_idx].item())
+                box = torch.sigmoid(bbox[q_idx]).tolist()
+
+                # offsets/k_delta can be either per-query (Q,*) or global (*,)
+                off_q = offsets[q_idx] if hasattr(offsets, "ndim") and int(offsets.ndim) > 1 else offsets
+                kd_q = k_delta[q_idx] if hasattr(k_delta, "ndim") and int(k_delta.ndim) > 1 else k_delta
+
                 det = {
                     "class_id": cls_id,
                     "score": float(score),
                     "bbox": {"cx": float(box[0]), "cy": float(box[1]), "w": float(box[2]), "h": float(box[3])},
-                    "log_z": float(log_z[idx].item()),
-                    "rot6d": [float(v) for v in rot6d[idx].tolist()],
-                    "offsets": [float(v) for v in offsets[idx].tolist()],
-                    "k_delta": [float(v) for v in k_delta.tolist()],
+                    "log_z": float(log_z[q_idx].item()),
+                    "rot6d": [float(v) for v in rot6d[q_idx].tolist()],
+                    "offsets": [float(v) for v in off_q.tolist()],
+                    "k_delta": [float(v) for v in kd_q.tolist()],
                 }
+
                 if keypoints is not None:
                     try:
-                        kp_xy = keypoints[idx]
+                        kp_xy = keypoints[q_idx]
                         det["keypoints"] = [{"x": float(x), "y": float(y), "v": 2} for x, y in kp_xy.tolist()]
                     except Exception:
                         pass
+
                 if log_sigma_z is not None:
-                    ls_z = float(log_sigma_z[idx].item())
+                    ls_z = float(log_sigma_z[q_idx].item())
                     det["log_sigma_z"] = ls_z
-                    det["sigma_z"] = float(torch.exp(log_sigma_z[idx]).item())
+                    det["sigma_z"] = float(torch.exp(log_sigma_z[q_idx]).item())
+
                 if log_sigma_rot is not None:
-                    ls_r = float(log_sigma_rot[idx].item())
+                    ls_r = float(log_sigma_rot[q_idx].item())
                     det["log_sigma_rot"] = ls_r
-                    det["sigma_rot"] = float(torch.exp(log_sigma_rot[idx]).item())
+                    det["sigma_rot"] = float(torch.exp(log_sigma_rot[q_idx]).item())
+
                 detections.append(det)
 
             entry = {
@@ -365,5 +383,35 @@ class RTDETRPoseAdapter(ModelAdapter):
             }
             if intrinsics is not None:
                 entry["intrinsics"] = intrinsics
-            outputs.append(entry)
+            return entry
+
+        outputs: list[dict] = []
+        batch_x: list = []
+        batch_meta: list[tuple[str, dict, dict | None]] = []
+
+        for record in records:
+            if not isinstance(record, dict):
+                raise ValueError("records must be a list of dicts with key 'image'")
+            image_path = record["image"]
+            x, pp_meta, intrinsics = preprocess(record)
+            x = x.to(self.device)
+            batch_x.append(x)
+            batch_meta.append((image_path, pp_meta, intrinsics))
+
+            if len(batch_x) >= batch_size:
+                x_cat = torch.cat(batch_x, dim=0)
+                with torch.no_grad():
+                    out = model(x_cat)
+                for i, (p, meta, intr) in enumerate(batch_meta):
+                    outputs.append(_decode_single(idx=i, out=out, image_path=p, pp_meta=meta, intrinsics=intr))
+                batch_x = []
+                batch_meta = []
+
+        if batch_x:
+            x_cat = torch.cat(batch_x, dim=0)
+            with torch.no_grad():
+                out = model(x_cat)
+            for i, (p, meta, intr) in enumerate(batch_meta):
+                outputs.append(_decode_single(idx=i, out=out, image_path=p, pp_meta=meta, intrinsics=intr))
+
         return outputs
