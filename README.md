@@ -179,6 +179,9 @@ Start here: [docs/training_inference_export.md](docs/training_inference_export.m
 - Lightweight metrics stay available for fast loops, and full COCOeval is directly exposed from pip:
   `python3 -m pip install 'yolozu[coco]'` then
   `yolozu eval-coco --dataset <yolo-dataset> --predictions <predictions.json>`.
+- Long-tail focused post-hoc path is available without retraining:
+  `yolozu calibrate --method fracal --dataset <yolo-dataset> --predictions <predictions.json>` then
+  `yolozu eval-long-tail --dataset <yolo-dataset> --predictions <calibrated_predictions.json>`.
 - Model weights/datasets stay outside git by design; reproducibility is maintained through stable JSON artifacts and
   pinned path conventions documented in `docs/external_inference.md` and `docs/yolo26_inference_adapters.md`.
 
@@ -232,6 +235,7 @@ python3 -m unittest -q
 | Validate dataset layout | `yolozu validate dataset /path/to/yolo --strict` | `python3 tools/validate_dataset.py /path/to/yolo --strict` |
 | Validate predictions JSON | `yolozu validate predictions reports/predictions.json --strict` | `python3 tools/validate_predictions.py reports/predictions.json --strict` |
 | COCOeval mAP | `yolozu eval-coco --dataset /path/to/yolo --predictions reports/predictions.json` (requires `yolozu[coco]`) | `python3 tools/eval_coco.py ...` |
+| Long-tail post-hoc + report | `yolozu calibrate --method fracal --dataset /path/to/yolo --predictions reports/predictions.json --output reports/predictions_calibrated.json && yolozu eval-long-tail --dataset /path/to/yolo --predictions reports/predictions_calibrated.json --output reports/long_tail_eval.json` | (same via `python3 tools/yolozu.py ...`) |
 | Instance-seg eval (PNG masks) | `yolozu eval-instance-seg --dataset /path --predictions preds.json --output reports/instance_seg_eval.json` | `python3 tools/eval_instance_segmentation.py ...` |
 | ONNXRuntime CPU export | `yolozu onnxrt export ...` (requires `yolozu[onnxrt]`) | `python3 tools/export_predictions_onnxrt.py ...` |
 | Training scaffold | `yolozu train configs/examples/train_contract.yaml --run-id exp01` (requires `yolozu[train]`) | `python3 rtdetr_pose/tools/train_minimal.py ...` |

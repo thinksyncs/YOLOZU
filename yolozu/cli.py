@@ -570,6 +570,135 @@ def _cmd_eval_coco(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_calibrate(args: argparse.Namespace) -> int:
+    import time
+
+    from yolozu.dataset import build_manifest
+    from yolozu.export import write_predictions_json
+    from yolozu.long_tail_metrics import fracal_calibrate_predictions
+    from yolozu.predictions import normalize_predictions_payload, validate_predictions_entries
+
+    method = str(getattr(args, "method", "fracal") or "fracal").strip().lower()
+    if method != "fracal":
+        raise SystemExit(f"unsupported calibration method: {method}")
+
+    dataset_root = Path(str(args.dataset)).expanduser()
+    if not dataset_root.is_absolute():
+        dataset_root = Path.cwd() / dataset_root
+
+    manifest = build_manifest(dataset_root, split=str(args.split) if args.split else None)
+    records = list(manifest.get("images") or [])
+    if args.max_images is not None:
+        records = records[: int(args.max_images)]
+
+    predictions_path = Path(str(args.predictions)).expanduser()
+    if not predictions_path.is_absolute():
+        predictions_path = Path.cwd() / predictions_path
+
+    raw_data = json.loads(predictions_path.read_text(encoding="utf-8"))
+    entries, wrapped_meta = normalize_predictions_payload(raw_data)
+    validation = validate_predictions_entries(entries, strict=False)
+
+    calibrated_entries, calibration_report = fracal_calibrate_predictions(
+        records,
+        entries,
+        alpha=float(args.alpha),
+        strength=float(args.strength),
+        min_score=(None if args.min_score is None else float(args.min_score)),
+        max_score=(None if args.max_score is None else float(args.max_score)),
+    )
+
+    out_meta: dict[str, Any] = dict(wrapped_meta or {})
+    out_meta["posthoc_calibration"] = {
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "method": "fracal",
+        "report": calibration_report,
+    }
+
+    payload = {
+        "schema_version": 1,
+        "predictions": calibrated_entries,
+        "meta": out_meta,
+    }
+
+    out_path = write_predictions_json(output=str(args.output), payload=payload, force=bool(args.force))
+
+    report_payload = {
+        "report_schema_version": 1,
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "dataset": str(dataset_root),
+        "split": manifest.get("split"),
+        "predictions": str(predictions_path),
+        "output": str(out_path),
+        "method": "fracal",
+        "warnings": list(validation.warnings),
+        "calibration": calibration_report,
+    }
+    report_path = Path(str(args.output_report)).expanduser()
+    if not report_path.is_absolute():
+        report_path = Path.cwd() / report_path
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    if report_path.exists() and not bool(args.force):
+        raise SystemExit(f"output exists: {report_path} (use --force to overwrite)")
+    report_path.write_text(json.dumps(report_payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
+
+    print(str(out_path))
+    return 0
+
+
+def _cmd_eval_long_tail(args: argparse.Namespace) -> int:
+    import time
+
+    from yolozu.dataset import build_manifest
+    from yolozu.long_tail_metrics import evaluate_long_tail_detection
+    from yolozu.predictions import load_predictions_entries, validate_predictions_entries
+
+    dataset_root = Path(str(args.dataset)).expanduser()
+    if not dataset_root.is_absolute():
+        dataset_root = Path.cwd() / dataset_root
+
+    manifest = build_manifest(dataset_root, split=str(args.split) if args.split else None)
+    records = list(manifest.get("images") or [])
+    if args.max_images is not None:
+        records = records[: int(args.max_images)]
+
+    predictions_path = Path(str(args.predictions)).expanduser()
+    if not predictions_path.is_absolute():
+        predictions_path = Path.cwd() / predictions_path
+    predictions = load_predictions_entries(predictions_path)
+    validation = validate_predictions_entries(predictions, strict=False)
+
+    metrics = evaluate_long_tail_detection(
+        records,
+        predictions,
+        max_detections=int(args.max_detections),
+        head_fraction=float(args.head_fraction),
+        medium_fraction=float(args.medium_fraction),
+        calibration_bins=int(args.calibration_bins),
+        calibration_iou=float(args.calibration_iou),
+    )
+
+    payload: dict[str, Any] = {
+        "report_schema_version": 1,
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "dataset": str(dataset_root),
+        "split": manifest.get("split"),
+        "split_requested": str(args.split) if args.split else None,
+        "predictions": str(predictions_path),
+        "max_images": int(args.max_images) if args.max_images is not None else None,
+        "warnings": list(validation.warnings),
+        **metrics,
+    }
+
+    output_path = Path(str(args.output)).expanduser()
+    if not output_path.is_absolute():
+        output_path = Path.cwd() / output_path
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
+    print(str(output_path))
+    return 0
+
+
 def _cmd_parity(args: argparse.Namespace) -> int:
     from yolozu.predictions_parity import compare_predictions
 
@@ -861,6 +990,32 @@ def main(argv: list[str] | None = None) -> int:
     eval_coco.add_argument("--dry-run", action="store_true", help="Skip COCOeval; only validate/convert predictions.")
     eval_coco.add_argument("--max-images", type=int, default=None, help="Optional cap for number of images.")
     eval_coco.add_argument("--output", default="reports/coco_eval.json", help="Output report path.")
+
+    calibrate = sub.add_parser("calibrate", help="Apply post-hoc detection calibration (FRACAL) to predictions JSON.")
+    calibrate.add_argument("--method", choices=("fracal",), default="fracal", help="Calibration method (default: fracal).")
+    calibrate.add_argument("--dataset", required=True, help="YOLO-format dataset root (images/ + labels/).")
+    calibrate.add_argument("--split", default=None, help="Dataset split under images/ and labels/ (default: auto).")
+    calibrate.add_argument("--predictions", required=True, help="Input predictions JSON path.")
+    calibrate.add_argument("--output", default="reports/predictions_calibrated.json", help="Output calibrated predictions JSON path.")
+    calibrate.add_argument("--output-report", default="reports/calibration_fracal_report.json", help="Output calibration report JSON path.")
+    calibrate.add_argument("--max-images", type=int, default=None, help="Optional cap for calibration/eval subset size.")
+    calibrate.add_argument("--alpha", type=float, default=0.5, help="FRACAL class-frequency exponent (default: 0.5).")
+    calibrate.add_argument("--strength", type=float, default=1.0, help="Blend ratio [0,1] between original and FRACAL scores (default: 1.0).")
+    calibrate.add_argument("--min-score", type=float, default=None, help="Optional post-clamp minimum score.")
+    calibrate.add_argument("--max-score", type=float, default=None, help="Optional post-clamp maximum score.")
+    calibrate.add_argument("--force", action="store_true", help="Overwrite outputs if they exist.")
+
+    eval_lt = sub.add_parser("eval-long-tail", help="Evaluate long-tail detection metrics in one standardized report.")
+    eval_lt.add_argument("--dataset", required=True, help="YOLO-format dataset root (images/ + labels/).")
+    eval_lt.add_argument("--split", default=None, help="Dataset split under images/ and labels/ (default: auto).")
+    eval_lt.add_argument("--predictions", required=True, help="Predictions JSON path.")
+    eval_lt.add_argument("--output", default="reports/long_tail_eval.json", help="Output long-tail report JSON path.")
+    eval_lt.add_argument("--max-images", type=int, default=None, help="Optional cap for number of images.")
+    eval_lt.add_argument("--max-detections", type=int, default=100, help="Max detections per image for AR/calibration matching.")
+    eval_lt.add_argument("--head-fraction", type=float, default=0.33, help="Top class fraction assigned to head bin.")
+    eval_lt.add_argument("--medium-fraction", type=float, default=0.67, help="Top class fraction assigned up to medium bin.")
+    eval_lt.add_argument("--calibration-bins", type=int, default=10, help="Bin count for calibration metrics (ECE/confidence bias).")
+    eval_lt.add_argument("--calibration-iou", type=float, default=0.5, help="IoU threshold for calibration correctness matching.")
 
     parity = sub.add_parser("parity", help="Compare two predictions JSON artifacts for backend parity.")
     parity.add_argument("--reference", required=True, help="Reference predictions JSON (e.g. PyTorch).")
@@ -1214,6 +1369,10 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_predict_images(args)
     if args.command == "eval-coco":
         return _cmd_eval_coco(args)
+    if args.command == "calibrate":
+        return _cmd_calibrate(args)
+    if args.command == "eval-long-tail":
+        return _cmd_eval_long_tail(args)
     if args.command == "parity":
         return _cmd_parity(args)
     if args.command == "validate":
