@@ -63,7 +63,8 @@ jobs:
 
       - name: Unit tests
         run: |
-          python -m unittest
+          python -m unittest discover -s tests -t tests
+          python -m unittest discover -s rtdetr_pose/tests -t rtdetr_pose/tests
 
       - name: Migration smoke (migrate + validate)
         run: |
