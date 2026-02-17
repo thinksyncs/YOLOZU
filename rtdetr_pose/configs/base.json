@@ -20,6 +20,9 @@
     "nhead": 8,
     "encoder_dim_feedforward": null,
     "decoder_dim_feedforward": null,
+    "activation_preset": "default",
+    "backbone_activation": "silu",
+    "head_activation": "silu",
     "backbone_kwargs": {}
   },
   "loss": {

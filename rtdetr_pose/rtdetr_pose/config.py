@@ -32,6 +32,9 @@ class ModelConfig:
     nhead: int = 8
     encoder_dim_feedforward: int | None = None
     decoder_dim_feedforward: int | None = None
+    activation_preset: str = "default"
+    backbone_activation: str = "silu"
+    head_activation: str = "silu"
     backbone_kwargs: dict[str, Any] = field(default_factory=dict)
 
 

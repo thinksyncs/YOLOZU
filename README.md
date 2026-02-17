@@ -352,6 +352,7 @@ Trainer core features (implemented):
 - Lightweight aug: multiscale (`--multiscale`), hflip (`--hflip-prob`), photometric HSV/grayscale/noise/blur (`--hsv-*`, `--gray-prob`, `--gaussian-noise-*`, `--blur-*`; effective when `--real-images` is used).
 - Validation cadence: epoch (`--val-every`) and step-based (`--val-every-steps`).
 - Early stop: `--early-stop-patience` (+ `--early-stop-min-delta`).
+- Activation swapping (config): set `model.backbone_activation` / `model.head_activation` to `silu|gelu|swish|hardswish|hard-swish|leakyrelu`, or use `model.activation_preset` (recommended default: `default` = SiLU/SiLU).
 
 Common next checks:
 

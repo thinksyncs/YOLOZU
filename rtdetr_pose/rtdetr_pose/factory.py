@@ -21,6 +21,44 @@ from .losses import Losses
 from .model import CSPResNet, ConvNormAct, RTDETRPose
 
 
+def _normalize_activation_name(name: str) -> str:
+    value = str(name or "silu").strip().lower().replace("-", "_")
+    aliases = {
+        "swish": "silu",
+        "hard_swish": "hardswish",
+        "leaky_relu": "leakyrelu",
+    }
+    return aliases.get(value, value)
+
+
+def _resolve_activation_pair(cfg: ModelConfig) -> tuple[str, str]:
+    preset = str(getattr(cfg, "activation_preset", "default") or "default").strip().lower()
+    preset_map: dict[str, tuple[str, str]] = {
+        "default": ("silu", "silu"),
+        "all_silu": ("silu", "silu"),
+        "all_gelu": ("gelu", "gelu"),
+        "all_hardswish": ("hardswish", "hardswish"),
+        "all_leakyrelu": ("leakyrelu", "leakyrelu"),
+        "head_leakyrelu": ("silu", "leakyrelu"),
+        "mobile_hardswish": ("hardswish", "hardswish"),
+    }
+    if preset not in preset_map:
+        raise ValueError(
+            "unknown model.activation_preset: "
+            f"{preset} (supported: {sorted(preset_map.keys())})"
+        )
+
+    back, head = preset_map[preset]
+    back = _normalize_activation_name(str(getattr(cfg, "backbone_activation", back) or back))
+    head = _normalize_activation_name(str(getattr(cfg, "head_activation", head) or head))
+    valid = {"silu", "gelu", "hardswish", "leakyrelu"}
+    if back not in valid:
+        raise ValueError(f"unsupported model.backbone_activation: {back}")
+    if head not in valid:
+        raise ValueError(f"unsupported model.head_activation: {head}")
+    return back, head
+
+
 class TinyCNNBackbone(nn.Module):
     """Small backbone alternative for quick CPU experiments.
 
@@ -28,24 +66,31 @@ class TinyCNNBackbone(nn.Module):
     match stage_channels.
     """
 
-    def __init__(self, *, in_channels: int = 3, stem_channels: int = 32, stage_channels: tuple[int, int, int]):
+    def __init__(
+        self,
+        *,
+        in_channels: int = 3,
+        stem_channels: int = 32,
+        stage_channels: tuple[int, int, int],
+        activation: str = "silu",
+    ):
         super().__init__()
         c3, c4, c5 = stage_channels
         self.stem = nn.Sequential(
-            ConvNormAct(in_channels, stem_channels, kernel_size=3, stride=2, padding=1),
-            ConvNormAct(stem_channels, stem_channels, kernel_size=3, padding=1),
+            ConvNormAct(in_channels, stem_channels, kernel_size=3, stride=2, padding=1, activation=activation),
+            ConvNormAct(stem_channels, stem_channels, kernel_size=3, padding=1, activation=activation),
         )
         self.stage3 = nn.Sequential(
-            ConvNormAct(stem_channels, c3, kernel_size=3, stride=2, padding=1),
-            ConvNormAct(c3, c3, kernel_size=3, padding=1),
+            ConvNormAct(stem_channels, c3, kernel_size=3, stride=2, padding=1, activation=activation),
+            ConvNormAct(c3, c3, kernel_size=3, padding=1, activation=activation),
         )
         self.stage4 = nn.Sequential(
-            ConvNormAct(c3, c4, kernel_size=3, stride=2, padding=1),
-            ConvNormAct(c4, c4, kernel_size=3, padding=1),
+            ConvNormAct(c3, c4, kernel_size=3, stride=2, padding=1, activation=activation),
+            ConvNormAct(c4, c4, kernel_size=3, padding=1, activation=activation),
         )
         self.stage5 = nn.Sequential(
-            ConvNormAct(c4, c5, kernel_size=3, stride=2, padding=1),
-            ConvNormAct(c5, c5, kernel_size=3, padding=1),
+            ConvNormAct(c4, c5, kernel_size=3, stride=2, padding=1, activation=activation),
+            ConvNormAct(c5, c5, kernel_size=3, padding=1, activation=activation),
         )
 
     def forward(self, x):
@@ -68,6 +113,7 @@ def build_backbone(cfg: ModelConfig) -> tuple[Any, tuple[int, int, int]]:
 
     kwargs = getattr(cfg, "backbone_kwargs", None)
     kwargs = kwargs if isinstance(kwargs, dict) else {}
+    activation_backbone, _ = _resolve_activation_pair(cfg)
 
     if name in ("cspresnet", "csp_resnet"):
         stage_blocks = tuple(int(x) for x in (getattr(cfg, "stage_blocks", None) or [1, 2, 2]))
@@ -79,6 +125,7 @@ def build_backbone(cfg: ModelConfig) -> tuple[Any, tuple[int, int, int]]:
             stage_channels=stage_channels,
             stage_blocks=stage_blocks,
             use_sppf=use_sppf,
+            activation=activation_backbone,
         )
         return backbone, stage_channels
 
@@ -87,6 +134,7 @@ def build_backbone(cfg: ModelConfig) -> tuple[Any, tuple[int, int, int]]:
             in_channels=3,
             stem_channels=int(getattr(cfg, "stem_channels", 32)),
             stage_channels=stage_channels,
+            activation=activation_backbone,
         )
         return backbone, stage_channels
 
@@ -98,6 +146,7 @@ def build_model(cfg: ModelConfig) -> RTDETRPose:
         raise RuntimeError("torch is required for build_model")
 
     backbone, stage_channels = build_backbone(cfg)
+    activation_backbone, activation_head = _resolve_activation_pair(cfg)
     return RTDETRPose(
         # Keep cfg.num_classes as the number of foreground classes and reserve the
         # last logit as "no-object" / background (RT-DETR-style).
@@ -117,6 +166,8 @@ def build_model(cfg: ModelConfig) -> RTDETRPose:
         encoder_dim_feedforward=getattr(cfg, "encoder_dim_feedforward", None),
         decoder_dim_feedforward=getattr(cfg, "decoder_dim_feedforward", None),
         backbone=backbone,
+        backbone_activation=activation_backbone,
+        head_activation=activation_head,
     )
 
 

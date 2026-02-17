@@ -26,6 +26,29 @@ except ImportError:
     entropy_loss = _entropy_loss_fallback
 
 
+def _normalize_activation_name(name: str) -> str:
+    value = str(name or "silu").strip().lower().replace("-", "_")
+    aliases = {
+        "swish": "silu",
+        "hard_swish": "hardswish",
+        "leaky_relu": "leakyrelu",
+    }
+    return aliases.get(value, value)
+
+
+def build_activation(name: str, *, inplace: bool = True):
+    act = _normalize_activation_name(name)
+    if act == "silu":
+        return nn.SiLU(inplace=inplace)
+    if act == "gelu":
+        return nn.GELU()
+    if act == "hardswish":
+        return nn.Hardswish(inplace=inplace)
+    if act == "leakyrelu":
+        return nn.LeakyReLU(negative_slope=0.1, inplace=inplace)
+    raise ValueError(f"unsupported activation: {name}")
+
+
 def rot6d_to_matrix(x):
     if torch is None:
         raise RuntimeError("torch is required for rot6d_to_matrix")
@@ -67,7 +90,7 @@ class SinePositionEmbedding(nn.Module):
 
 
 class ConvNormAct(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0):
+    def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, activation="silu"):
         super().__init__()
         self.conv = nn.Conv2d(
             in_channels,
@@ -78,18 +101,18 @@ class ConvNormAct(nn.Module):
             bias=False,
         )
         self.bn = nn.BatchNorm2d(out_channels)
-        self.act = nn.SiLU(inplace=True)
+        self.act = build_activation(str(activation), inplace=True)
 
     def forward(self, x):
         return self.act(self.bn(self.conv(x)))
 
 
 class Bottleneck(nn.Module):
-    def __init__(self, in_channels, out_channels, expansion=0.5, shortcut=True):
+    def __init__(self, in_channels, out_channels, expansion=0.5, shortcut=True, activation="silu"):
         super().__init__()
         hidden = int(out_channels * expansion)
-        self.conv1 = ConvNormAct(in_channels, hidden, kernel_size=1)
-        self.conv2 = ConvNormAct(hidden, out_channels, kernel_size=3, padding=1)
+        self.conv1 = ConvNormAct(in_channels, hidden, kernel_size=1, activation=activation)
+        self.conv2 = ConvNormAct(hidden, out_channels, kernel_size=3, padding=1, activation=activation)
         self.shortcut = shortcut and in_channels == out_channels
 
     def forward(self, x):
@@ -100,15 +123,15 @@ class Bottleneck(nn.Module):
 
 
 class CSPBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, num_blocks=1, expansion=0.5):
+    def __init__(self, in_channels, out_channels, num_blocks=1, expansion=0.5, activation="silu"):
         super().__init__()
         hidden = int(out_channels * expansion)
-        self.conv1 = ConvNormAct(in_channels, hidden, kernel_size=1)
-        self.conv2 = ConvNormAct(in_channels, hidden, kernel_size=1)
+        self.conv1 = ConvNormAct(in_channels, hidden, kernel_size=1, activation=activation)
+        self.conv2 = ConvNormAct(in_channels, hidden, kernel_size=1, activation=activation)
         self.blocks = nn.Sequential(
-            *[Bottleneck(hidden, hidden, expansion=1.0) for _ in range(num_blocks)]
+            *[Bottleneck(hidden, hidden, expansion=1.0, activation=activation) for _ in range(num_blocks)]
         )
-        self.conv3 = ConvNormAct(hidden * 2, out_channels, kernel_size=1)
+        self.conv3 = ConvNormAct(hidden * 2, out_channels, kernel_size=1, activation=activation)
 
     def forward(self, x):
         y1 = self.blocks(self.conv1(x))
@@ -117,11 +140,11 @@ class CSPBlock(nn.Module):
 
 
 class SPPF(nn.Module):
-    def __init__(self, in_channels, out_channels, pool_size=5):
+    def __init__(self, in_channels, out_channels, pool_size=5, activation="silu"):
         super().__init__()
-        self.conv1 = ConvNormAct(in_channels, out_channels, kernel_size=1)
+        self.conv1 = ConvNormAct(in_channels, out_channels, kernel_size=1, activation=activation)
         self.pool = nn.MaxPool2d(kernel_size=pool_size, stride=1, padding=pool_size // 2)
-        self.conv2 = ConvNormAct(out_channels * 4, out_channels, kernel_size=1)
+        self.conv2 = ConvNormAct(out_channels * 4, out_channels, kernel_size=1, activation=activation)
 
     def forward(self, x):
         x = self.conv1(x)
@@ -139,25 +162,26 @@ class CSPResNet(nn.Module):
         stage_channels=(64, 128, 256),
         stage_blocks=(1, 2, 2),
         use_sppf=True,
+        activation="silu",
     ):
         super().__init__()
         self.stem = nn.Sequential(
-            ConvNormAct(in_channels, stem_channels, kernel_size=3, stride=2, padding=1),
-            ConvNormAct(stem_channels, stem_channels, kernel_size=3, padding=1),
-            ConvNormAct(stem_channels, stem_channels * 2, kernel_size=3, padding=1),
+            ConvNormAct(in_channels, stem_channels, kernel_size=3, stride=2, padding=1, activation=activation),
+            ConvNormAct(stem_channels, stem_channels, kernel_size=3, padding=1, activation=activation),
+            ConvNormAct(stem_channels, stem_channels * 2, kernel_size=3, padding=1, activation=activation),
         )
         in_ch = stem_channels * 2
         stages = []
         for out_ch, num_blocks in zip(stage_channels, stage_blocks):
             stages.append(
                 nn.Sequential(
-                    ConvNormAct(in_ch, out_ch, kernel_size=3, stride=2, padding=1),
-                    CSPBlock(out_ch, out_ch, num_blocks=num_blocks),
+                    ConvNormAct(in_ch, out_ch, kernel_size=3, stride=2, padding=1, activation=activation),
+                    CSPBlock(out_ch, out_ch, num_blocks=num_blocks, activation=activation),
                 )
             )
             in_ch = out_ch
         self.stages = nn.ModuleList(stages)
-        self.sppf = SPPF(stage_channels[-1], stage_channels[-1]) if use_sppf else None
+        self.sppf = SPPF(stage_channels[-1], stage_channels[-1], activation=activation) if use_sppf else None
 
     def forward(self, x):
         x = self.stem(x)
@@ -171,19 +195,19 @@ class CSPResNet(nn.Module):
 
 
 class FPNPAN(nn.Module):
-    def __init__(self, in_channels, out_channels):
+    def __init__(self, in_channels, out_channels, activation="silu"):
         super().__init__()
         self.lateral = nn.ModuleList(
-            [ConvNormAct(ch, out_channels, kernel_size=1) for ch in in_channels]
+            [ConvNormAct(ch, out_channels, kernel_size=1, activation=activation) for ch in in_channels]
         )
         self.fpn_convs = nn.ModuleList(
-            [ConvNormAct(out_channels, out_channels, kernel_size=3, padding=1) for _ in in_channels]
+            [ConvNormAct(out_channels, out_channels, kernel_size=3, padding=1, activation=activation) for _ in in_channels]
         )
         self.downsample = nn.ModuleList(
-            [ConvNormAct(out_channels, out_channels, kernel_size=3, stride=2, padding=1) for _ in in_channels[1:]]
+            [ConvNormAct(out_channels, out_channels, kernel_size=3, stride=2, padding=1, activation=activation) for _ in in_channels[1:]]
         )
         self.pan_convs = nn.ModuleList(
-            [ConvNormAct(out_channels, out_channels, kernel_size=3, padding=1) for _ in in_channels[1:]]
+            [ConvNormAct(out_channels, out_channels, kernel_size=3, padding=1, activation=activation) for _ in in_channels[1:]]
         )
 
     def forward(self, features):
@@ -208,9 +232,10 @@ class HybridEncoder(nn.Module):
         nhead=8,
         dim_feedforward=None,
         use_level_embed=True,
+        activation="silu",
     ):
         super().__init__()
-        self.fpn = FPNPAN(in_channels=in_channels, out_channels=hidden_dim)
+        self.fpn = FPNPAN(in_channels=in_channels, out_channels=hidden_dim, activation=activation)
         self.num_layers = num_layers
         self.use_level_embed = bool(use_level_embed)
         self.level_embed = None
@@ -329,12 +354,12 @@ class RenderTeacher(nn.Module):
     Processes geometry tensors (mask + normalized depth) to produce
     a feature map for masked reconstruction supervision.
     """
-    def __init__(self, hidden_dim=256, in_channels=2):
+    def __init__(self, hidden_dim=256, in_channels=2, activation="silu"):
         super().__init__()
         # Small CNN to encode geometry
-        self.conv1 = ConvNormAct(in_channels, hidden_dim // 4, kernel_size=3, padding=1)
-        self.conv2 = ConvNormAct(hidden_dim // 4, hidden_dim // 2, kernel_size=3, padding=1)
-        self.conv3 = ConvNormAct(hidden_dim // 2, hidden_dim, kernel_size=3, padding=1)
+        self.conv1 = ConvNormAct(in_channels, hidden_dim // 4, kernel_size=3, padding=1, activation=activation)
+        self.conv2 = ConvNormAct(hidden_dim // 4, hidden_dim // 2, kernel_size=3, padding=1, activation=activation)
+        self.conv3 = ConvNormAct(hidden_dim // 2, hidden_dim, kernel_size=3, padding=1, activation=activation)
         
     def forward(self, geom_input):
         """
@@ -356,11 +381,11 @@ class DecoderMIM(nn.Module):
     
     Reconstructs masked features to match geometry-derived teacher features.
     """
-    def __init__(self, hidden_dim=256):
+    def __init__(self, hidden_dim=256, activation="silu"):
         super().__init__()
         # Simple decoder with upsampling
-        self.conv1 = ConvNormAct(hidden_dim, hidden_dim, kernel_size=3, padding=1)
-        self.conv2 = ConvNormAct(hidden_dim, hidden_dim, kernel_size=3, padding=1)
+        self.conv1 = ConvNormAct(hidden_dim, hidden_dim, kernel_size=3, padding=1, activation=activation)
+        self.conv2 = ConvNormAct(hidden_dim, hidden_dim, kernel_size=3, padding=1, activation=activation)
         self.out = nn.Conv2d(hidden_dim, hidden_dim, kernel_size=1)
         
     def forward(self, masked_features):
@@ -399,6 +424,8 @@ class RTDETRPose(nn.Module):
         use_level_embed=True,
         enable_mim=False,
         mim_geom_channels=2,
+        backbone_activation="silu",
+        head_activation="silu",
     ):
         super().__init__()
         if backbone is None:
@@ -407,6 +434,7 @@ class RTDETRPose(nn.Module):
                 stage_channels=backbone_channels,
                 stage_blocks=stage_blocks,
                 use_sppf=bool(use_sppf),
+                activation=backbone_activation,
             )
         self.backbone = backbone
         self.position = SinePositionEmbedding(hidden_dim)
@@ -417,6 +445,7 @@ class RTDETRPose(nn.Module):
             nhead=nhead,
             dim_feedforward=encoder_dim_feedforward,
             use_level_embed=use_level_embed,
+            activation=head_activation,
         )
         self.decoder = RTDETRDecoder(
             hidden_dim=hidden_dim,
@@ -437,8 +466,12 @@ class RTDETRPose(nn.Module):
         self.render_teacher = None
         self.decoder_mim = None
         if self.enable_mim:
-            self.render_teacher = RenderTeacher(hidden_dim=hidden_dim, in_channels=mim_geom_channels)
-            self.decoder_mim = DecoderMIM(hidden_dim=hidden_dim)
+            self.render_teacher = RenderTeacher(
+                hidden_dim=hidden_dim,
+                in_channels=mim_geom_channels,
+                activation=head_activation,
+            )
+            self.decoder_mim = DecoderMIM(hidden_dim=hidden_dim, activation=head_activation)
 
     def forward(self, x, geom_input=None, feature_mask=None, return_mim=False):
         """Forward pass with optional masked reconstruction branch.
