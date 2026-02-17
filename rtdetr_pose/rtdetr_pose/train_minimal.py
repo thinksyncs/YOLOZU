@@ -275,6 +275,37 @@ def build_parser() -> argparse.ArgumentParser:
         help="Automatic mixed precision (cuda only): none|fp16|bf16 (default: none).",
     )
     parser.add_argument(
+        "--torch-compile",
+        action="store_true",
+        help="Enable torch.compile for model forward (experimental; default: false).",
+    )
+    parser.add_argument(
+        "--torch-compile-backend",
+        default="inductor",
+        help="torch.compile backend (default: inductor).",
+    )
+    parser.add_argument(
+        "--torch-compile-mode",
+        default=None,
+        help="torch.compile mode (e.g., default|reduce-overhead|max-autotune|max-autotune-no-cudagraphs). Default: none.",
+    )
+    parser.add_argument(
+        "--torch-compile-fullgraph",
+        action="store_true",
+        help="Pass fullgraph=True to torch.compile (default: false).",
+    )
+    parser.add_argument(
+        "--torch-compile-dynamic",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Pass dynamic=True/False to torch.compile (default: None).",
+    )
+    parser.add_argument(
+        "--torch-compile-strict",
+        action="store_true",
+        help="If torch.compile fails, stop the run instead of falling back (default: false).",
+    )
+    parser.add_argument(
         "--use-amp",
         action="store_true",
         help="Alias for --amp fp16 (back-compat).",
@@ -993,12 +1024,21 @@ def apply_run_dir_defaults(args: argparse.Namespace) -> tuple[argparse.Namespace
 
 
 def unwrap_model(model: "torch.nn.Module") -> "torch.nn.Module":
-    if hasattr(model, "module"):
-        try:
-            return model.module
-        except Exception:
-            return model
-    return model
+    # Unwrap common wrappers (DDP, torch.compile OptimizedModule, etc.).
+    while True:
+        if hasattr(model, "module"):
+            try:
+                model = model.module
+                continue
+            except Exception:
+                pass
+        if hasattr(model, "_orig_mod"):
+            try:
+                model = model._orig_mod  # type: ignore[attr-defined]
+                continue
+            except Exception:
+                pass
+        return model
 
 
 def _quantiles(values: "Any", qs: tuple[int, ...] = (50, 90, 95, 99)) -> dict[str, float]:
@@ -3330,6 +3370,40 @@ def main(argv: list[str] | None = None) -> int:
                 f"dropout={float(args.lora_dropout)} target={args.lora_target} freeze_base={bool(args.lora_freeze_base)}",
                 f"trainable_params={int(count_trainable_params(unwrap_model(model)))} trainable_info={trainable_info}",
             )
+
+    if bool(getattr(args, "torch_compile", False)):
+        if not hasattr(torch, "compile"):
+            raise SystemExit("--torch-compile requires torch.compile (PyTorch 2.x)")
+
+        backend = str(getattr(args, "torch_compile_backend", "inductor") or "inductor")
+        mode_raw = getattr(args, "torch_compile_mode", None)
+        mode = None
+        if mode_raw is not None:
+            mode_str = str(mode_raw).strip()
+            if mode_str and mode_str.lower() not in ("none", "null"):
+                mode = mode_str
+        fullgraph = bool(getattr(args, "torch_compile_fullgraph", False))
+        dynamic = getattr(args, "torch_compile_dynamic", None)
+        strict = bool(getattr(args, "torch_compile_strict", False))
+
+        try:
+            model = torch.compile(  # type: ignore[attr-defined]
+                model,
+                backend=backend,
+                mode=mode,
+                fullgraph=bool(fullgraph),
+                dynamic=dynamic,
+            )
+            if is_main:
+                print(
+                    "torch_compile",
+                    f"enabled=True backend={backend} mode={mode} fullgraph={bool(fullgraph)} dynamic={dynamic}",
+                )
+        except Exception as exc:
+            if strict:
+                raise SystemExit(f"torch.compile failed: {exc}") from exc
+            if is_main:
+                print(f"warning: torch.compile failed; continuing without compilation ({exc})")
 
     ema = None
     if bool(getattr(args, "use_ema", False)):

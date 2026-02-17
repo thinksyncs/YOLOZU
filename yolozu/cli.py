@@ -130,7 +130,10 @@ def _cmd_validate(args: argparse.Namespace) -> int:
         from yolozu.dataset import build_manifest
         from yolozu.dataset_validator import validate_dataset_records
 
-        manifest = build_manifest(str(args.dataset), split=str(args.split) if args.split else None)
+        try:
+            manifest = build_manifest(str(args.dataset), split=str(args.split) if args.split else None)
+        except Exception as exc:
+            raise SystemExit(str(exc)) from exc
         records = manifest.get("images") or []
         if not isinstance(records, list):
             raise SystemExit("invalid dataset manifest (expected list under 'images')")
@@ -249,6 +252,32 @@ def _cmd_onnxrt_export(args: argparse.Namespace) -> int:
         raise SystemExit(str(exc)) from exc
 
     out_path = write_predictions_json(output=str(args.output), payload=payload, force=bool(args.force))
+    print(str(out_path))
+    return 0
+
+
+def _cmd_onnxrt_quantize(args: argparse.Namespace) -> int:
+    from yolozu.onnxrt_quantize import quantize_onnx_dynamic
+
+    onnx_in = str(args.onnx)
+    onnx_out = str(args.output)
+    op_types = None
+    if args.op_types:
+        op_types = [t.strip() for t in str(args.op_types).split(",") if t.strip()]
+
+    try:
+        out_path = quantize_onnx_dynamic(
+            onnx_in=onnx_in,
+            onnx_out=onnx_out,
+            weight_type=str(args.weight_type),
+            per_channel=bool(args.per_channel),
+            reduce_range=bool(args.reduce_range),
+            op_types_to_quantize=op_types,
+            use_external_data_format=bool(args.use_external_data_format),
+        )
+    except Exception as exc:
+        raise SystemExit(str(exc)) from exc
+
     print(str(out_path))
     return 0
 
@@ -603,6 +632,20 @@ def main(argv: list[str] | None = None) -> int:
     onnxrt_export.add_argument("--dry-run", action="store_true", help="Write schema-correct JSON without running inference.")
     onnxrt_export.add_argument("--strict", action="store_true", help="Strict prediction schema validation before writing.")
 
+    onnxrt_quant = onnxrt_sub.add_parser("quantize", help="Quantize an ONNX model using ONNXRuntime (dynamic).")
+    onnxrt_quant.add_argument("--onnx", required=True, help="Input ONNX model path.")
+    onnxrt_quant.add_argument("--output", required=True, help="Output ONNX model path.")
+    onnxrt_quant.add_argument(
+        "--weight-type",
+        choices=("qint8", "quint8"),
+        default="qint8",
+        help="Weight quantization type (default: qint8).",
+    )
+    onnxrt_quant.add_argument("--per-channel", action="store_true", help="Quantize weights per channel.")
+    onnxrt_quant.add_argument("--reduce-range", action="store_true", help="Use 7-bit quantization for weights.")
+    onnxrt_quant.add_argument("--op-types", default=None, help="Comma-separated operator types to quantize (default: all supported).")
+    onnxrt_quant.add_argument("--use-external-data-format", action="store_true", help="Write weights as external data (>2GB models).")
+
     resources_p = sub.add_parser("resources", help="Access packaged configs/schemas/protocols.")
     resources_sub = resources_p.add_subparsers(dest="resources_command", required=True)
     resources_sub.add_parser("list", help="List packaged resource paths.")
@@ -703,6 +746,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "onnxrt":
         if args.onnxrt_command == "export":
             return _cmd_onnxrt_export(args)
+        if args.onnxrt_command == "quantize":
+            return _cmd_onnxrt_quantize(args)
         raise SystemExit("unknown onnxrt command")
     if args.command == "resources":
         return _cmd_resources(args)

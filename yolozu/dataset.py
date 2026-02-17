@@ -404,10 +404,111 @@ def load_yolo_dataset(images_dir, labels_dir, *, dataset_root: Path | None = Non
 def _pick_split(dataset_root: Path, split: str | None) -> str:
     if split:
         return split
-    for candidate in ("val2017", "train2017"):
-        if (dataset_root / "images" / candidate).exists():
+    images_root = dataset_root / "images"
+    if not images_root.exists():
+        return "train2017"
+
+    # Prefer common validation splits when present.
+    candidates = (
+        "val2017",
+        "val",
+        "valid",
+        "validation",
+        "train2017",
+        "train",
+    )
+    for candidate in candidates:
+        if (images_root / candidate).exists():
             return candidate
+
+    # Fallback: first directory under images/.
+    try:
+        for child in sorted(images_root.iterdir()):
+            if child.is_dir():
+                return child.name
+    except Exception:
+        pass
     return "train2017"
+
+
+def _resolve_ultralytics_data_yaml(
+    config_path: Path,
+    split: str | None,
+) -> tuple[Path, Path, str, Path] | None:
+    """Resolve images/labels directories from an Ultralytics-style data.yaml.
+
+    Supports the common pattern:
+      path: /abs/or/rel/root
+      train: images/train
+      val: images/val
+
+    Where train/val point to `.../images/<split>` directories, and labels live under
+    `.../labels/<split>`.
+    """
+
+    if not config_path.exists() or not config_path.is_file():
+        return None
+    if config_path.suffix.lower() not in (".yaml", ".yml"):
+        return None
+
+    try:
+        import yaml  # type: ignore
+    except Exception:
+        return None
+
+    try:
+        data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if not isinstance(data, dict):
+        return None
+
+    base_raw = data.get("path")
+    base = Path(str(base_raw)) if isinstance(base_raw, str) and str(base_raw).strip() else config_path.parent
+    if not base.is_absolute():
+        base = (config_path.parent / base).resolve()
+
+    def _resolve_images_dir(value: Any) -> Path | None:
+        if not (isinstance(value, str) and str(value).strip()):
+            return None
+        p = Path(str(value).strip())
+        if not p.is_absolute():
+            p = base / p
+        return p.resolve()
+
+    def _infer_layout(images_dir: Path) -> tuple[Path, Path, str, Path] | None:
+        if images_dir.parent.name != "images":
+            return None
+        dataset_root = images_dir.parent.parent
+        split_name = images_dir.name
+        labels_dir = dataset_root / "labels" / split_name
+        return images_dir, labels_dir, split_name, dataset_root
+
+    layouts: dict[str, tuple[Path, Path, str, Path]] = {}
+    train_dir = _resolve_images_dir(data.get("train"))
+    val_dir = _resolve_images_dir(data.get("val"))
+    if train_dir is not None:
+        layout = _infer_layout(train_dir)
+        if layout is not None:
+            layouts["train"] = layout
+            layouts[layout[2]] = layout
+    if val_dir is not None:
+        layout = _infer_layout(val_dir)
+        if layout is not None:
+            layouts["val"] = layout
+            layouts[layout[2]] = layout
+
+    if split:
+        key = str(split)
+        if key in layouts:
+            return layouts[key]
+        lowered = key.lower()
+        if lowered in ("train", "tr"):
+            return layouts.get("train")
+        if lowered in ("val", "valid", "validation", "eval"):
+            return layouts.get("val")
+
+    return layouts.get("val") or layouts.get("train")
 
 
 def _resolve_dataset_json_layout(dataset_root: Path, split: str | None) -> tuple[Path, Path, str] | None:
@@ -458,6 +559,14 @@ def _resolve_dataset_json_layout(dataset_root: Path, split: str | None) -> tuple
 
 def build_manifest(dataset_root, *, split: str | None = None):
     dataset_root = Path(dataset_root)
+    if dataset_root.exists() and dataset_root.is_file():
+        resolved = _resolve_ultralytics_data_yaml(dataset_root, split)
+        if resolved is not None:
+            images_dir, labels_dir, split_effective, inferred_root = resolved
+            records = load_yolo_dataset(images_dir, labels_dir, dataset_root=inferred_root)
+            return {"images": records, "split": split_effective}
+        raise FileNotFoundError(f"unsupported dataset descriptor file: {dataset_root}")
+
     resolved = _resolve_dataset_json_layout(dataset_root, split)
     if resolved is not None:
         images_dir, labels_dir, split_effective = resolved

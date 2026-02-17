@@ -323,6 +323,7 @@ Trainer core features (implemented):
 - NaN/Inf guard with skip + LR decay knobs (`--stop-on-non-finite-loss`, `--non-finite-max-skips`, `--non-finite-lr-decay`).
 - Grad clipping (`--clip-grad-norm`, recommended >0 for pose/TTT/MIM stability).
 - AMP (`--amp {none,fp16,bf16}`), EMA (`--use-ema` + `--ema-eval`), DDP (`--ddp` via `torchrun`).
+- (Optional) `torch.compile`: `--torch-compile` (+ `--torch-compile-*`; experimental; falls back by default if compile fails).
 - Lightweight aug: multiscale (`--multiscale`), hflip (`--hflip-prob`), photometric HSV/grayscale/noise/blur (`--hsv-*`, `--gray-prob`, `--gaussian-noise-*`, `--blur-*`; effective when `--real-images` is used).
 - Validation cadence: epoch (`--val-every`) and step-based (`--val-every-steps`).
 - Early stop: `--early-stop-patience` (+ `--early-stop-min-delta`).
@@ -362,6 +363,7 @@ Base dataset format:
 
 - Ultralytics YOLOv8 / YOLO11: if your dataset root contains `images/train` + `labels/train` (and `images/val` + `labels/val`),
   it is already compatible. Use `yolozu validate dataset /path/to/dataset --strict`.
+  - You can also pass an Ultralytics `data.yaml` as `--dataset` (expects `path:` + `train:`/`val:` pointing to `images/<split>`).
 - YOLOX: common setups use COCO JSON (`instances_*.json`). Convert once with `tools/prepare_coco_yolo.py`
   to generate YOLO-format labels (and an optional `dataset.json` descriptor) under a YOLOZU-compatible dataset root.
 
