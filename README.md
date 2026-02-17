@@ -155,6 +155,16 @@ Start here: [docs/training_inference_export.md](docs/training_inference_export.m
 - P2: cache/re-run (fingerprinted runs) + sweeps (wrapper exists; expand sweeps for TTT/threshold/gate weights) + production inference cores (C++/Rust) as needed.
 - Long-form notes: `docs/roadmap.md`
 
+### Status snapshot (2026-02-17)
+
+- P0: implemented in unified wrapper CLI (`python3 tools/yolozu.py export --backend {dummy,torch,onnxrt,trt}`) with wrapped predictions JSON and `meta.run` (`git/env/gpu/seed/config_hash`).
+- P1: implemented (`doctor`, `predict-images`, HTML overlays/report path).
+- P2: implemented baseline (`--cache`, sweep wrapper) and ongoing expansion for broader production cores/tuning presets.
+
+Recent compatibility additions:
+- import/doctor auto-detection: `yolozu import ... --from auto`, `yolozu doctor import --config-from auto|--dataset-from auto`.
+- train shorthand preview: `yolozu train --import auto --cfg <args_or_config>` writes resolved canonical `TrainConfig`.
+
 ## Pros / Operational Notes (project-level)
 
 ### Pros

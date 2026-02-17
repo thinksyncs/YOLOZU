@@ -272,12 +272,16 @@
       "id": "yolozu",
       "entrypoint": "tools/yolozu.py",
       "runner": "python3",
-      "summary": "Unified CLI: doctor + export (dummy/torch/onnxrt/trt) + predict-images (folder→JSON+overlays+HTML) + eval-instance-seg (PNG mask mAP) + sweep wrapper + fingerprinted caching.",
-      "tags": ["cli", "predictions", "diagnostics", "report", "sweep"],
+      "summary": "Unified CLI: doctor/import + export (dummy/torch/onnxrt/trt) + predict-images (folder→JSON+overlays+HTML) + eval-instance-seg + long-tail calibrate/eval + sweep wrapper + fingerprinted caching.",
+      "tags": ["cli", "predictions", "diagnostics", "report", "sweep", "long_tail", "import"],
       "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
       "contracts": { "produces": ["predictions_json"] },
       "examples": [
         { "description": "Doctor report.", "command": "python3 tools/yolozu.py doctor --output reports/doctor.json" },
+        {
+          "description": "Doctor import auto-detect (config).",
+          "command": "python3 -m yolozu doctor import --config-from auto --args /path/to/args.yaml --output -"
+        },
         {
           "description": "Export dummy predictions with run meta.",
           "command": "python3 tools/yolozu.py export --backend dummy --dataset data/coco128 --max-images 5 --output reports/predictions_dummy_run.json"
@@ -293,6 +297,14 @@
         {
           "description": "Run a sweep config (dry-run).",
           "command": "python3 tools/yolozu.py sweep --config docs/hpo_sweep_example.json --dry-run"
+        },
+        {
+          "description": "Long-tail post-hoc calibration + standardized eval.",
+          "command": "python3 tools/yolozu.py calibrate --method fracal --dataset data/coco128 --predictions reports/predictions.json --output reports/predictions_calibrated.json && python3 tools/yolozu.py eval-long-tail --dataset data/coco128 --predictions reports/predictions_calibrated.json --output reports/long_tail_eval.json"
+        },
+        {
+          "description": "Train import preview with auto framework detection.",
+          "command": "python3 -m yolozu train --import auto --cfg /path/to/args_or_config.{yaml,py} --resolved-config-out reports/train_config_resolved_import.json"
         }
       ],
       "docs": ["docs/tools_index.md"]
