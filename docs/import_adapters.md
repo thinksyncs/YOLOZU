@@ -137,6 +137,24 @@ yolozu doctor import \
 yolozu doctor import \
   --config-from ultralytics \
   --args /path/to/runs/.../args.yaml
+
+## Train shorthand (`train --import`)
+
+For quick demos/宣伝, you can use a shorthand that resolves external config into canonical `TrainConfig`
+and prints doctor-import summary first.
+
+```bash
+# Ultralytics
+yolozu train --import ultralytics --data /path/to/data.yaml --cfg /path/to/args.yaml
+
+# MMDetection
+yolozu train --import mmdet --cfg /path/to/config.py
+```
+
+Notes:
+- This writes resolved config to `reports/train_config_resolved_import.json` by default.
+- Add `--resolved-config-out <path>` to change output location.
+- If you omit positional `config`, command runs in preview-only mode (no RT-DETR training is launched).
 ```
 
 ## Goals / non-goals

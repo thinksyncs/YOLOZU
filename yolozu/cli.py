@@ -64,6 +64,58 @@ def _cmd_train(config_path: Path, extra_args: list[str] | None = None) -> int:
     return int(train_main(argv))
 
 
+def _cmd_train_import_preview(args: argparse.Namespace) -> int:
+    from yolozu.imports import (
+        import_detectron2_config,
+        import_mmdet_config,
+        import_ultralytics_config,
+        import_yolox_config,
+    )
+
+    from_format = str(getattr(args, "import_from", "") or "").strip().lower()
+    if not from_format:
+        return 0
+
+    cfg_path = str(getattr(args, "cfg", "") or "").strip()
+    if not cfg_path:
+        raise SystemExit("--cfg is required when using train --import")
+
+    doctor_args = argparse.Namespace(
+        output="-",
+        dataset_from=("ultralytics" if getattr(args, "data", None) else None),
+        config_from=from_format,
+        data=(str(args.data) if getattr(args, "data", None) else None),
+        args=(cfg_path if from_format == "ultralytics" else None),
+        task=None,
+        split=None,
+        max_images=200,
+        instances=None,
+        images_dir=None,
+        include_crowd=False,
+        config=(cfg_path if from_format in ("mmdet", "yolox", "detectron2") else None),
+    )
+    doctor_rc = int(_cmd_doctor_import(doctor_args))
+    if doctor_rc != 0:
+        raise SystemExit("train --import preview failed (doctor import reported errors)")
+
+    output = str(getattr(args, "resolved_config_out", "reports/train_config_resolved_import.json") or "reports/train_config_resolved_import.json")
+    force = bool(getattr(args, "force_import_overwrite", False))
+
+    if from_format == "ultralytics":
+        out = import_ultralytics_config(args_yaml=cfg_path, output=output, force=force)
+    elif from_format == "mmdet":
+        out = import_mmdet_config(config=cfg_path, output=output, force=force)
+    elif from_format == "yolox":
+        out = import_yolox_config(config=cfg_path, output=output, force=force)
+    elif from_format == "detectron2":
+        out = import_detectron2_config(config=cfg_path, output=output, force=force)
+    else:
+        raise SystemExit("unsupported --import value")
+
+    print(str(out))
+    return 0
+
+
 def _cmd_test(config_path: Path, extra_args: list[str] | None = None) -> int:
     try:
         from yolozu.scenarios_cli import main as scenarios_main
@@ -1354,7 +1406,26 @@ def main(argv: list[str] | None = None) -> int:
     imp_cfg.add_argument("--force", action="store_true", help="Overwrite output if it exists.")
 
     train_p = sub.add_parser("train", help="Train with RT-DETR pose scaffold (requires `yolozu[train]`).")
-    train_p.add_argument("config", type=str, help="Path to train config YAML/JSON (train_setting.yaml).")
+    train_p.add_argument("config", nargs="?", type=str, help="Path to train config YAML/JSON (train_setting.yaml).")
+    train_p.add_argument(
+        "--import",
+        dest="import_from",
+        choices=("ultralytics", "mmdet", "yolox", "detectron2"),
+        default=None,
+        help="Optional shorthand: resolve external config into canonical TrainConfig before training.",
+    )
+    train_p.add_argument("--data", default=None, help="(train --import ultralytics) data.yaml path for dataset preview.")
+    train_p.add_argument("--cfg", default=None, help="(train --import) external framework config/args path.")
+    train_p.add_argument(
+        "--resolved-config-out",
+        default="reports/train_config_resolved_import.json",
+        help="Output path for canonical TrainConfig resolved by train --import.",
+    )
+    train_p.add_argument(
+        "--force-import-overwrite",
+        action="store_true",
+        help="Overwrite --resolved-config-out if it already exists.",
+    )
     train_p.add_argument(
         "train_args",
         nargs=argparse.REMAINDER,
@@ -1417,6 +1488,12 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
     if args.command == "train":
+        if getattr(args, "import_from", None):
+            _cmd_train_import_preview(args)
+            if not getattr(args, "config", None):
+                return 0
+        if not getattr(args, "config", None):
+            raise SystemExit("train config is required unless using --import preview-only mode")
         config_path = Path(args.config)
         if not config_path.exists():
             raise SystemExit(f"config not found: {config_path}")

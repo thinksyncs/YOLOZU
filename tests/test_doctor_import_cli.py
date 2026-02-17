@@ -88,6 +88,34 @@ class TestDoctorImportCLI(unittest.TestCase):
             self.assertEqual(train.get("format"), "yolozu_train_config_v1")
             self.assertEqual(int(train.get("batch")), 16)
 
+    def test_train_import_ultralytics_preview_writes_resolved_config(self):
+        repo_root = Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory(dir=str(repo_root)) as td:
+            root = Path(td)
+            args_yaml = root / "args.yaml"
+            args_yaml.write_text("imgsz: 640\nbatch: 8\nepochs: 1\nlr0: 0.005\n", encoding="utf-8")
+            out_path = root / "resolved_train_config.json"
+
+            proc = self._run(
+                [
+                    "train",
+                    "--import",
+                    "ultralytics",
+                    "--cfg",
+                    str(args_yaml),
+                    "--resolved-config-out",
+                    str(out_path),
+                ],
+                cwd=repo_root,
+            )
+            if proc.returncode != 0:
+                self.fail(f"train --import preview failed:\n{proc.stdout}\n{proc.stderr}")
+
+            self.assertTrue(out_path.is_file())
+            payload = json.loads(out_path.read_text(encoding="utf-8"))
+            self.assertEqual(payload.get("format"), "yolozu_train_config_v1")
+            self.assertEqual(int(payload.get("batch")), 8)
+
 
 if __name__ == "__main__":
     unittest.main()
