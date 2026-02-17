@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import math
-from collections import defaultdict
 from typing import Any, Iterable
 
 from .boxes import iou_cxcywh_norm_dict
