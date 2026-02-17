@@ -44,6 +44,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements-dev.txt
+          python -m pip install safetensors
 
       - name: Packaging smoke (pip install + yolozu doctor)
         run: |
@@ -63,6 +64,90 @@ jobs:
       - name: Unit tests
         run: |
           python -m unittest
+
+      - name: Migration smoke (migrate + validate)
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          from PIL import Image
+
+          out_dir = Path("reports") / "ci_migrate"
+          out_dir.mkdir(parents=True, exist_ok=True)
+
+          dataset_root = Path(os.environ["RUNNER_TEMP"]) / "ultra_seg_dataset"
+          images = dataset_root / "images" / "val"
+          labels = dataset_root / "labels" / "val"
+          images.mkdir(parents=True, exist_ok=True)
+          labels.mkdir(parents=True, exist_ok=True)
+          Image.new("RGB", (32, 32), color=(0, 0, 0)).save(images / "000001.jpg")
+          (labels / "000001.txt").write_text("0 0.1 0.1 0.9 0.1 0.9 0.9 0.1 0.9\n", encoding="utf-8")
+
+          data_yaml = Path(os.environ["RUNNER_TEMP"]) / "ultra_data.yaml"
+          data_yaml.write_text(
+              "\n".join(
+                  [
+                      f"path: {dataset_root}",
+                      "train: images/train",
+                      "val: images/val",
+                      "task: segment",
+                      "",
+                  ]
+              ),
+              encoding="utf-8",
+          )
+          args_yaml = Path(os.environ["RUNNER_TEMP"]) / "ultra_args.yaml"
+          args_yaml.write_text(f"data: {data_yaml}\ntask: segment\n", encoding="utf-8")
+
+          voc_root = Path(os.environ["RUNNER_TEMP"]) / "voc_smoke" / "VOC2012"
+          (voc_root / "JPEGImages").mkdir(parents=True, exist_ok=True)
+          (voc_root / "SegmentationClass").mkdir(parents=True, exist_ok=True)
+          (voc_root / "ImageSets" / "Segmentation").mkdir(parents=True, exist_ok=True)
+          (voc_root / "JPEGImages" / "0001.jpg").write_bytes(b"")
+          (voc_root / "SegmentationClass" / "0001.png").write_bytes(b"")
+          (voc_root / "ImageSets" / "Segmentation" / "val.txt").write_text("0001\n", encoding="utf-8")
+          print("prepared:", dataset_root, data_yaml, args_yaml, voc_root)
+          PY
+
+          yolozu migrate dataset \
+            --from ultralytics \
+            --data "${RUNNER_TEMP}/ultra_data.yaml" \
+            --args "${RUNNER_TEMP}/ultra_args.yaml" \
+            --output reports/ci_migrate/ultra_wrapper \
+            --force
+
+          yolozu validate dataset reports/ci_migrate/ultra_wrapper --split val
+          yolozu validate dataset "${RUNNER_TEMP}/ultra_seg_dataset" --split val --label-format segment
+
+          yolozu migrate seg-dataset \
+            --from voc \
+            --root "${RUNNER_TEMP}/voc_smoke/VOC2012" \
+            --split val \
+            --output reports/ci_migrate/voc_seg_dataset.json \
+            --force
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from yolozu.segmentation_dataset import load_seg_dataset_descriptor
+
+          d = load_seg_dataset_descriptor("reports/ci_migrate/voc_seg_dataset.json")
+          assert d.task == "semantic_segmentation"
+          assert len(d.samples) == 1
+
+          preds = Path("reports/ci_migrate/seg_preds.json")
+          preds.write_text(json.dumps([{"id": "0001", "mask": "pred.png"}]), encoding="utf-8")
+          print("ok", preds)
+          PY
+
+          yolozu validate seg reports/ci_migrate/seg_preds.json
+
+      - name: Upload migration artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci_migrate_artifacts
+          path: reports/ci_migrate
 
       - name: Scenario smoke run
         run: |

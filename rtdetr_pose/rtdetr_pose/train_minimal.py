@@ -776,7 +776,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--derpp-teacher-key",
         type=str,
         default="derpp_teacher_npz",
-        help="Record key holding DER++ teacher outputs (dict) or a path to an .npz/.json/.pt/.pth (default: derpp_teacher_npz).",
+        help="Record key holding DER++ teacher outputs (dict) or a path to an .npz/.json/.pt/.pth/.safetensors (default: derpp_teacher_npz).",
     )
     parser.add_argument(
         "--derpp-weight",
@@ -2200,6 +2200,7 @@ class ManifestDataset(Dataset):
         self.derpp_enabled = bool(derpp_enabled)
         self.derpp_teacher_key = str(derpp_teacher_key) if derpp_teacher_key is not None else ""
         self.derpp_keys = tuple(str(k) for k in (derpp_keys or ()))
+        self._derpp_teacher_warned: set[str] = set()
 
     def _load_derpp_teacher(self, value: Any) -> dict[str, "torch.Tensor"] | None:
         if not self.derpp_enabled or not self.derpp_teacher_key:
@@ -2215,6 +2216,16 @@ class ManifestDataset(Dataset):
             if t.ndim >= 1 and int(t.shape[0]) == 1:
                 return t.squeeze(0)
             return t
+
+        def _warn_once(msg: str) -> None:
+            warned = getattr(self, "_derpp_teacher_warned", None)
+            if not isinstance(warned, set):
+                warned = set()
+                setattr(self, "_derpp_teacher_warned", warned)
+            if msg in warned:
+                return
+            warned.add(msg)
+            print(msg, file=sys.stderr)
 
         if isinstance(value, dict):
             out: dict[str, torch.Tensor] = {}
@@ -2265,6 +2276,22 @@ class ManifestDataset(Dataset):
                         return {keys[0]: _maybe_squeeze(torch.tensor(loaded, dtype=torch.float32))}
                     except Exception:
                         return None
+                return None
+            if path.suffix.lower() == ".safetensors":
+                try:
+                    from safetensors.torch import load_file  # type: ignore
+                except Exception:
+                    _warn_once(
+                        "DERPP teacher: safetensors is not installed; cannot load "
+                        f"{path}. Install it with `python -m pip install safetensors`."
+                    )
+                    return None
+                try:
+                    loaded = load_file(str(path), device="cpu")
+                except Exception:
+                    return None
+                if isinstance(loaded, dict):
+                    return self._load_derpp_teacher(loaded)
                 return None
             if path.suffix.lower() in (".npy", ".npz"):
                 try:

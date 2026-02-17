@@ -77,3 +77,41 @@ The output descriptor contains:
 - `ignore_index`
 - `path_type`: `absolute` (default) or `relative`
 
+## 3) COCO JSON datasets (YOLOX / Detectron2 / MMDetection)
+
+Many ecosystems (YOLOX, Detectron2, MMDetection) use COCO-style `instances_*.json` for detection datasets.
+
+YOLOZU consumes **YOLO-style bbox labels** (`labels/<split>/*.txt`), so the simplest migration path is:
+COCO JSON → YOLO labels + `dataset.json` wrapper.
+
+Use the built-in converter:
+
+```bash
+python3 tools/prepare_coco_yolo.py \
+  --coco-root /path/to/coco_like_root \
+  --split val2017 \
+  --out data/coco_yolo_like
+```
+
+This writes:
+- `data/coco_yolo_like/labels/val2017/*.txt`
+- `data/coco_yolo_like/dataset.json` (points at `images_dir` and `labels_dir`)
+
+Then validate:
+
+```bash
+yolozu validate dataset data/coco_yolo_like --split val2017
+```
+
+## Troubleshooting (common migration failures)
+
+- `yolozu migrate dataset` fails to resolve layouts:
+  - Ensure `data.yaml` contains `path:` and `train:`/`val:` point at `images/<split>` directories.
+- Polygon labels (`label_format=segment`) errors:
+  - Label line must be `class_id` + even-length coords `[x1 y1 x2 y2 ...]` with at least 3 points (>= 6 numbers).
+  - Coordinates should be normalized to `[0,1]` (Ultralytics default).
+  - If your labels include `class cx cy w h + poly(...)`, YOLOZU skips the first 4 numbers automatically.
+- `yolozu validate dataset` complains about image size:
+  - Ensure images are real `.jpg/.png` files (not empty placeholders), or use `--no-check-images` for label-only validation.
+- `yolozu migrate seg-dataset` (VOC/Cityscapes/ADE20K) can’t find files:
+  - Double-check `--root` points at the dataset root (see each dataset’s expected layout) and `--split` exists.
