@@ -1188,7 +1188,17 @@ def _passthrough_pkg_cli(args: argparse.Namespace) -> int:
 
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
-    p = argparse.ArgumentParser(prog="yolozu", description="YOLOZU unified CLI (P0/P1/P2 building blocks).")
+    p = argparse.ArgumentParser(
+        prog="yolozu",
+        description="YOLOZU unified CLI (P0/P1/P2 building blocks).",
+        epilog=(
+            "© 2026 ToppyMicroServices OÜ\n"
+            "Legal address: Karamelli tn 2, 11317 Tallinn, Harju County, Estonia\n"
+            "Registry code: 16551297\n"
+            "Contact: develop@toppymicros.com"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     sub = p.add_subparsers(dest="cmd", required=True)
 
     p_doctor = sub.add_parser("doctor", help="Print environment diagnostics as JSON.")

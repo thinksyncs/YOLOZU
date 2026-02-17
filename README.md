@@ -203,6 +203,12 @@ yolozu --help
 yolozu doctor --output -
 ```
 
+Support / legal:
+- Contact: develop@toppymicros.com
+- © 2026 ToppyMicroServices OÜ
+- Legal address: Karamelli tn 2, 11317 Tallinn, Harju County, Estonia
+- Registry code: 16551297
+
 Optional extras (recommended as needed):
 
 ```bash

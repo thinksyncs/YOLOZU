@@ -1090,7 +1090,16 @@ def _cmd_import(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="yolozu")
+    parser = argparse.ArgumentParser(
+        prog="yolozu",
+        epilog=(
+            "© 2026 ToppyMicroServices OÜ\n"
+            "Legal address: Karamelli tn 2, 11317 Tallinn, Harju County, Estonia\n"
+            "Registry code: 16551297\n"
+            "Contact: develop@toppymicros.com"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
 
