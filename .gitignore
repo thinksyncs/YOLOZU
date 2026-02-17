@@ -10,6 +10,12 @@ reports/
 rtdetr_pose/reports/
 /data/
 
+# Training / build artifacts
+runs/
+build/
+dist/
+*.egg-info/
+
 # virtualenvs
 .venv/
 .venv-runpod/

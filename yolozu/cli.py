@@ -51,7 +51,7 @@ def _build_args_from_config(cfg: dict) -> list[str]:
 
 def _cmd_train(config_path: Path, extra_args: list[str] | None = None) -> int:
     try:
-        from rtdetr_pose.train_minimal import main as train_main
+        from rtdetr_pose.tools.train_minimal import main as train_main
     except Exception as exc:  # pragma: no cover
         raise SystemExit(
             "yolozu train requires optional training deps. Install `yolozu[train]` (or `yolozu[full]`) "

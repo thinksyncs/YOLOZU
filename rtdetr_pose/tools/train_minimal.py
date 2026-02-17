@@ -18,8 +18,12 @@ sys.path.insert(0, str(repo_root))
 # imported `rtdetr_pose` as a namespace package (rooted at repo_root.parent).
 # Clear it so `import_module("rtdetr_pose.train_minimal")` resolves to the real
 # package under repo_root.
+_self = __name__
+_keep = {_self, _self.rsplit(".", 1)[0]} if "." in _self else {_self}
 sys.modules.pop("rtdetr_pose", None)
 for key in list(sys.modules.keys()):
+    if key in _keep:
+        continue
     if key.startswith("rtdetr_pose."):
         sys.modules.pop(key, None)
 
