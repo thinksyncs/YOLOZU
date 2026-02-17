@@ -1,0 +1,23 @@
+{
+  "base_cmd": "python3 tools/yolozu.py export --backend torch --dataset $DATASET --split $SPLIT --checkpoint $CHECKPOINT --device $DEVICE --max-images $MAX_IMAGES --score-threshold {score_threshold} --wrap --output {run_dir}/predictions.json && python3 tools/eval_coco.py --dataset $DATASET --split $SPLIT --predictions {run_dir}/predictions.json --bbox-format cxcywh_norm --max-images $MAX_IMAGES --output {run_dir}/metrics.json",
+  "param_grid": {
+    "score_threshold": [0.001, 0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5]
+  },
+  "param_order": ["score_threshold"],
+  "run_dir": "runs/sweep_threshold/{run_id}",
+  "metrics": {
+    "path": "{run_dir}/metrics.json",
+    "keys": ["metrics.map50", "metrics.map50_95", "metrics.ar100"]
+  },
+  "result_jsonl": "reports/sweep_threshold.jsonl",
+  "result_csv": "reports/sweep_threshold.csv",
+  "result_md": "reports/sweep_threshold.md",
+  "shell": true,
+  "env": {
+    "DATASET": "data/coco128",
+    "SPLIT": "train2017",
+    "CHECKPOINT": "runs/rtdetr_pose/checkpoint.pt",
+    "DEVICE": "cuda:0",
+    "MAX_IMAGES": "50"
+  }
+}

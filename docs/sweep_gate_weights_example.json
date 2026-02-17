@@ -1,0 +1,29 @@
+{
+  "base_cmd": "python3 tools/tune_gate_weights.py --dataset $DATASET --split $SPLIT --predictions $PREDICTIONS --metric {metric} --grid-det {grid_det} --grid-tmp {grid_tmp} --grid-unc {grid_unc} --output-report {run_dir}/gate_tuning_report.json --output-predictions {run_dir}/predictions_tuned.json --wrap-output",
+  "param_grid": {
+    "grid_det": ["1.0"],
+    "grid_tmp": ["0.0,0.25,0.5,0.75,1.0", "0.0,0.5,1.0"],
+    "grid_unc": ["0.0,0.25,0.5,0.75,1.0", "0.0,0.5,1.0"],
+    "metric": ["map50_95", "map50"]
+  },
+  "param_order": ["metric", "grid_det", "grid_tmp", "grid_unc"],
+  "run_dir": "runs/sweep_gate_weights/{run_id}",
+  "metrics": {
+    "path": "{run_dir}/gate_tuning_report.json",
+    "keys": [
+      "metrics.tuning.best.det",
+      "metrics.tuning.best.tmp",
+      "metrics.tuning.best.unc",
+      "metrics.tuning.best.map50_95"
+    ]
+  },
+  "result_jsonl": "reports/sweep_gate_weights.jsonl",
+  "result_csv": "reports/sweep_gate_weights.csv",
+  "result_md": "reports/sweep_gate_weights.md",
+  "shell": true,
+  "env": {
+    "DATASET": "data/coco128",
+    "SPLIT": "train2017",
+    "PREDICTIONS": "reports/predictions_rtdetr_pose.json"
+  }
+}
