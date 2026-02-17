@@ -776,7 +776,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--derpp-teacher-key",
         type=str,
         default="derpp_teacher_npz",
-        help="Record key holding DER++ teacher outputs (dict) or a path to an .npz/.json (default: derpp_teacher_npz).",
+        help="Record key holding DER++ teacher outputs (dict) or a path to an .npz/.json/.pt/.pth (default: derpp_teacher_npz).",
     )
     parser.add_argument(
         "--derpp-weight",
@@ -2229,7 +2229,7 @@ class ManifestDataset(Dataset):
                         continue
             return out or None
 
-        if isinstance(value, str) and value:
+        if isinstance(value, (str, Path)) and str(value):
             path = Path(value)
             if not path.is_absolute():
                 path = (workspace_root / path).resolve()
@@ -2246,6 +2246,25 @@ class ManifestDataset(Dataset):
                     return None
                 if isinstance(loaded, dict):
                     return self._load_derpp_teacher(loaded)
+                return None
+            if path.suffix.lower() in (".pt", ".pth"):
+                try:
+                    loaded = torch.load(path, map_location="cpu", weights_only=True)
+                except Exception:
+                    return None
+                if isinstance(loaded, dict):
+                    return self._load_derpp_teacher(loaded)
+                if isinstance(loaded, torch.Tensor):
+                    if len(keys) != 1:
+                        return None
+                    return {keys[0]: _maybe_squeeze(loaded.detach().to(dtype=torch.float32, device="cpu").clone())}
+                if isinstance(loaded, (list, tuple)):
+                    if len(keys) != 1:
+                        return None
+                    try:
+                        return {keys[0]: _maybe_squeeze(torch.tensor(loaded, dtype=torch.float32))}
+                    except Exception:
+                        return None
                 return None
             if path.suffix.lower() in (".npy", ".npz"):
                 try:
