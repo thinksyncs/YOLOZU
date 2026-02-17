@@ -217,10 +217,13 @@ Optional TTT (test-time training, pre-prediction):
 	- python3 tools/export_predictions.py --adapter rtdetr_pose --ttt --ttt-preset safe --ttt-reset sample --wrap --output reports/predictions_ttt_safe.json
 - MIM (recommended safe preset + guard rails):
 	- python3 tools/export_predictions.py --adapter rtdetr_pose --ttt --ttt-preset mim_safe --ttt-reset sample --wrap --output reports/predictions_ttt_mim_safe.json
+- Bounded adaptation-cost run (stream + batch/chunk knobs):
+  - python3 tools/export_predictions.py --adapter rtdetr_pose --ttt --ttt-preset safe --ttt-reset stream --ttt-batch-size 4 --ttt-max-batches 8 --wrap --output reports/predictions_ttt_stream_b4_k8.json
 
 Notes:
 - TTT requires an adapter that supports `get_model()` + `build_loader()` and requires torch.
 - TTT updates model parameters in-memory before calling `adapter.predict(records)`.
+- `--ttt-batch-size` controls images per adaptation step; `--ttt-max-batches` caps adaptation batches for predictable runtime.
 - Recommended comparison protocol and more examples: `docs/ttt_protocol.md`.
 
 ## Export predictions for evaluation

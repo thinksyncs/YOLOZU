@@ -427,6 +427,8 @@ If you run real inference elsewhere (PyTorch/ONNXRuntime/TensorRT/etc.), you can
 - Torch backend (`rtdetr_pose`, supports **TTA + TTT**):
   - Baseline: `python3 tools/yolozu.py export --backend torch --checkpoint /path/to.ckpt --device cuda --max-images 50 --output reports/predictions.json`
   - TTT (Tent, safe preset): `python3 tools/yolozu.py export --backend torch --checkpoint /path/to.ckpt --device cuda --max-images 50 --ttt --ttt-preset safe --ttt-reset sample --ttt-log-out reports/ttt_log_safe.json --output reports/predictions_ttt_safe.json`
+  - TTT batch/chunk knobs: add `--ttt-batch-size <N>` and `--ttt-max-batches <K>` to cap adaptation cost (example: `--ttt-batch-size 4 --ttt-max-batches 8`).
+  - TTT reset behavior: use `--ttt-reset stream` for one adaptation phase then fast prediction, or `--ttt-reset sample` for per-image/per-batch reset-ablation runs.
   - Note: `tools/yolozu.py export` always writes the wrapped `{ "predictions": [...] }` form (so `--wrap` is not needed).
   - Note: TTT is supported in the repo tooling (`python3 tools/yolozu.py ...`) on the torch backend; the pip CLI `yolozu export`
     is intentionally smoke-only (dummy/labels).

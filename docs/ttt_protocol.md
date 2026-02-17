@@ -48,6 +48,33 @@ If you pass `--ttt` without `--ttt-preset` and leave the core knobs at defaults,
 
 For ablations/plots, start with `--ttt-reset sample`.
 
+## Batch/chunk knobs (`--ttt-batch-size`, `--ttt-max-batches`)
+
+- `--ttt-batch-size N`: number of images per adaptation step.
+- `--ttt-max-batches K`: hard cap on how many adaptation batches are consumed.
+
+Practical guidance:
+- Start with `--ttt-batch-size 1 --ttt-max-batches 1` for safest smoke checks.
+- Increase `--ttt-batch-size` first when GPU memory allows; this often improves throughput.
+- Increase `--ttt-max-batches` only when you explicitly want stronger adaptation (and higher latency).
+
+Example (stream reset, bounded adaptation cost):
+
+```bash
+python3 tools/yolozu.py export \
+  --backend torch \
+  --dataset reports/coco128_50 \
+  --split train2017 \
+  --checkpoint /path/to.ckpt \
+  --device cuda \
+  --ttt \
+  --ttt-preset safe \
+  --ttt-reset stream \
+  --ttt-batch-size 4 \
+  --ttt-max-batches 8 \
+  --output reports/pred_ttt_stream_b4_k8.json
+```
+
 ## Fixed eval subset (for plots)
 
 To make comparisons fair and reproducible, evaluate on the **same image subset** every time.
