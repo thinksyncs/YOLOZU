@@ -79,6 +79,66 @@ yolozu import config \
 
 This produces a canonical `TrainConfig` JSON (major keys only).
 
+## Config import (Mode B / optional deps; higher compatibility)
+
+These modes may require importing framework-specific config loaders (optional dependencies).
+
+### MMDetection / MMEngine config (python)
+
+```bash
+yolozu import config \
+  --from mmdet \
+  --config /path/to/mmdet_config.py \
+  --output reports/train_config_import.json \
+  --force
+```
+
+Dependency: `mmengine` (example: `pip install mmengine`)
+
+### YOLOX exp (python)
+
+```bash
+yolozu import config \
+  --from yolox \
+  --config /path/to/exps/default/yolox_s.py \
+  --output reports/train_config_import.json \
+  --force
+```
+
+Notes:
+- This executes the exp python file (read-only projection, but code is executed).
+- Many exp files import `yolox.*`, so you may need YOLOX installed in the environment.
+
+### Detectron2 config
+
+```bash
+yolozu import config \
+  --from detectron2 \
+  --config /path/to/config.yaml \
+  --output reports/train_config_import.json \
+  --force
+```
+
+Dependency: `detectron2` (installation varies by CUDA/PyTorch)
+
+## “It worked as-is” visibility (doctor import)
+
+You can print a resolved summary without writing artifacts:
+
+```bash
+# Dataset summary
+yolozu doctor import \
+  --dataset-from coco-instances \
+  --instances /path/to/instances_val2017.json \
+  --images-dir /path/to/images/val2017 \
+  --split val2017
+
+# Config summary
+yolozu doctor import \
+  --config-from ultralytics \
+  --args /path/to/runs/.../args.yaml
+```
+
 ## Goals / non-goals
 
 The goal is compatibility for:
@@ -87,4 +147,3 @@ The goal is compatibility for:
 3) resolved artifacts to make “it worked as-is” visible
 
 Non-goal (initially): perfectly reproducing framework-specific training behavior (aug hooks, schedulers, etc.).
-

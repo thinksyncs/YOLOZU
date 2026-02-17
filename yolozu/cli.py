@@ -4,6 +4,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 from yolozu import __version__
 
@@ -83,6 +84,165 @@ def _cmd_doctor(output: str) -> int:
     from yolozu.doctor import write_doctor_report
 
     return int(write_doctor_report(output=output))
+
+
+def _cmd_doctor_import(args: argparse.Namespace) -> int:
+    import time
+
+    from yolozu.coco_convert import build_category_map_from_coco
+    from yolozu.dataset import build_manifest
+    from yolozu.imports import (
+        project_detectron2_config,
+        project_mmdet_config,
+        project_ultralytics_args,
+        project_yolox_exp,
+    )
+
+    def _now_utc() -> str:
+        return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+    report: dict[str, Any] = {
+        "kind": "yolozu_doctor_import",
+        "schema_version": 1,
+        "timestamp": _now_utc(),
+        "dataset": None,
+        "config": None,
+        "warnings": [],
+        "errors": [],
+    }
+
+    dataset_from = getattr(args, "dataset_from", None)
+    config_from = getattr(args, "config_from", None)
+    if not dataset_from and not config_from:
+        raise SystemExit("doctor import requires at least one of: --dataset-from, --config-from")
+
+    if dataset_from:
+        src = str(dataset_from)
+        if src == "coco-instances":
+            if not getattr(args, "instances", None) or not getattr(args, "images_dir", None):
+                raise SystemExit("--instances and --images-dir are required for --dataset-from coco-instances")
+            instances_path = Path(str(args.instances)).expanduser()
+            if not instances_path.is_absolute():
+                instances_path = Path.cwd() / instances_path
+            images_dir = Path(str(args.images_dir)).expanduser()
+            if not images_dir.is_absolute():
+                images_dir = Path.cwd() / images_dir
+            if not instances_path.exists():
+                raise SystemExit(f"--instances not found: {instances_path}")
+            if not images_dir.exists():
+                raise SystemExit(f"--images-dir not found: {images_dir}")
+
+            instances_doc = json.loads(instances_path.read_text(encoding="utf-8"))
+            images = instances_doc.get("images") or []
+            annotations = instances_doc.get("annotations") or []
+            include_crowd = bool(getattr(args, "include_crowd", False))
+            if not include_crowd and isinstance(annotations, list):
+                annotations = [a for a in annotations if not (isinstance(a, dict) and int(a.get("iscrowd", 0) or 0) == 1)]
+
+            cat_map = build_category_map_from_coco(instances_doc)
+            report["dataset"] = {
+                "from": "coco-instances",
+                "split": str(args.split) if getattr(args, "split", None) else None,
+                "instances_json": str(instances_path),
+                "images_dir": str(images_dir),
+                "include_crowd": include_crowd,
+                "counts": {
+                    "images": int(len(images)) if isinstance(images, list) else None,
+                    "annotations": int(len(annotations)) if isinstance(annotations, list) else None,
+                    "classes": int(len(cat_map.class_names)),
+                },
+                "classes_preview": list(cat_map.class_names[:20]),
+            }
+        elif src == "ultralytics":
+            data_yaml = getattr(args, "data", None)
+            if not data_yaml:
+                raise SystemExit("--data is required for --dataset-from ultralytics")
+            label_format = None
+            task = getattr(args, "task", None)
+            if task and str(task).strip().lower() == "segment":
+                label_format = "segment"
+            manifest = build_manifest(
+                str(data_yaml),
+                split=str(args.split) if getattr(args, "split", None) else None,
+                label_format=label_format,
+            )
+            records = list(manifest.get("images") or [])
+            max_images = getattr(args, "max_images", None)
+            if max_images is not None:
+                records = records[: int(max_images)]
+            label_count = 0
+            max_class = -1
+            for rec in records:
+                for lab in rec.get("labels") or []:
+                    label_count += 1
+                    try:
+                        max_class = max(max_class, int(lab.get("class_id", -1)))
+                    except Exception:
+                        continue
+            report["dataset"] = {
+                "from": "ultralytics",
+                "data_yaml": str(data_yaml),
+                "split": manifest.get("split"),
+                "label_format": label_format,
+                "counts": {
+                    "images": int(len(records)),
+                    "labels": int(label_count),
+                    "classes_hint": int(max_class + 1) if max_class >= 0 else None,
+                },
+            }
+        else:
+            raise SystemExit(f"unsupported --dataset-from: {src}")
+
+    if config_from:
+        src = str(config_from)
+        try:
+            if src == "ultralytics":
+                args_path = getattr(args, "args", None)
+                if not args_path:
+                    raise SystemExit("--args is required for --config-from ultralytics")
+                p = Path(str(args_path)).expanduser()
+                if not p.is_absolute():
+                    p = Path.cwd() / p
+                cfg = _load_config(p)
+                train = project_ultralytics_args(cfg, source={"from": "ultralytics", "args_yaml": str(p)})
+                report["config"] = {"from": "ultralytics", "train_config": train.to_dict()}
+            elif src == "mmdet":
+                cfg_path = getattr(args, "config", None)
+                if not cfg_path:
+                    raise SystemExit("--config is required for --config-from mmdet")
+                train = project_mmdet_config(config=str(cfg_path))
+                report["config"] = {"from": "mmdet", "train_config": train.to_dict()}
+            elif src == "yolox":
+                cfg_path = getattr(args, "config", None)
+                if not cfg_path:
+                    raise SystemExit("--config is required for --config-from yolox")
+                train = project_yolox_exp(config=str(cfg_path))
+                report["config"] = {"from": "yolox", "train_config": train.to_dict()}
+            elif src == "detectron2":
+                cfg_path = getattr(args, "config", None)
+                if not cfg_path:
+                    raise SystemExit("--config is required for --config-from detectron2")
+                train = project_detectron2_config(config=str(cfg_path))
+                report["config"] = {"from": "detectron2", "train_config": train.to_dict()}
+            else:
+                raise SystemExit(f"unsupported --config-from: {src}")
+        except SystemExit:
+            raise
+        except Exception as exc:
+            report["errors"].append(str(exc))
+
+    output = str(getattr(args, "output", "-") or "-")
+    if output == "-":
+        print(json.dumps(report, indent=2, sort_keys=True, ensure_ascii=False))
+        return 0 if not report["errors"] else 2
+
+    out_path = Path(output)
+    if not out_path.is_absolute():
+        out_path = Path.cwd() / out_path
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(report, indent=2, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
+    print(str(out_path))
+    return 0 if not report["errors"] else 2
 
 
 def _cmd_export(args: argparse.Namespace) -> int:
@@ -522,50 +682,89 @@ def _cmd_migrate(args: argparse.Namespace) -> int:
 
 
 def _cmd_import(args: argparse.Namespace) -> int:
-    from yolozu.imports import import_coco_instances_dataset, import_ultralytics_config
+    from yolozu.imports import (
+        import_coco_instances_dataset,
+        import_detectron2_config,
+        import_mmdet_config,
+        import_ultralytics_config,
+        import_yolox_config,
+    )
     from yolozu.migrate import migrate_ultralytics_dataset_wrapper
 
-    if args.import_command == "dataset":
-        if str(args.from_format) == "ultralytics":
-            out = migrate_ultralytics_dataset_wrapper(
-                data_yaml=str(args.data) if args.data else None,
-                args_yaml=str(args.args) if args.args else None,
-                split=str(args.split) if args.split else None,
-                task=str(args.task) if args.task else None,
-                output=str(args.output),
-                force=bool(args.force),
-            )
+    try:
+        if args.import_command == "dataset":
+            if str(args.from_format) == "ultralytics":
+                out = migrate_ultralytics_dataset_wrapper(
+                    data_yaml=str(args.data) if args.data else None,
+                    args_yaml=str(args.args) if args.args else None,
+                    split=str(args.split) if args.split else None,
+                    task=str(args.task) if args.task else None,
+                    output=str(args.output),
+                    force=bool(args.force),
+                )
+                print(str(out))
+                return 0
+
+            if str(args.from_format) == "coco-instances":
+                if not args.instances or not args.images_dir:
+                    raise SystemExit("--instances and --images-dir are required for --from coco-instances")
+                out = import_coco_instances_dataset(
+                    instances_json=str(args.instances),
+                    images_dir=str(args.images_dir),
+                    split=str(args.split) if args.split else "val2017",
+                    output=str(args.output),
+                    include_crowd=bool(args.include_crowd),
+                    force=bool(args.force),
+                )
+                print(str(out))
+                return 0
+
+            raise SystemExit("unsupported --from for import dataset")
+
+        if args.import_command == "config":
+            from_format = str(args.from_format)
+            if from_format == "ultralytics":
+                if not args.args:
+                    raise SystemExit("--args is required for --from ultralytics")
+                out = import_ultralytics_config(
+                    args_yaml=str(args.args),
+                    output=str(args.output),
+                    force=bool(args.force),
+                )
+            elif from_format == "mmdet":
+                if not args.config:
+                    raise SystemExit("--config is required for --from mmdet")
+                out = import_mmdet_config(
+                    config=str(args.config),
+                    output=str(args.output),
+                    force=bool(args.force),
+                )
+            elif from_format == "yolox":
+                if not args.config:
+                    raise SystemExit("--config is required for --from yolox")
+                out = import_yolox_config(
+                    config=str(args.config),
+                    output=str(args.output),
+                    force=bool(args.force),
+                )
+            elif from_format == "detectron2":
+                if not args.config:
+                    raise SystemExit("--config is required for --from detectron2")
+                out = import_detectron2_config(
+                    config=str(args.config),
+                    output=str(args.output),
+                    force=bool(args.force),
+                )
+            else:
+                raise SystemExit("unsupported --from for import config")
             print(str(out))
             return 0
 
-        if str(args.from_format) == "coco-instances":
-            if not args.instances or not args.images_dir:
-                raise SystemExit("--instances and --images-dir are required for --from coco-instances")
-            out = import_coco_instances_dataset(
-                instances_json=str(args.instances),
-                images_dir=str(args.images_dir),
-                split=str(args.split) if args.split else "val2017",
-                output=str(args.output),
-                include_crowd=bool(args.include_crowd),
-                force=bool(args.force),
-            )
-            print(str(out))
-            return 0
-
-        raise SystemExit("unsupported --from for import dataset")
-
-    if args.import_command == "config":
-        if str(args.from_format) != "ultralytics":
-            raise SystemExit("unsupported --from for import config")
-        out = import_ultralytics_config(
-            args_yaml=str(args.args),
-            output=str(args.output),
-            force=bool(args.force),
-        )
-        print(str(out))
-        return 0
-
-    raise SystemExit("unknown import command")
+        raise SystemExit("unknown import command")
+    except SystemExit:
+        raise
+    except Exception as exc:
+        raise SystemExit(str(exc)) from exc
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -575,6 +774,30 @@ def main(argv: list[str] | None = None) -> int:
 
     doctor = sub.add_parser("doctor", help="Print environment diagnostics as JSON.")
     doctor.add_argument("--output", default="reports/doctor.json", help="Output JSON path (use - for stdout).")
+    doctor_sub = doctor.add_subparsers(dest="doctor_command", required=False)
+    doctor_imp = doctor_sub.add_parser("import", help="Summarize dataset/config import resolution (宣伝用).")
+    doctor_imp.add_argument("--output", default="-", help="Output JSON path (use - for stdout).")
+    doctor_imp.add_argument(
+        "--dataset-from",
+        choices=("ultralytics", "coco-instances"),
+        default=None,
+        help="Optional dataset import adapter to summarize.",
+    )
+    doctor_imp.add_argument(
+        "--config-from",
+        choices=("ultralytics", "mmdet", "yolox", "detectron2"),
+        default=None,
+        help="Optional config import adapter to summarize.",
+    )
+    doctor_imp.add_argument("--data", default=None, help="(dataset-from ultralytics) data.yaml path.")
+    doctor_imp.add_argument("--args", default=None, help="(config-from ultralytics) args.yaml path.")
+    doctor_imp.add_argument("--task", choices=("detect", "segment", "pose"), default=None, help="(dataset-from ultralytics) Task override.")
+    doctor_imp.add_argument("--split", default=None, help="Split name (e.g. val2017/val/train).")
+    doctor_imp.add_argument("--max-images", type=int, default=200, help="Cap number of samples loaded for summary (default: 200).")
+    doctor_imp.add_argument("--instances", default=None, help="(dataset-from coco-instances) instances_*.json path.")
+    doctor_imp.add_argument("--images-dir", default=None, help="(dataset-from coco-instances) images directory for this split.")
+    doctor_imp.add_argument("--include-crowd", action="store_true", help="(dataset-from coco-instances) Include iscrowd annotations.")
+    doctor_imp.add_argument("--config", default=None, help="(config-from mmdet/yolox/detectron2) config file path.")
 
     export = sub.add_parser("export", help="Export predictions.json artifacts.")
     export.add_argument(
@@ -896,8 +1119,15 @@ def main(argv: list[str] | None = None) -> int:
     imp_dataset.add_argument("--include-crowd", action="store_true", help="(COCO) Include iscrowd annotations.")
 
     imp_cfg = imp_sub.add_parser("config", help="Project external configs into canonical TrainConfig (major keys only).")
-    imp_cfg.add_argument("--from", dest="from_format", choices=("ultralytics",), required=True, help="Source ecosystem.")
-    imp_cfg.add_argument("--args", required=True, help="Ultralytics args.yaml path.")
+    imp_cfg.add_argument(
+        "--from",
+        dest="from_format",
+        choices=("ultralytics", "mmdet", "yolox", "detectron2"),
+        required=True,
+        help="Source ecosystem.",
+    )
+    imp_cfg.add_argument("--args", default=None, help="(Ultralytics) args.yaml path.")
+    imp_cfg.add_argument("--config", default=None, help="(MMDet/YOLOX/Detectron2) config file path.")
     imp_cfg.add_argument("--output", required=True, help="Output path (file or directory).")
     imp_cfg.add_argument("--force", action="store_true", help="Overwrite output if it exists.")
 
@@ -975,6 +1205,8 @@ def main(argv: list[str] | None = None) -> int:
             raise SystemExit(f"config not found: {config_path}")
         return _cmd_test(config_path, extra_args=list(getattr(args, "test_args", []) or []))
     if args.command == "doctor":
+        if getattr(args, "doctor_command", None) == "import":
+            return _cmd_doctor_import(args)
         return _cmd_doctor(str(args.output))
     if args.command == "export":
         return _cmd_export(args)
