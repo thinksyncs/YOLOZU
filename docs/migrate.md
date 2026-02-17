@@ -84,7 +84,33 @@ Many ecosystems (YOLOX, Detectron2, MMDetection) use COCO-style `instances_*.jso
 YOLOZU consumes **YOLO-style bbox labels** (`labels/<split>/*.txt`), so the simplest migration path is:
 COCO JSON → YOLO labels + `dataset.json` wrapper.
 
-Use the built-in converter:
+### `yolozu migrate dataset --from coco`
+
+```bash
+yolozu migrate dataset \
+  --from coco \
+  --coco-root /path/to/coco_like_root \
+  --split val2017 \
+  --output data/coco_yolo_like \
+  --mode manifest
+```
+
+This writes:
+- `data/coco_yolo_like/labels/val2017/*.txt`
+- `data/coco_yolo_like/dataset.json` (points at `images_dir` and `labels_dir`)
+
+Validate (label-only):
+
+```bash
+yolozu validate dataset data/coco_yolo_like --split val2017 --no-check-images
+```
+
+If you want a self-contained dataset directory, use `--mode copy` (or `--mode symlink`) to populate
+`data/coco_yolo_like/images/val2017/`.
+
+### Legacy helper script (still available)
+
+If you prefer a standalone script, this does the same conversion:
 
 ```bash
 python3 tools/prepare_coco_yolo.py \
@@ -101,6 +127,26 @@ Then validate:
 
 ```bash
 yolozu validate dataset data/coco_yolo_like --split val2017
+```
+
+### COCO results → `predictions.json`
+
+Detectron2/MMDetection/YOLOX often export **COCO detection results** (list of `image_id/category_id/bbox/score`).
+YOLOZU can convert those into `predictions.json`:
+
+```bash
+yolozu migrate predictions \
+  --from coco-results \
+  --results /path/to/coco_results.json \
+  --instances /path/to/instances_val2017.json \
+  --output reports/predictions.json \
+  --force
+```
+
+Then:
+
+```bash
+yolozu validate predictions reports/predictions.json --strict
 ```
 
 ## Troubleshooting (common migration failures)

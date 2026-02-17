@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from .config import simple_yaml_load
 from .keypoints import normalize_keypoints
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -497,15 +498,20 @@ def _resolve_ultralytics_data_yaml(
     if config_path.suffix.lower() not in (".yaml", ".yml"):
         return None
 
+    text = config_path.read_text(encoding="utf-8")
+    data: Any | None = None
     try:
         import yaml  # type: ignore
-    except Exception:
-        return None
 
-    try:
-        data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        data = yaml.safe_load(text)
     except Exception:
-        return None
+        data = None
+    if data is None:
+        # Minimal fallback parser (keeps yolozu migrate usable even if PyYAML is missing).
+        try:
+            data = simple_yaml_load(text)
+        except Exception:
+            return None
     if not isinstance(data, dict):
         return None
 

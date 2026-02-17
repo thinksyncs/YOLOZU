@@ -18,6 +18,7 @@ Links:
 - License policy: [license_policy.md](license_policy.md)
 - AI-first guide: [ai_first.md](ai_first.md)
 - Migration helpers: [migrate.md](migrate.md)
+- Quantization: [quantization.md](quantization.md)
 
 ## Start here (4 entry points)
 

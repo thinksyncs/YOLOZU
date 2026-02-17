@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -146,6 +147,231 @@ def migrate_ultralytics_dataset_wrapper(
         source=source,
         force=force,
     )
+
+
+def _load_json(path: Path) -> Any:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _resolve_coco_images_dir(coco_root: Path, split: str) -> Path:
+    images_src = coco_root / "images" / split
+    if images_src.exists():
+        return images_src
+
+    fallback = coco_root / split
+    if fallback.exists():
+        return fallback
+
+    raise FileNotFoundError(f"COCO images not found for split={split} under {coco_root}")
+
+
+def migrate_coco_dataset_wrapper(
+    *,
+    coco_root: str | Path,
+    split: str,
+    output: str | Path,
+    instances_json: str | Path | None = None,
+    mode: str = "manifest",
+    include_crowd: bool = False,
+    force: bool = False,
+) -> Path:
+    """Convert COCO instances JSON into YOLO labels + dataset.json wrapper.
+
+    - mode=manifest: do not copy images; wrapper points to COCO images dir.
+    - mode=copy: copy referenced images under output/images/<split>.
+    - mode=symlink: symlink referenced images under output/images/<split>.
+    """
+
+    mode = str(mode).strip().lower()
+    if mode not in ("manifest", "copy", "symlink"):
+        raise ValueError("--mode must be manifest|copy|symlink")
+
+    coco_root_path = Path(coco_root)
+    split = str(split)
+    images_src = _resolve_coco_images_dir(coco_root_path, split)
+
+    if instances_json is None:
+        instances_path = coco_root_path / "annotations" / f"instances_{split}.json"
+    else:
+        instances_path = Path(instances_json)
+        if not instances_path.is_absolute():
+            instances_path = (Path.cwd() / instances_path).resolve()
+    if not instances_path.exists():
+        raise FileNotFoundError(f"COCO instances JSON not found: {instances_path}")
+
+    out_root = Path(output)
+    if out_root.suffix.lower() == ".json":
+        raise ValueError("--output must be a directory for --from coco (got .json path)")
+    out_root.mkdir(parents=True, exist_ok=True)
+
+    labels_dir = out_root / "labels" / split
+    images_out = out_root / "images" / split
+    labels_dir.mkdir(parents=True, exist_ok=True)
+    images_out.mkdir(parents=True, exist_ok=True)
+
+    from .coco_convert import convert_coco_instances_to_yolo_labels
+
+    instances_doc = _load_json(instances_path)
+    convert_coco_instances_to_yolo_labels(
+        instances_json=instances_doc,
+        images_dir=images_src,
+        labels_dir=labels_dir,
+        include_crowd=bool(include_crowd),
+    )
+
+    if mode in ("copy", "symlink"):
+        images = instances_doc.get("images") or []
+        if not isinstance(images, list):
+            raise ValueError("invalid COCO instances JSON: images must be a list")
+        for img in images:
+            file_name = str(img.get("file_name") or "").strip()
+            if not file_name:
+                continue
+            src = images_src / file_name
+            dst = images_out / Path(file_name).name
+            if dst.exists():
+                continue
+            if mode == "copy":
+                if src.exists():
+                    shutil.copy2(src, dst)
+            else:
+                # symlink
+                if src.exists():
+                    dst.symlink_to(src)
+
+    images_dir = images_src if mode == "manifest" else images_out
+    source: dict[str, Any] = {
+        "from": "coco",
+        "coco_root": str(coco_root_path),
+        "split": split,
+        "instances_json": str(instances_path),
+        "mode": mode,
+        "include_crowd": bool(include_crowd),
+    }
+
+    return write_dataset_wrapper(
+        out_root,
+        images_dir=images_dir,
+        labels_dir=labels_dir,
+        split=split,
+        label_format="detect",
+        source=source,
+        force=force,
+    )
+
+
+def _normalize_coco_results_payload(payload: Any) -> list[dict[str, Any]]:
+    if isinstance(payload, list):
+        return [p for p in payload if isinstance(p, dict)]
+    if isinstance(payload, dict):
+        if isinstance(payload.get("annotations"), list):
+            return [p for p in (payload.get("annotations") or []) if isinstance(p, dict)]
+        if isinstance(payload.get("results"), list):
+            return [p for p in (payload.get("results") or []) if isinstance(p, dict)]
+    raise ValueError("unsupported COCO results JSON (expected a list[dict])")
+
+
+def migrate_coco_results_predictions(
+    *,
+    results_json: str | Path,
+    instances_json: str | Path,
+    output: str | Path,
+    score_threshold: float = 0.0,
+    force: bool = False,
+) -> Path:
+    """Convert COCO detection results into YOLOZU predictions.json entries."""
+
+    results_path = Path(results_json)
+    instances_path = Path(instances_json)
+    out_path = Path(output)
+
+    if not results_path.exists():
+        raise FileNotFoundError(f"--results not found: {results_path}")
+    if not instances_path.exists():
+        raise FileNotFoundError(f"--instances not found: {instances_path}")
+
+    if out_path.exists() and not force:
+        raise FileExistsError(f"output already exists: {out_path} (use --force to overwrite)")
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    instances_doc = _load_json(instances_path)
+    images = instances_doc.get("images") or []
+    if not isinstance(images, list):
+        raise ValueError("invalid COCO instances JSON: images must be a list")
+
+    image_id_to_meta: dict[int, dict[str, Any]] = {}
+    for img in images:
+        if not isinstance(img, dict) or "id" not in img:
+            continue
+        try:
+            image_id_to_meta[int(img["id"])] = img
+        except Exception:
+            continue
+
+    from .coco_convert import build_category_map_from_coco
+
+    cat_map = build_category_map_from_coco(instances_doc)
+
+    raw_results = _normalize_coco_results_payload(_load_json(results_path))
+    grouped: dict[str, list[dict[str, Any]]] = {}
+
+    for det in raw_results:
+        try:
+            image_id = int(det["image_id"])
+            category_id = int(det["category_id"])
+        except Exception:
+            continue
+
+        score = det.get("score")
+        if not isinstance(score, (int, float)) or isinstance(score, bool):
+            continue
+        if float(score) < float(score_threshold):
+            continue
+
+        bbox = det.get("bbox")
+        if not isinstance(bbox, list) or len(bbox) != 4:
+            continue
+
+        meta = image_id_to_meta.get(image_id)
+        if meta is None:
+            continue
+        file_name = str(meta.get("file_name") or "").strip()
+        if not file_name:
+            continue
+        width = int(meta.get("width") or 0)
+        height = int(meta.get("height") or 0)
+        if width <= 0 or height <= 0:
+            continue
+
+        x, y, w, h = (float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3]))
+        if w <= 0.0 or h <= 0.0:
+            continue
+
+        cx = (x + w / 2.0) / float(width)
+        cy = (y + h / 2.0) / float(height)
+        wn = w / float(width)
+        hn = h / float(height)
+
+        class_id = cat_map.category_id_to_class_id.get(category_id)
+        if class_id is None:
+            continue
+
+        grouped.setdefault(file_name, []).append(
+            {
+                "class_id": int(class_id),
+                "score": float(score),
+                "bbox": {"cx": float(cx), "cy": float(cy), "w": float(wn), "h": float(hn)},
+            }
+        )
+
+    entries: list[dict[str, Any]] = []
+    for image in sorted(grouped.keys()):
+        dets = grouped[image]
+        dets.sort(key=lambda d: float(d.get("score", 0.0)), reverse=True)
+        entries.append({"image": image, "detections": dets})
+
+    out_path.write_text(json.dumps(entries, indent=2, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
+    return out_path
 
 
 def _maybe_relative(path: Path | None, *, root: Path, path_type: str) -> str | None:
@@ -321,4 +547,3 @@ def migrate_seg_dataset_descriptor(
         )
 
     raise ValueError(f"unsupported --from: {from_format}")
-

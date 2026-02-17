@@ -69,6 +69,7 @@ jobs:
         run: |
           python - <<'PY'
           import os
+          import json
           from pathlib import Path
           from PIL import Image
 
@@ -106,6 +107,19 @@ jobs:
           (voc_root / "JPEGImages" / "0001.jpg").write_bytes(b"")
           (voc_root / "SegmentationClass" / "0001.png").write_bytes(b"")
           (voc_root / "ImageSets" / "Segmentation" / "val.txt").write_text("0001\n", encoding="utf-8")
+
+          coco_root = Path(os.environ["RUNNER_TEMP"]) / "coco_smoke"
+          (coco_root / "images" / "val2017").mkdir(parents=True, exist_ok=True)
+          (coco_root / "annotations").mkdir(parents=True, exist_ok=True)
+          Image.new("RGB", (64, 32), color=(0, 0, 0)).save(coco_root / "images" / "val2017" / "0001.jpg")
+          instances = {
+              "images": [{"id": 1, "file_name": "0001.jpg", "width": 64, "height": 32}],
+              "annotations": [{"id": 1, "image_id": 1, "category_id": 7, "bbox": [0, 0, 10, 20], "iscrowd": 0}],
+              "categories": [{"id": 7, "name": "thing"}],
+          }
+          (coco_root / "annotations" / "instances_val2017.json").write_text(json.dumps(instances), encoding="utf-8")
+          results = [{"image_id": 1, "category_id": 7, "bbox": [0, 0, 10, 20], "score": 0.9}]
+          (coco_root / "results.json").write_text(json.dumps(results), encoding="utf-8")
           print("prepared:", dataset_root, data_yaml, args_yaml, voc_root)
           PY
 
@@ -141,6 +155,24 @@ jobs:
           PY
 
           yolozu validate seg reports/ci_migrate/seg_preds.json
+
+          yolozu migrate dataset \
+            --from coco \
+            --coco-root "${RUNNER_TEMP}/coco_smoke" \
+            --split val2017 \
+            --output reports/ci_migrate/coco_wrapper \
+            --force
+
+          yolozu validate dataset reports/ci_migrate/coco_wrapper --split val2017
+
+          yolozu migrate predictions \
+            --from coco-results \
+            --results "${RUNNER_TEMP}/coco_smoke/results.json" \
+            --instances "${RUNNER_TEMP}/coco_smoke/annotations/instances_val2017.json" \
+            --output reports/ci_migrate/coco_predictions.json \
+            --force
+
+          yolozu validate predictions reports/ci_migrate/coco_predictions.json --strict
 
       - name: Upload migration artifacts
         if: always()

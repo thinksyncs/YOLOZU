@@ -589,6 +589,22 @@ def build_parser() -> argparse.ArgumentParser:
         default="none",
         help="If LoRA is enabled, optionally train biases too (default: none).",
     )
+    parser.add_argument(
+        "--torchao-quant",
+        default="none",
+        choices=("none", "int8wo", "int4wo"),
+        help="Optional torchao quantization recipe (experimental). Requires torchao. (default: none)",
+    )
+    parser.add_argument(
+        "--torchao-required",
+        action="store_true",
+        help="If enabled, fail the run when torchao isn't installed or quantization fails (default: false).",
+    )
+    parser.add_argument(
+        "--qlora",
+        action="store_true",
+        help="Convenience flag: sets --torchao-quant=int4wo and forces --lora-freeze-base (requires --lora-r>0).",
+    )
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument(
         "--shuffle",
@@ -3028,6 +3044,14 @@ def main(argv: list[str] | None = None) -> int:
     if bool(getattr(args, "use_amp", False)) and str(getattr(args, "amp", "none") or "none").lower() == "none":
         args.amp = "fp16"
 
+    if bool(getattr(args, "qlora", False)):
+        if int(getattr(args, "lora_r", 0) or 0) <= 0:
+            raise SystemExit("--qlora requires --lora-r > 0")
+        torchao_quant = str(getattr(args, "torchao_quant", "none") or "none").strip().lower()
+        if torchao_quant in ("none", "off", "false", "0"):
+            args.torchao_quant = "int4wo"
+        args.lora_freeze_base = True
+
     args, run_contract = apply_run_contract_defaults(args)
     args, run_dir = apply_run_dir_defaults(args)
 
@@ -3395,6 +3419,22 @@ def main(argv: list[str] | None = None) -> int:
         device_str = f"cuda:{int(local_rank)}"
     device = torch.device(device_str)
     model.to(device)
+
+    torchao_recipe = str(getattr(args, "torchao_quant", "none") or "none").strip().lower()
+    if torchao_recipe not in ("none", "off", "false", "0"):
+        from rtdetr_pose.torchao_integration import apply_torchao_quantization
+
+        model, torchao_report = apply_torchao_quantization(
+            unwrap_model(model),
+            recipe=torchao_recipe,
+            required=bool(getattr(args, "torchao_required", False)),
+        )
+        if is_main:
+            print(
+                "torchao",
+                f"enabled={bool(torchao_report.enabled)} recipe={torchao_report.recipe}",
+                f"applied={bool(torchao_report.applied)} api={torchao_report.api} reason={torchao_report.reason}",
+            )
 
     if int(args.lora_r) > 0:
         from rtdetr_pose.lora import apply_lora, count_trainable_params, mark_only_lora_as_trainable

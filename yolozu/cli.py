@@ -454,17 +454,49 @@ def _cmd_resources(args: argparse.Namespace) -> int:
 
 
 def _cmd_migrate(args: argparse.Namespace) -> int:
-    from yolozu.migrate import migrate_seg_dataset_descriptor, migrate_ultralytics_dataset_wrapper
+    from yolozu.migrate import (
+        migrate_coco_dataset_wrapper,
+        migrate_coco_results_predictions,
+        migrate_seg_dataset_descriptor,
+        migrate_ultralytics_dataset_wrapper,
+    )
 
     if args.migrate_command == "dataset":
-        if str(args.from_format) != "ultralytics":
+        if str(args.from_format) == "ultralytics":
+            out = migrate_ultralytics_dataset_wrapper(
+                data_yaml=str(args.data) if args.data else None,
+                args_yaml=str(args.args) if args.args else None,
+                split=str(args.split) if args.split else None,
+                task=str(args.task) if args.task else None,
+                output=str(args.output),
+                force=bool(args.force),
+            )
+        elif str(args.from_format) == "coco":
+            if not args.coco_root:
+                raise SystemExit("--coco-root is required for --from coco")
+            split = str(args.split) if args.split else "val2017"
+            out = migrate_coco_dataset_wrapper(
+                coco_root=str(args.coco_root),
+                split=split,
+                instances_json=(str(args.instances_json) if args.instances_json else None),
+                output=str(args.output),
+                mode=str(args.mode),
+                include_crowd=bool(args.include_crowd),
+                force=bool(args.force),
+            )
+        else:
             raise SystemExit("unsupported --from for migrate dataset")
-        out = migrate_ultralytics_dataset_wrapper(
-            data_yaml=str(args.data) if args.data else None,
-            args_yaml=str(args.args) if args.args else None,
-            split=str(args.split) if args.split else None,
-            task=str(args.task) if args.task else None,
+        print(str(out))
+        return 0
+
+    if args.migrate_command == "predictions":
+        if str(args.from_format) != "coco-results":
+            raise SystemExit("unsupported --from for migrate predictions")
+        out = migrate_coco_results_predictions(
+            results_json=str(args.results),
+            instances_json=str(args.instances),
             output=str(args.output),
+            score_threshold=float(args.score_threshold),
             force=bool(args.force),
         )
         print(str(out))
@@ -720,18 +752,51 @@ def main(argv: list[str] | None = None) -> int:
     migrate_sub = migrate.add_subparsers(dest="migrate_command", required=True)
 
     mig_dataset = migrate_sub.add_parser("dataset", help="Generate dataset.json wrapper for external dataset layouts.")
-    mig_dataset.add_argument("--from", dest="from_format", choices=("ultralytics",), required=True, help="Source ecosystem.")
-    mig_dataset.add_argument("--data", default=None, help="Ultralytics data.yaml path (preferred).")
-    mig_dataset.add_argument("--args", default=None, help="Ultralytics args.yaml (optional; used for task/data inference).")
-    mig_dataset.add_argument("--split", default=None, help="Split to select from data.yaml (default: prefer val then train).")
+    mig_dataset.add_argument(
+        "--from",
+        dest="from_format",
+        choices=("ultralytics", "coco"),
+        required=True,
+        help="Source ecosystem.",
+    )
+    mig_dataset.add_argument("--data", default=None, help="(Ultralytics) data.yaml path (preferred).")
+    mig_dataset.add_argument("--args", default=None, help="(Ultralytics) args.yaml (optional; used for task/data inference).")
+    mig_dataset.add_argument(
+        "--split",
+        default=None,
+        help="Split name (Ultralytics: select from data.yaml; COCO: instances_<split>.json, default: val2017).",
+    )
     mig_dataset.add_argument(
         "--task",
         choices=("detect", "segment", "pose"),
         default=None,
-        help="Override task inference (segment enables polygon label parsing).",
+        help="(Ultralytics) Override task inference (segment enables polygon label parsing).",
     )
+    mig_dataset.add_argument("--coco-root", default=None, help="(COCO) Root containing images/ and annotations/.")
+    mig_dataset.add_argument("--instances-json", default=None, help="(COCO) Override instances JSON path.")
+    mig_dataset.add_argument(
+        "--mode",
+        choices=("manifest", "symlink", "copy"),
+        default="manifest",
+        help="(COCO) Image handling: manifest=do not copy; symlink/copy into output/images/<split>.",
+    )
+    mig_dataset.add_argument("--include-crowd", action="store_true", help="(COCO) Include iscrowd annotations.")
     mig_dataset.add_argument("--output", required=True, help="Output directory or dataset.json file path.")
     mig_dataset.add_argument("--force", action="store_true", help="Overwrite output if it exists.")
+
+    mig_preds = migrate_sub.add_parser("predictions", help="Convert external prediction outputs into YOLOZU predictions.json.")
+    mig_preds.add_argument(
+        "--from",
+        dest="from_format",
+        choices=("coco-results",),
+        required=True,
+        help="Source prediction format.",
+    )
+    mig_preds.add_argument("--results", required=True, help="COCO results JSON path (list of detections).")
+    mig_preds.add_argument("--instances", required=True, help="COCO instances JSON path (for image_id mapping + sizes).")
+    mig_preds.add_argument("--output", required=True, help="Output predictions.json path.")
+    mig_preds.add_argument("--score-threshold", type=float, default=0.0, help="Minimum score to keep (default: 0.0).")
+    mig_preds.add_argument("--force", action="store_true", help="Overwrite output if it exists.")
 
     mig_seg = migrate_sub.add_parser("seg-dataset", help="Generate semantic segmentation dataset descriptor JSON.")
     mig_seg.add_argument(

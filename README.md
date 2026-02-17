@@ -327,6 +327,7 @@ Trainer core features (implemented):
 - Grad clipping (`--clip-grad-norm`, recommended >0 for pose/TTT/MIM stability).
 - AMP (`--amp {none,fp16,bf16}`), EMA (`--use-ema` + `--ema-eval`), DDP (`--ddp` via `torchrun`).
 - (Optional) `torch.compile`: `--torch-compile` (+ `--torch-compile-*`; experimental; falls back by default if compile fails).
+- (Optional) torchao quantization / QLoRA: `--torchao-quant {int8wo,int4wo}` / `--qlora` (experimental; requires torchao).
 - Lightweight aug: multiscale (`--multiscale`), hflip (`--hflip-prob`), photometric HSV/grayscale/noise/blur (`--hsv-*`, `--gray-prob`, `--gaussian-noise-*`, `--blur-*`; effective when `--real-images` is used).
 - Validation cadence: epoch (`--val-every`) and step-based (`--val-every-steps`).
 - Early stop: `--early-stop-patience` (+ `--early-stop-min-delta`).
