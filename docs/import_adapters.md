@@ -138,6 +138,15 @@ yolozu doctor import \
   --config-from ultralytics \
   --args /path/to/runs/.../args.yaml
 
+Auto-detect mode is also available:
+
+```bash
+yolozu doctor import --dataset-from auto --instances /path/to/instances.json --images-dir /path/to/images --output -
+yolozu doctor import --config-from auto --args /path/to/args.yaml --output -
+```
+
+When COCO categories include `category_id=0`, doctor/import reports a warning and expects normalized mapping via `classes.json` for fair cross-platform evaluation.
+
 ## Train shorthand (`train --import`)
 
 For quick demos/宣伝, you can use a shorthand that resolves external config into canonical `TrainConfig`
@@ -146,6 +155,9 @@ and prints doctor-import summary first.
 ```bash
 # Ultralytics
 yolozu train --import ultralytics --data /path/to/data.yaml --cfg /path/to/args.yaml
+
+# Auto-detect (from --cfg)
+yolozu train --import auto --cfg /path/to/args_or_config.{yaml,py}
 
 # MMDetection
 yolozu train --import mmdet --cfg /path/to/config.py

@@ -49,6 +49,66 @@ def _build_args_from_config(cfg: dict) -> list[str]:
     return args
 
 
+def _resolve_auto_dataset_from_args(args: argparse.Namespace) -> str:
+    if getattr(args, "instances", None) and getattr(args, "images_dir", None):
+        return "coco-instances"
+    if getattr(args, "data", None):
+        return "ultralytics"
+    raise SystemExit(
+        "could not auto-detect dataset source; provide --data (ultralytics) or --instances + --images-dir (coco-instances)"
+    )
+
+
+def _detect_config_source_from_path(path_like: str | Path) -> str:
+    p = Path(path_like).expanduser()
+    if not p.is_absolute():
+        p = Path.cwd() / p
+    if not p.exists():
+        raise SystemExit(f"config not found for auto-detect: {p}")
+
+    suffix = p.suffix.lower()
+    text = p.read_text(encoding="utf-8", errors="replace")
+    lower = text.lower()
+
+    if suffix in (".yaml", ".yml", ".json"):
+        try:
+            cfg = _load_config(p)
+        except Exception:
+            cfg = {}
+        if isinstance(cfg, dict):
+            upper_keys = {str(k) for k in cfg.keys()}
+            if {"MODEL", "SOLVER"} & upper_keys:
+                return "detectron2"
+            if any(k in cfg for k in ("imgsz", "batch", "epochs", "lr0", "weight_decay", "optimizer", "model")):
+                return "ultralytics"
+        if "solver:" in lower and "model:" in lower:
+            return "detectron2"
+        return "ultralytics"
+
+    if suffix == ".py":
+        if "yolox" in lower or "def get_exp" in lower or "class exp" in lower:
+            return "yolox"
+        if "detectron2" in lower:
+            return "detectron2"
+        if "mmengine" in lower or "train_dataloader" in lower or "optim_wrapper" in lower or "default_scope = 'mmdet'" in lower:
+            return "mmdet"
+        if "_base_" in lower:
+            return "mmdet"
+        return "mmdet"
+
+    raise SystemExit(f"could not auto-detect config source from file: {p}")
+
+
+def _resolve_auto_config_from_args(args: argparse.Namespace) -> str:
+    args_path = getattr(args, "args", None)
+    cfg_path = getattr(args, "config", None) or getattr(args, "cfg", None)
+    if args_path:
+        return _detect_config_source_from_path(str(args_path))
+    if cfg_path:
+        return _detect_config_source_from_path(str(cfg_path))
+    raise SystemExit("could not auto-detect config source; provide --args or --config/--cfg")
+
+
 def _cmd_train(config_path: Path, extra_args: list[str] | None = None) -> int:
     try:
         from rtdetr_pose.train_minimal import main as train_main
@@ -75,6 +135,9 @@ def _cmd_train_import_preview(args: argparse.Namespace) -> int:
     from_format = str(getattr(args, "import_from", "") or "").strip().lower()
     if not from_format:
         return 0
+
+    if from_format == "auto":
+        from_format = _resolve_auto_config_from_args(args)
 
     cfg_path = str(getattr(args, "cfg", "") or "").strip()
     if not cfg_path:
@@ -168,6 +231,13 @@ def _cmd_doctor_import(args: argparse.Namespace) -> int:
     if not dataset_from and not config_from:
         raise SystemExit("doctor import requires at least one of: --dataset-from, --config-from")
 
+    if dataset_from and str(dataset_from).strip().lower() == "auto":
+        dataset_from = _resolve_auto_dataset_from_args(args)
+        report["warnings"].append(f"dataset source auto-detected: {dataset_from}")
+    if config_from and str(config_from).strip().lower() == "auto":
+        config_from = _resolve_auto_config_from_args(args)
+        report["warnings"].append(f"config source auto-detected: {config_from}")
+
     if dataset_from:
         src = str(dataset_from)
         if src == "coco-instances":
@@ -192,6 +262,20 @@ def _cmd_doctor_import(args: argparse.Namespace) -> int:
                 annotations = [a for a in annotations if not (isinstance(a, dict) and int(a.get("iscrowd", 0) or 0) == 1)]
 
             cat_map = build_category_map_from_coco(instances_doc)
+            categories = instances_doc.get("categories") or []
+            category_ids: list[int] = []
+            if isinstance(categories, list):
+                for cat in categories:
+                    if isinstance(cat, dict):
+                        try:
+                            category_ids.append(int(cat.get("id")))
+                        except Exception:
+                            continue
+            has_category_id_zero = 0 in category_ids
+            if has_category_id_zero:
+                report["warnings"].append(
+                    "category_id=0 detected in source categories; normalized mapping (classes.json) is required for apples-to-apples evaluation"
+                )
             report["dataset"] = {
                 "from": "coco-instances",
                 "split": str(args.split) if getattr(args, "split", None) else None,
@@ -203,6 +287,7 @@ def _cmd_doctor_import(args: argparse.Namespace) -> int:
                     "annotations": int(len(annotations)) if isinstance(annotations, list) else None,
                     "classes": int(len(cat_map.class_names)),
                 },
+                "category_id_zero_present": bool(has_category_id_zero),
                 "classes_preview": list(cat_map.class_names[:20]),
             }
         elif src == "ultralytics":
@@ -924,7 +1009,11 @@ def _cmd_import(args: argparse.Namespace) -> int:
 
     try:
         if args.import_command == "dataset":
-            if str(args.from_format) == "ultralytics":
+            from_format = str(args.from_format)
+            if from_format == "auto":
+                from_format = _resolve_auto_dataset_from_args(args)
+
+            if from_format == "ultralytics":
                 out = migrate_ultralytics_dataset_wrapper(
                     data_yaml=str(args.data) if args.data else None,
                     args_yaml=str(args.args) if args.args else None,
@@ -936,7 +1025,7 @@ def _cmd_import(args: argparse.Namespace) -> int:
                 print(str(out))
                 return 0
 
-            if str(args.from_format) == "coco-instances":
+            if from_format == "coco-instances":
                 if not args.instances or not args.images_dir:
                     raise SystemExit("--instances and --images-dir are required for --from coco-instances")
                 out = import_coco_instances_dataset(
@@ -954,6 +1043,8 @@ def _cmd_import(args: argparse.Namespace) -> int:
 
         if args.import_command == "config":
             from_format = str(args.from_format)
+            if from_format == "auto":
+                from_format = _resolve_auto_config_from_args(args)
             if from_format == "ultralytics":
                 if not args.args:
                     raise SystemExit("--args is required for --from ultralytics")
@@ -1010,13 +1101,13 @@ def main(argv: list[str] | None = None) -> int:
     doctor_imp.add_argument("--output", default="-", help="Output JSON path (use - for stdout).")
     doctor_imp.add_argument(
         "--dataset-from",
-        choices=("ultralytics", "coco-instances"),
+        choices=("auto", "ultralytics", "coco-instances"),
         default=None,
         help="Optional dataset import adapter to summarize.",
     )
     doctor_imp.add_argument(
         "--config-from",
-        choices=("ultralytics", "mmdet", "yolox", "detectron2"),
+        choices=("auto", "ultralytics", "mmdet", "yolox", "detectron2"),
         default=None,
         help="Optional config import adapter to summarize.",
     )
@@ -1376,7 +1467,7 @@ def main(argv: list[str] | None = None) -> int:
     imp_dataset.add_argument(
         "--from",
         dest="from_format",
-        choices=("ultralytics", "coco-instances"),
+        choices=("auto", "ultralytics", "coco-instances"),
         required=True,
         help="Source ecosystem.",
     )
@@ -1396,7 +1487,7 @@ def main(argv: list[str] | None = None) -> int:
     imp_cfg.add_argument(
         "--from",
         dest="from_format",
-        choices=("ultralytics", "mmdet", "yolox", "detectron2"),
+        choices=("auto", "ultralytics", "mmdet", "yolox", "detectron2"),
         required=True,
         help="Source ecosystem.",
     )
@@ -1410,7 +1501,7 @@ def main(argv: list[str] | None = None) -> int:
     train_p.add_argument(
         "--import",
         dest="import_from",
-        choices=("ultralytics", "mmdet", "yolox", "detectron2"),
+        choices=("auto", "ultralytics", "mmdet", "yolox", "detectron2"),
         default=None,
         help="Optional shorthand: resolve external config into canonical TrainConfig before training.",
     )

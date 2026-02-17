@@ -60,6 +60,50 @@ class TestDoctorImportCLI(unittest.TestCase):
             counts = ds.get("counts") or {}
             self.assertEqual(int(counts.get("images")), 1)
 
+    def test_doctor_import_dataset_auto_warns_category_id_zero(self):
+        repo_root = Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory(dir=str(repo_root)) as td:
+            root = Path(td)
+            images_dir = root / "images" / "val2017"
+            ann_dir = root / "annotations"
+            images_dir.mkdir(parents=True, exist_ok=True)
+            ann_dir.mkdir(parents=True, exist_ok=True)
+
+            instances = {
+                "images": [{"id": 1, "file_name": "0001.jpg", "width": 64, "height": 32}],
+                "annotations": [{"id": 1, "image_id": 1, "category_id": 0, "bbox": [0, 0, 10, 20], "iscrowd": 0}],
+                "categories": [{"id": 0, "name": "zero_cls"}],
+            }
+            instances_path = ann_dir / "instances_val2017.json"
+            instances_path.write_text(json.dumps(instances), encoding="utf-8")
+
+            proc = self._run(
+                [
+                    "doctor",
+                    "import",
+                    "--dataset-from",
+                    "auto",
+                    "--instances",
+                    str(instances_path),
+                    "--images-dir",
+                    str(images_dir),
+                    "--split",
+                    "val2017",
+                    "--output",
+                    "-",
+                ],
+                cwd=repo_root,
+            )
+            if proc.returncode != 0:
+                self.fail(f"doctor import (dataset auto) failed:\n{proc.stdout}\n{proc.stderr}")
+
+            payload = json.loads(proc.stdout)
+            ds = payload.get("dataset") or {}
+            self.assertEqual(ds.get("from"), "coco-instances")
+            self.assertTrue(bool(ds.get("category_id_zero_present")))
+            warnings = payload.get("warnings") or []
+            self.assertTrue(any("category_id=0" in str(w) for w in warnings))
+
     def test_doctor_import_config_ultralytics_stdout(self):
         repo_root = Path(__file__).resolve().parents[1]
         with tempfile.TemporaryDirectory(dir=str(repo_root)) as td:
@@ -88,6 +132,35 @@ class TestDoctorImportCLI(unittest.TestCase):
             self.assertEqual(train.get("format"), "yolozu_train_config_v1")
             self.assertEqual(int(train.get("batch")), 16)
 
+    def test_doctor_import_config_auto_ultralytics_stdout(self):
+        repo_root = Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory(dir=str(repo_root)) as td:
+            root = Path(td)
+            args_yaml = root / "args.yaml"
+            args_yaml.write_text("imgsz: 640\nbatch: 12\nepochs: 1\nlr0: 0.01\n", encoding="utf-8")
+
+            proc = self._run(
+                [
+                    "doctor",
+                    "import",
+                    "--config-from",
+                    "auto",
+                    "--args",
+                    str(args_yaml),
+                    "--output",
+                    "-",
+                ],
+                cwd=repo_root,
+            )
+            if proc.returncode != 0:
+                self.fail(f"doctor import (config auto) failed:\n{proc.stdout}\n{proc.stderr}")
+
+            payload = json.loads(proc.stdout)
+            cfg = payload.get("config") or {}
+            self.assertEqual(cfg.get("from"), "ultralytics")
+            warnings = payload.get("warnings") or []
+            self.assertTrue(any("auto-detected" in str(w) for w in warnings))
+
     def test_train_import_ultralytics_preview_writes_resolved_config(self):
         repo_root = Path(__file__).resolve().parents[1]
         with tempfile.TemporaryDirectory(dir=str(repo_root)) as td:
@@ -115,6 +188,34 @@ class TestDoctorImportCLI(unittest.TestCase):
             payload = json.loads(out_path.read_text(encoding="utf-8"))
             self.assertEqual(payload.get("format"), "yolozu_train_config_v1")
             self.assertEqual(int(payload.get("batch")), 8)
+
+    def test_train_import_auto_preview_writes_resolved_config(self):
+        repo_root = Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory(dir=str(repo_root)) as td:
+            root = Path(td)
+            args_yaml = root / "args.yaml"
+            args_yaml.write_text("imgsz: 640\nbatch: 6\nepochs: 1\nlr0: 0.002\n", encoding="utf-8")
+            out_path = root / "resolved_train_config_auto.json"
+
+            proc = self._run(
+                [
+                    "train",
+                    "--import",
+                    "auto",
+                    "--cfg",
+                    str(args_yaml),
+                    "--resolved-config-out",
+                    str(out_path),
+                ],
+                cwd=repo_root,
+            )
+            if proc.returncode != 0:
+                self.fail(f"train --import auto preview failed:\n{proc.stdout}\n{proc.stderr}")
+
+            self.assertTrue(out_path.is_file())
+            payload = json.loads(out_path.read_text(encoding="utf-8"))
+            self.assertEqual(payload.get("format"), "yolozu_train_config_v1")
+            self.assertEqual(int(payload.get("batch")), 6)
 
 
 if __name__ == "__main__":
