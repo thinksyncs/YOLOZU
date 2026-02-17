@@ -11,7 +11,7 @@ Pronunciation: Yaoyorozu (yorozu). Official ASCII name: YOLOZU.
 
 YOLOZU is an Apache-2.0-only, **contract-first evaluation + tooling harness** for:
 - real-time monocular RGB **detection**
-- monocular **depth + 6DoF pose** heads (RT-DETR-based scaffold)
+- monocular **depth + 6DoF pose** heads (RT-DETR-based training stack)
 - **semantic segmentation** utilities (dataset prep + mIoU evaluation)
 - **instance segmentation** utilities (PNG-mask contract + mask mAP evaluation)
 
@@ -20,7 +20,7 @@ Recommended deployment path (canonical): PyTorch → ONNX → TensorRT (TRT).
 It focuses on:
 - CPU-minimum dev/tests (GPU optional)
 - A stable predictions-JSON contract for evaluation (bring-your-own inference backend)
-- Minimal training scaffold (RT-DETR pose) with reproducible artifacts
+- Production-oriented training pipeline (RT-DETR pose) with reproducible artifacts
 - Hessian-based refinement for regression head predictions (depth, rotation, offsets)
 
 ## Quickstart (pip users)
@@ -72,7 +72,7 @@ Docs index (start here): [`docs/README.md`](docs/README.md)
 - Keypoints: YOLO pose-style keypoints in labels/predictions + PCK evaluation + optional COCO OKS mAP (`tools/eval_keypoints.py --oks`), plus parity/benchmark helpers.
 - Semantic seg: dataset prep helpers + `tools/eval_segmentation.py` (mIoU/per-class IoU/ignore_index + optional HTML overlays).
 - Instance seg: `tools/eval_instance_segmentation.py` (mask mAP from per-instance binary PNG masks + optional HTML overlays).
-- Training scaffold: minimal RT-DETR pose trainer with metrics output, ONNX export, and optional SDFT-style self-distillation.
+- Training pipeline: RT-DETR pose trainer with run contract, metrics output, ONNX export, and optional SDFT-style self-distillation.
 
 ## Instance segmentation (PNG masks)
 
@@ -176,7 +176,7 @@ Recent compatibility additions:
 - Symmetry + commonsense constraints are treated as first-class, test-covered utilities (not ad-hoc postprocess).
 
 ### Operational notes and mitigations
-- Training remains scaffold-first in `rtdetr_pose/` (data/loss/export wiring), while continual-learning behavior is
+- Training in `rtdetr_pose/` is run-contract based (data/loss/export wiring, resume, parity gate), while continual-learning behavior is
   immediately testable from pip with `yolozu demo continual --compare --markdown` and source training stays available via
   `yolozu train <config>` (`docs/training_inference_export.md`, requires `yolozu[train]`).
 - A one-command folder inference path is available from pip: `yolozu predict-images --backend onnxrt --input-dir <dir> --onnx <model.onnx>`,
@@ -255,7 +255,7 @@ python3 -m unittest -q
 | Long-tail train recipe (decoupled + plugins) | `yolozu long-tail-recipe --dataset /path/to/yolo --output reports/long_tail_recipe.json --rebalance-sampler class_balanced --loss-plugin focal --logit-adjustment-tau 1.0 --lort-tau 0.3` | (same via `python3 tools/yolozu.py ...`) |
 | Instance-seg eval (PNG masks) | `yolozu eval-instance-seg --dataset /path --predictions preds.json --output reports/instance_seg_eval.json` | `python3 tools/eval_instance_segmentation.py ...` |
 | ONNXRuntime CPU export | `yolozu onnxrt export ...` (requires `yolozu[onnxrt]`) | `python3 tools/export_predictions_onnxrt.py ...` |
-| Training scaffold | `yolozu train configs/examples/train_contract.yaml --run-id exp01` (requires `yolozu[train]`) | `python3 rtdetr_pose/tools/train_minimal.py ...` |
+| Training pipeline | `yolozu train configs/examples/train_contract.yaml --run-id exp01` (requires `yolozu[train]`) | `python3 rtdetr_pose/tools/train_minimal.py ...` |
 | Scenario suite | `yolozu test configs/examples/test_setting.yaml` | `python3 tools/run_scenarios.py ...` |
 
 The “power-user” unified CLI lives in-repo: `python3 tools/yolozu.py --help`.
@@ -289,7 +289,7 @@ Details: [deploy/docker/README.md](deploy/docker/README.md)
 - GPU is supported (training/inference): install CUDA-enabled PyTorch in your environment and use `--device cuda:0`.
 - CI/dev does not require GPU; many checks are CPU-friendly.
 
-## Training scaffold (RT-DETR pose)
+## Training pipeline (RT-DETR pose)
 
 The trainer implementation lives in `rtdetr_pose/rtdetr_pose/train_minimal.py` (source-checkout wrapper: `rtdetr_pose/tools/train_minimal.py`).
 

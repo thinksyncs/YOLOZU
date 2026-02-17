@@ -39,11 +39,10 @@ Read next:
 - [Training / inference / export (overview)](training_inference_export.md)
 - [Tools index](tools_index.md)
 
-### 2) Train → Export → Evaluate (minimal RT-DETR scaffold)
+### 2) Train → Export → Evaluate (RT-DETR training pipeline)
 
-The repo includes a minimal RT-DETR-style scaffold (`rtdetr_pose/`) that exists to wire data,
-losses, export, and metrics. It is scaffold-first, but includes a **production-style run contract**
-(fixed artifact paths, full resume, export + parity gate).
+The repo includes an RT-DETR-based training pipeline (`rtdetr_pose/`) with data/loss/export wiring,
+plus a **production-style run contract** (fixed artifact paths, full resume, export + parity gate).
 
 Shortest command:
 
