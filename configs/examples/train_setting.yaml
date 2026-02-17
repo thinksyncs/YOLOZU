@@ -10,6 +10,17 @@ batch_size: 2
 max_steps: 30
 use_matcher: true
 image_size: 64
+# Lightweight augmentation (optional; effective when real_images: true)
+# multiscale: true
+# scale_min: 0.8
+# scale_max: 1.2
+# hflip_prob: 0.5
+# hsv_h: 0.015
+# hsv_s: 0.2
+# hsv_v: 0.2
+# gray_prob: 0.0
+# gaussian_noise_std: 0.0
+# blur_prob: 0.0
 metrics_jsonl: reports/train_metrics.jsonl
 metrics_csv: reports/train_metrics.csv
 tensorboard_logdir: reports/tb

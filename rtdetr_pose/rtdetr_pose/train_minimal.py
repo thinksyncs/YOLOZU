@@ -369,6 +369,66 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional ending hflip probability for linear schedule.",
     )
     parser.add_argument(
+        "--hsv-h",
+        type=float,
+        default=0.0,
+        help="HSV hue jitter magnitude in [0,1] units (e.g., 0.015 ~= 5.4 degrees). Default: 0 (disabled).",
+    )
+    parser.add_argument(
+        "--hsv-s",
+        type=float,
+        default=0.0,
+        help="HSV saturation jitter magnitude (scales S by factor in [1-hsv_s, 1+hsv_s]). Default: 0 (disabled).",
+    )
+    parser.add_argument(
+        "--hsv-v",
+        type=float,
+        default=0.0,
+        help="HSV value/brightness jitter magnitude (scales V by factor in [1-hsv_v, 1+hsv_v]). Default: 0 (disabled).",
+    )
+    parser.add_argument(
+        "--hsv-prob",
+        type=float,
+        default=1.0,
+        help="Probability to apply HSV jitter when any of --hsv-* is enabled (default: 1.0).",
+    )
+    parser.add_argument(
+        "--gray-prob",
+        type=float,
+        default=0.0,
+        help="Probability of converting the image to grayscale (photometric only; default: 0.0).",
+    )
+    parser.add_argument(
+        "--gaussian-noise-std",
+        type=float,
+        default=0.0,
+        help="Stddev for additive Gaussian noise in [0,1] pixel space (default: 0.0 disables).",
+    )
+    parser.add_argument(
+        "--gaussian-noise-prob",
+        type=float,
+        default=1.0,
+        help="Probability to apply Gaussian noise when --gaussian-noise-std>0 (default: 1.0).",
+    )
+    parser.add_argument(
+        "--blur-prob",
+        type=float,
+        default=0.0,
+        help="Probability of applying a small Gaussian blur (photometric only; default: 0.0).",
+    )
+    parser.add_argument(
+        "--blur-sigma",
+        type=float,
+        default=0.0,
+        help="Max sigma for Gaussian blur; sampled uniformly in (0, sigma]. Default: 0.0 disables.",
+    )
+    parser.add_argument(
+        "--blur-kernel",
+        type=int,
+        default=3,
+        help="Gaussian blur kernel size (odd int, default: 3).",
+    )
+    parser.add_argument(
         "--intrinsics-jitter",
         action="store_true",
         help="Enable intrinsics jitter augmentation on K_gt.",
@@ -1567,6 +1627,159 @@ def generate_block_mask(
     return mask[:h, :w]
 
 
+def _rgb_to_hsv(image: "torch.Tensor") -> "torch.Tensor":
+    if torch is None:  # pragma: no cover
+        raise RuntimeError("torch is required for _rgb_to_hsv")
+    if image.ndim != 3 or int(image.shape[0]) != 3:
+        raise ValueError("_rgb_to_hsv expects an image tensor shaped [3,H,W]")
+
+    eps = 1e-6
+    r, g, b = image[0], image[1], image[2]
+    maxc, argmax = torch.max(image, dim=0)
+    minc = torch.min(image, dim=0).values
+    v = maxc
+    delta = maxc - minc
+    s = delta / (maxc + eps)
+
+    h = torch.zeros_like(maxc)
+    mask = delta > eps
+    delta_safe = torch.where(mask, delta, torch.ones_like(delta))
+
+    rc = (g - b) / delta_safe
+    gc = (b - r) / delta_safe + 2.0
+    bc = (r - g) / delta_safe + 4.0
+
+    h = torch.where(mask & (argmax == 0), rc, h)
+    h = torch.where(mask & (argmax == 1), gc, h)
+    h = torch.where(mask & (argmax == 2), bc, h)
+    h = torch.remainder(h / 6.0, 1.0)
+    return torch.stack([h, s, v], dim=0)
+
+
+def _hsv_to_rgb(hsv: "torch.Tensor") -> "torch.Tensor":
+    if torch is None:  # pragma: no cover
+        raise RuntimeError("torch is required for _hsv_to_rgb")
+    if hsv.ndim != 3 or int(hsv.shape[0]) != 3:
+        raise ValueError("_hsv_to_rgb expects an HSV tensor shaped [3,H,W]")
+
+    h, s, v = hsv[0], hsv[1], hsv[2]
+    h = torch.remainder(h, 1.0)
+    s = torch.clamp(s, 0.0, 1.0)
+    v = torch.clamp(v, 0.0, 1.0)
+
+    h6 = h * 6.0
+    i = torch.floor(h6).to(dtype=torch.int64) % 6
+    f = h6 - torch.floor(h6)
+
+    p = v * (1.0 - s)
+    q = v * (1.0 - s * f)
+    t = v * (1.0 - s * (1.0 - f))
+
+    r = torch.empty_like(v)
+    g = torch.empty_like(v)
+    b = torch.empty_like(v)
+
+    m0 = i == 0
+    m1 = i == 1
+    m2 = i == 2
+    m3 = i == 3
+    m4 = i == 4
+    m5 = i == 5
+
+    r[m0], g[m0], b[m0] = v[m0], t[m0], p[m0]
+    r[m1], g[m1], b[m1] = q[m1], v[m1], p[m1]
+    r[m2], g[m2], b[m2] = p[m2], v[m2], t[m2]
+    r[m3], g[m3], b[m3] = p[m3], q[m3], v[m3]
+    r[m4], g[m4], b[m4] = t[m4], p[m4], v[m4]
+    r[m5], g[m5], b[m5] = v[m5], p[m5], q[m5]
+
+    return torch.stack([r, g, b], dim=0)
+
+
+def apply_hsv_jitter(
+    image: "torch.Tensor",
+    *,
+    generator: "torch.Generator",
+    hgain: float,
+    sgain: float,
+    vgain: float,
+) -> "torch.Tensor":
+    if torch is None:  # pragma: no cover
+        raise RuntimeError("torch is required for apply_hsv_jitter")
+    hsv = _rgb_to_hsv(image)
+    h, s, v = hsv[0], hsv[1], hsv[2]
+
+    if float(hgain) > 0:
+        dh = (torch.rand((), generator=generator) * 2.0 - 1.0) * float(hgain)
+        h = torch.remainder(h + dh, 1.0)
+    if float(sgain) > 0:
+        gs = (torch.rand((), generator=generator) * 2.0 - 1.0) * float(sgain)
+        s = torch.clamp(s * (1.0 + gs), 0.0, 1.0)
+    if float(vgain) > 0:
+        gv = (torch.rand((), generator=generator) * 2.0 - 1.0) * float(vgain)
+        v = torch.clamp(v * (1.0 + gv), 0.0, 1.0)
+
+    return _hsv_to_rgb(torch.stack([h, s, v], dim=0))
+
+
+def apply_grayscale(image: "torch.Tensor") -> "torch.Tensor":
+    if torch is None:  # pragma: no cover
+        raise RuntimeError("torch is required for apply_grayscale")
+    if image.ndim != 3 or int(image.shape[0]) != 3:
+        raise ValueError("apply_grayscale expects an image tensor shaped [3,H,W]")
+
+    gray = image[0] * 0.2989 + image[1] * 0.5870 + image[2] * 0.1140
+    return gray.unsqueeze(0).expand_as(image)
+
+
+def _gaussian_kernel2d(
+    *,
+    kernel_size: int,
+    sigma: float,
+    device: "torch.device",
+    dtype: "torch.dtype",
+) -> "torch.Tensor":
+    if torch is None:  # pragma: no cover
+        raise RuntimeError("torch is required for _gaussian_kernel2d")
+
+    k = int(kernel_size)
+    if k <= 0 or k % 2 == 0:
+        raise ValueError("blur_kernel must be a positive odd integer")
+
+    sig = float(sigma)
+    if not math.isfinite(sig) or sig <= 0:
+        raise ValueError("blur_sigma must be > 0")
+
+    half = k // 2
+    coords = torch.arange(-half, half + 1, device=device, dtype=dtype)
+    kernel1d = torch.exp(-(coords * coords) / (2.0 * sig * sig))
+    kernel1d = kernel1d / torch.clamp(kernel1d.sum(), min=1e-12)
+    kernel2d = kernel1d[:, None] * kernel1d[None, :]
+    return kernel2d / torch.clamp(kernel2d.sum(), min=1e-12)
+
+
+def apply_gaussian_blur(
+    image: "torch.Tensor",
+    *,
+    sigma: float,
+    kernel_size: int,
+) -> "torch.Tensor":
+    if torch is None:  # pragma: no cover
+        raise RuntimeError("torch is required for apply_gaussian_blur")
+    if image.ndim != 3 or int(image.shape[0]) != 3:
+        raise ValueError("apply_gaussian_blur expects an image tensor shaped [3,H,W]")
+
+    k = int(kernel_size)
+    pad = k // 2
+    kernel2d = _gaussian_kernel2d(kernel_size=k, sigma=float(sigma), device=image.device, dtype=image.dtype)
+    weight = kernel2d.view(1, 1, k, k).expand(3, 1, k, k)
+
+    x = image.unsqueeze(0)
+    x = torch.nn.functional.pad(x, (pad, pad, pad, pad), mode="replicate")
+    out = torch.nn.functional.conv2d(x, weight, bias=None, stride=1, padding=0, groups=3)
+    return out.squeeze(0)
+
+
 def create_geom_input_from_bboxes(
     bboxes_cxcywh_norm: list[list[float]],
     z_list: list[float] | None,
@@ -1869,6 +2082,16 @@ class ManifestDataset(Dataset):
         scale_min=1.0,
         scale_max=1.0,
         hflip_prob=0.0,
+        hsv_h=0.0,
+        hsv_s=0.0,
+        hsv_v=0.0,
+        hsv_prob=1.0,
+        gray_prob=0.0,
+        gaussian_noise_std=0.0,
+        gaussian_noise_prob=1.0,
+        blur_prob=0.0,
+        blur_sigma=0.0,
+        blur_kernel=3,
         intrinsics_jitter=False,
         jitter_dfx=0.0,
         jitter_dfy=0.0,
@@ -1909,6 +2132,16 @@ class ManifestDataset(Dataset):
         self.scale_min = float(scale_min)
         self.scale_max = float(scale_max)
         self.hflip_prob = float(hflip_prob)
+        self.hsv_h = float(hsv_h)
+        self.hsv_s = float(hsv_s)
+        self.hsv_v = float(hsv_v)
+        self.hsv_prob = float(hsv_prob)
+        self.gray_prob = float(gray_prob)
+        self.gaussian_noise_std = float(gaussian_noise_std)
+        self.gaussian_noise_prob = float(gaussian_noise_prob)
+        self.blur_prob = float(blur_prob)
+        self.blur_sigma = float(blur_sigma)
+        self.blur_kernel = int(blur_kernel)
         self.intrinsics_jitter = bool(intrinsics_jitter)
         self.jitter_dfx = float(jitter_dfx)
         self.jitter_dfy = float(jitter_dfy)
@@ -2105,6 +2338,32 @@ class ManifestDataset(Dataset):
 
         if flip:
             image = torch.flip(image, dims=(2,))
+
+        if self.hsv_prob > 0.0 and (self.hsv_h > 0.0 or self.hsv_s > 0.0 or self.hsv_v > 0.0):
+            if bool(torch.rand((), generator=gen) < float(self.hsv_prob)):
+                image = apply_hsv_jitter(
+                    image,
+                    generator=gen,
+                    hgain=float(self.hsv_h),
+                    sgain=float(self.hsv_s),
+                    vgain=float(self.hsv_v),
+                )
+
+        if self.gray_prob > 0.0:
+            if bool(torch.rand((), generator=gen) < float(self.gray_prob)):
+                image = apply_grayscale(image)
+
+        if self.blur_prob > 0.0 and self.blur_sigma > 0.0:
+            if bool(torch.rand((), generator=gen) < float(self.blur_prob)):
+                sigma = float(torch.rand((), generator=gen) * float(self.blur_sigma))
+                sigma = max(sigma, 1e-3)
+                image = apply_gaussian_blur(image, sigma=sigma, kernel_size=int(self.blur_kernel))
+
+        if self.gaussian_noise_std > 0.0:
+            prob = float(self.gaussian_noise_prob)
+            if prob >= 1.0 or bool(torch.rand((), generator=gen) < prob):
+                image = image + torch.randn_like(image, generator=gen) * float(self.gaussian_noise_std)
+                image = torch.clamp(image, 0.0, 1.0)
 
         image_raw = None
         mim_mask_ratio = None
@@ -2685,7 +2944,6 @@ def main(argv: list[str] | None = None) -> int:
 
     args, run_contract = apply_run_contract_defaults(args)
     args, run_dir = apply_run_dir_defaults(args)
-    artifact_root = (run_contract.get("run_dir") if run_contract else None) or run_dir
 
     if run_contract is not None:
         if not args.config:
@@ -2945,6 +3203,16 @@ def main(argv: list[str] | None = None) -> int:
         scale_min=args.scale_min,
         scale_max=args.scale_max,
         hflip_prob=args.hflip_prob,
+        hsv_h=float(getattr(args, "hsv_h", 0.0) or 0.0),
+        hsv_s=float(getattr(args, "hsv_s", 0.0) or 0.0),
+        hsv_v=float(getattr(args, "hsv_v", 0.0) or 0.0),
+        hsv_prob=float(getattr(args, "hsv_prob", 1.0) or 1.0),
+        gray_prob=float(getattr(args, "gray_prob", 0.0) or 0.0),
+        gaussian_noise_std=float(getattr(args, "gaussian_noise_std", 0.0) or 0.0),
+        gaussian_noise_prob=float(getattr(args, "gaussian_noise_prob", 1.0) or 1.0),
+        blur_prob=float(getattr(args, "blur_prob", 0.0) or 0.0),
+        blur_sigma=float(getattr(args, "blur_sigma", 0.0) or 0.0),
+        blur_kernel=int(getattr(args, "blur_kernel", 3) or 3),
         intrinsics_jitter=args.intrinsics_jitter,
         jitter_dfx=args.jitter_dfx,
         jitter_dfy=args.jitter_dfy,
@@ -3294,6 +3562,16 @@ def main(argv: list[str] | None = None) -> int:
             scale_min=1.0,
             scale_max=1.0,
             hflip_prob=0.0,
+            hsv_h=0.0,
+            hsv_s=0.0,
+            hsv_v=0.0,
+            hsv_prob=0.0,
+            gray_prob=0.0,
+            gaussian_noise_std=0.0,
+            gaussian_noise_prob=0.0,
+            blur_prob=0.0,
+            blur_sigma=0.0,
+            blur_kernel=3,
             intrinsics_jitter=False,
             jitter_dfx=0.0,
             jitter_dfy=0.0,

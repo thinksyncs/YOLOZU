@@ -73,6 +73,48 @@ class TestTrainMinimalAugment(unittest.TestCase):
         self.assertAlmostEqual(float(targets["gt_offsets"][0][0]), -1.0, places=6)
         self.assertAlmostEqual(float(targets["gt_offsets"][0][1]), 0.5, places=6)
 
+    def test_photometric_augment_is_deterministic_and_clamped(self):
+        mod = _load_train_minimal_module()
+
+        record = {"image_path": "", "labels": [{"class_id": 0, "bbox": {"cx": 0.2, "cy": 0.3, "w": 0.1, "h": 0.2}}]}
+
+        ds_base = mod.ManifestDataset([record], image_size=32, seed=123, real_images=False)
+        base = ds_base[0]["image"]
+
+        ds_aug = mod.ManifestDataset(
+            [record],
+            image_size=32,
+            seed=123,
+            real_images=False,
+            hsv_h=0.02,
+            hsv_s=0.2,
+            hsv_v=0.2,
+            hsv_prob=1.0,
+            gaussian_noise_std=0.05,
+            gaussian_noise_prob=1.0,
+            blur_prob=1.0,
+            blur_sigma=0.8,
+            blur_kernel=3,
+        )
+        img1 = ds_aug[0]["image"]
+        img2 = ds_aug[0]["image"]
+
+        self.assertTrue(torch.all(torch.isfinite(img1)).item())
+        self.assertGreaterEqual(float(img1.min().item()), 0.0)
+        self.assertLessEqual(float(img1.max().item()), 1.0)
+        self.assertFalse(torch.allclose(base, img1), "expected photometric aug to change pixels")
+        self.assertTrue(torch.allclose(img1, img2), "expected deterministic per-index augmentation")
+
+    def test_grayscale_aug_makes_channels_equal(self):
+        mod = _load_train_minimal_module()
+
+        record = {"image_path": "", "labels": [{"class_id": 0, "bbox": {"cx": 0.2, "cy": 0.3, "w": 0.1, "h": 0.2}}]}
+
+        ds = mod.ManifestDataset([record], image_size=16, seed=7, real_images=False, gray_prob=1.0)
+        img = ds[0]["image"]
+        self.assertTrue(torch.allclose(img[0], img[1]))
+        self.assertTrue(torch.allclose(img[1], img[2]))
+
 
 if __name__ == "__main__":
     unittest.main()

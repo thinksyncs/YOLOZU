@@ -323,6 +323,7 @@ Trainer core features (implemented):
 - NaN/Inf guard with skip + LR decay knobs (`--stop-on-non-finite-loss`, `--non-finite-max-skips`, `--non-finite-lr-decay`).
 - Grad clipping (`--clip-grad-norm`, recommended >0 for pose/TTT/MIM stability).
 - AMP (`--amp {none,fp16,bf16}`), EMA (`--use-ema` + `--ema-eval`), DDP (`--ddp` via `torchrun`).
+- Lightweight aug: multiscale (`--multiscale`), hflip (`--hflip-prob`), photometric HSV/grayscale/noise/blur (`--hsv-*`, `--gray-prob`, `--gaussian-noise-*`, `--blur-*`; effective when `--real-images` is used).
 - Validation cadence: epoch (`--val-every`) and step-based (`--val-every-steps`).
 - Early stop: `--early-stop-patience` (+ `--early-stop-min-delta`).
 
