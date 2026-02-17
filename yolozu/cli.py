@@ -699,6 +699,56 @@ def _cmd_eval_long_tail(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_long_tail_recipe(args: argparse.Namespace) -> int:
+    import time
+
+    from yolozu.dataset import build_manifest
+    from yolozu.long_tail_recipe import build_long_tail_recipe
+
+    dataset_root = Path(str(args.dataset)).expanduser()
+    if not dataset_root.is_absolute():
+        dataset_root = Path.cwd() / dataset_root
+
+    manifest = build_manifest(dataset_root, split=str(args.split) if args.split else None)
+    records = list(manifest.get("images") or [])
+    if args.max_images is not None:
+        records = records[: int(args.max_images)]
+
+    recipe = build_long_tail_recipe(
+        records,
+        seed=int(args.seed),
+        stage1_epochs=int(args.stage1_epochs),
+        stage2_epochs=int(args.stage2_epochs),
+        rebalance_sampler=str(args.rebalance_sampler),
+        loss_plugin=str(args.loss_plugin),
+        logit_adjustment_tau=float(args.logit_adjustment_tau),
+        lort_tau=float(args.lort_tau),
+        class_balanced_beta=float(args.class_balanced_beta),
+        focal_gamma=float(args.focal_gamma),
+        ldam_margin=float(args.ldam_margin),
+    )
+
+    payload: dict[str, Any] = {
+        "report_schema_version": 1,
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "dataset": str(dataset_root),
+        "split": manifest.get("split"),
+        "split_requested": str(args.split) if args.split else None,
+        "max_images": int(args.max_images) if args.max_images is not None else None,
+        "recipe": recipe,
+    }
+
+    output_path = Path(str(args.output)).expanduser()
+    if not output_path.is_absolute():
+        output_path = Path.cwd() / output_path
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    if output_path.exists() and not bool(args.force):
+        raise SystemExit(f"output exists: {output_path} (use --force to overwrite)")
+    output_path.write_text(json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
+    print(str(output_path))
+    return 0
+
+
 def _cmd_parity(args: argparse.Namespace) -> int:
     from yolozu.predictions_parity import compare_predictions
 
@@ -1016,6 +1066,23 @@ def main(argv: list[str] | None = None) -> int:
     eval_lt.add_argument("--medium-fraction", type=float, default=0.67, help="Top class fraction assigned up to medium bin.")
     eval_lt.add_argument("--calibration-bins", type=int, default=10, help="Bin count for calibration metrics (ECE/confidence bias).")
     eval_lt.add_argument("--calibration-iou", type=float, default=0.5, help="IoU threshold for calibration correctness matching.")
+
+    lt_recipe = sub.add_parser("long-tail-recipe", help="Generate a decoupled long-tail training recipe with plugin-style rebalance config.")
+    lt_recipe.add_argument("--dataset", required=True, help="YOLO-format dataset root (images/ + labels/).")
+    lt_recipe.add_argument("--split", default=None, help="Dataset split under images/ and labels/ (default: auto).")
+    lt_recipe.add_argument("--output", default="reports/long_tail_recipe.json", help="Output recipe JSON path.")
+    lt_recipe.add_argument("--max-images", type=int, default=None, help="Optional cap for recipe stat scan.")
+    lt_recipe.add_argument("--seed", type=int, default=0, help="Seed recorded in recipe for reproducibility.")
+    lt_recipe.add_argument("--stage1-epochs", type=int, default=90, help="Representation learning stage epochs.")
+    lt_recipe.add_argument("--stage2-epochs", type=int, default=30, help="Classifier re-training stage epochs.")
+    lt_recipe.add_argument("--rebalance-sampler", choices=("none", "class_balanced"), default="class_balanced", help="Sampler plugin selection.")
+    lt_recipe.add_argument("--loss-plugin", choices=("none", "focal", "ldam"), default="focal", help="Loss plugin selection.")
+    lt_recipe.add_argument("--logit-adjustment-tau", type=float, default=1.0, help="Logit adjustment strength (0 disables).")
+    lt_recipe.add_argument("--lort-tau", type=float, default=0.0, help="Frequency-free logits retargeting strength (0 disables).")
+    lt_recipe.add_argument("--class-balanced-beta", type=float, default=0.999, help="Effective-number beta for class-balanced weights.")
+    lt_recipe.add_argument("--focal-gamma", type=float, default=2.0, help="Focal loss gamma (recipe parameter).")
+    lt_recipe.add_argument("--ldam-margin", type=float, default=0.5, help="LDAM margin (recipe parameter).")
+    lt_recipe.add_argument("--force", action="store_true", help="Overwrite output if it exists.")
 
     parity = sub.add_parser("parity", help="Compare two predictions JSON artifacts for backend parity.")
     parity.add_argument("--reference", required=True, help="Reference predictions JSON (e.g. PyTorch).")
@@ -1373,6 +1440,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_calibrate(args)
     if args.command == "eval-long-tail":
         return _cmd_eval_long_tail(args)
+    if args.command == "long-tail-recipe":
+        return _cmd_long_tail_recipe(args)
     if args.command == "parity":
         return _cmd_parity(args)
     if args.command == "validate":

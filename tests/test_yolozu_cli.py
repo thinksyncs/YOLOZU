@@ -23,6 +23,7 @@ class TestYOLOZUCLI(unittest.TestCase):
             self.fail(f"yolozu --help failed:\n{proc.stdout}\n{proc.stderr}")
         self.assertIn("continual-train", proc.stdout)
         self.assertIn("continual-eval", proc.stdout)
+        self.assertIn("long-tail-recipe", proc.stdout)
 
     def test_doctor_writes_json(self):
         repo_root = Path(__file__).resolve().parents[1]

@@ -1176,6 +1176,17 @@ def _eval_instance_seg(args: argparse.Namespace) -> int:
     return 0
 
 
+def _passthrough_pkg_cli(args: argparse.Namespace) -> int:
+    from yolozu.cli import main as pkg_main
+
+    cmd = str(getattr(args, "_pkg_cmd"))
+    forwarded = getattr(args, "forward_args", None)
+    argv = [cmd]
+    if isinstance(forwarded, list):
+        argv.extend(str(token) for token in forwarded)
+    return int(pkg_main(argv))
+
+
 def _parse_args(argv: list[str]) -> argparse.Namespace:
     p = argparse.ArgumentParser(prog="yolozu", description="YOLOZU unified CLI (P0/P1/P2 building blocks).")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -1288,11 +1299,29 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     )
     p_is.set_defaults(_fn=_eval_instance_seg)
 
+    p_cal = sub.add_parser("calibrate", help="Delegate to yolozu package CLI calibrate command.")
+    p_cal.add_argument("forward_args", nargs=argparse.REMAINDER, help="Arguments forwarded to `yolozu calibrate`.")
+    p_cal.set_defaults(_fn=_passthrough_pkg_cli, _pkg_cmd="calibrate")
+
+    p_elt = sub.add_parser("eval-long-tail", help="Delegate to yolozu package CLI eval-long-tail command.")
+    p_elt.add_argument("forward_args", nargs=argparse.REMAINDER, help="Arguments forwarded to `yolozu eval-long-tail`.")
+    p_elt.set_defaults(_fn=_passthrough_pkg_cli, _pkg_cmd="eval-long-tail")
+
+    p_ltr = sub.add_parser("long-tail-recipe", help="Delegate to yolozu package CLI long-tail-recipe command.")
+    p_ltr.add_argument("forward_args", nargs=argparse.REMAINDER, help="Arguments forwarded to `yolozu long-tail-recipe`.")
+    p_ltr.set_defaults(_fn=_passthrough_pkg_cli, _pkg_cmd="long-tail-recipe")
+
     return p.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = _parse_args(sys.argv[1:] if argv is None else argv)
+    raw_argv = sys.argv[1:] if argv is None else argv
+    if raw_argv and raw_argv[0] in {"calibrate", "eval-long-tail", "long-tail-recipe"}:
+        from yolozu.cli import main as pkg_main
+
+        return int(pkg_main(raw_argv))
+
+    args = _parse_args(raw_argv)
     fn = getattr(args, "_fn", None)
     if fn is None:
         raise SystemExit("missing handler")
