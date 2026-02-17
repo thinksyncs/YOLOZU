@@ -370,6 +370,7 @@ Base dataset format:
   - You can also pass an Ultralytics `data.yaml` as `--dataset` (expects `path:` + `train:`/`val:` pointing to `images/<split>`).
 - YOLOX: common setups use COCO JSON (`instances_*.json`). Convert once with `tools/prepare_coco_yolo.py`
   to generate YOLO-format labels (and an optional `dataset.json` descriptor) under a YOLOZU-compatible dataset root.
+  - If you want a **read-only** wrapper (no label txt generation), use import adapters: [`docs/import_adapters.md`](docs/import_adapters.md).
 
 Optional per-image metadata (JSON): `labels/<split>/<image>.json`
 - Masks/seg: `mask_path` / `mask` / `M`

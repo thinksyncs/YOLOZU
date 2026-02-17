@@ -18,6 +18,7 @@ Links:
 - License policy: [license_policy.md](license_policy.md)
 - AI-first guide: [ai_first.md](ai_first.md)
 - Migration helpers: [migrate.md](migrate.md)
+- Import adapters (canonical schema): [import_adapters.md](import_adapters.md)
 - Quantization: [quantization.md](quantization.md)
 
 ## Start here (4 entry points)

@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from .config import simple_yaml_load
+from .coco_convert import build_category_map_from_coco
 from .keypoints import normalize_keypoints
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -638,9 +639,177 @@ def _resolve_dataset_json_layout(dataset_root: Path, split: str | None) -> tuple
     return img, lbl, effective_split, label_format_out
 
 
+def _resolve_path_from_descriptor(value: Any, *, base: Path) -> Path | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    p = Path(value.strip())
+    if not p.is_absolute():
+        p = (base / p).resolve()
+    return p
+
+
+def load_coco_instances_dataset(
+    instances_json: dict[str, Any],
+    *,
+    images_dir: Path,
+    include_crowd: bool = False,
+) -> list[dict[str, Any]]:
+    images = instances_json.get("images") or []
+    annotations = instances_json.get("annotations") or []
+    if not isinstance(images, list) or not isinstance(annotations, list):
+        raise ValueError("invalid COCO instances JSON (images/annotations)")
+
+    cat_map = build_category_map_from_coco(instances_json)
+
+    image_id_to_meta: dict[int, dict[str, Any]] = {}
+    for img in images:
+        if not isinstance(img, dict) or "id" not in img:
+            continue
+        try:
+            image_id_to_meta[int(img["id"])] = img
+        except Exception:
+            continue
+
+    ann_by_image: dict[int, list[dict[str, Any]]] = {}
+    for ann in annotations:
+        if not isinstance(ann, dict):
+            continue
+        if not include_crowd and int(ann.get("iscrowd", 0) or 0) == 1:
+            continue
+        try:
+            img_id = int(ann["image_id"])
+        except Exception:
+            continue
+        ann_by_image.setdefault(img_id, []).append(ann)
+
+    records: list[dict[str, Any]] = []
+    for img_id, meta in sorted(image_id_to_meta.items(), key=lambda kv: str(kv[1].get("file_name") or "")):
+        file_name = str(meta.get("file_name") or "").strip()
+        if not file_name:
+            continue
+        width = int(meta.get("width") or 0)
+        height = int(meta.get("height") or 0)
+        if width <= 0 or height <= 0:
+            continue
+
+        image_path = images_dir / file_name
+
+        labels: list[dict[str, Any]] = []
+        for ann in ann_by_image.get(img_id, []):
+            try:
+                cat_id = int(ann["category_id"])
+            except Exception:
+                continue
+            class_id = cat_map.category_id_to_class_id.get(cat_id)
+            if class_id is None:
+                continue
+            bbox = ann.get("bbox") or []
+            if not isinstance(bbox, list) or len(bbox) != 4:
+                continue
+            x, y, w, h = float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3])
+            if w <= 0.0 or h <= 0.0:
+                continue
+            cx = (x + w / 2.0) / float(width)
+            cy = (y + h / 2.0) / float(height)
+            wn = w / float(width)
+            hn = h / float(height)
+            labels.append({"class_id": int(class_id), "cx": float(cx), "cy": float(cy), "w": float(wn), "h": float(hn)})
+
+        records.append(
+            {
+                "image": str(image_path),
+                "labels": labels,
+                "image_hw": [int(height), int(width)],
+            }
+        )
+
+    return records
+
+
+def _build_manifest_from_dataset_descriptor(
+    descriptor_path: Path,
+    *,
+    split: str | None,
+    label_format: str | None,
+) -> dict[str, Any] | None:
+    if not descriptor_path.exists() or not descriptor_path.is_file() or descriptor_path.suffix.lower() != ".json":
+        return None
+    try:
+        data = json.loads(descriptor_path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if not isinstance(data, dict):
+        return None
+
+    base = descriptor_path.parent
+    fmt = str(data.get("format") or "").strip().lower()
+
+    if fmt in ("coco_instances", "coco-instances", "coco"):
+        images_dir = _resolve_path_from_descriptor(data.get("images_dir"), base=base)
+        instances_path = _resolve_path_from_descriptor(data.get("instances_json"), base=base)
+        if images_dir is None or instances_path is None:
+            return None
+        if not instances_path.exists():
+            raise FileNotFoundError(f"COCO instances JSON not found: {instances_path}")
+        instances_doc = json.loads(instances_path.read_text(encoding="utf-8"))
+        if not isinstance(instances_doc, dict):
+            raise ValueError("invalid COCO instances JSON (expected object)")
+        records = load_coco_instances_dataset(
+            instances_doc,
+            images_dir=images_dir,
+            include_crowd=bool(data.get("include_crowd", False)),
+        )
+        split_effective = str(split) if split else str(data.get("split") or "")
+        return {"images": records, "split": split_effective or None}
+
+    # Default: YOLO wrapper descriptor.
+    resolved = _resolve_dataset_json_layout(base, split)
+    if resolved is not None and descriptor_path.name == "dataset.json":
+        images_dir, labels_dir, split_effective, json_label_format = resolved
+        records = load_yolo_dataset(
+            images_dir,
+            labels_dir,
+            dataset_root=base,
+            label_format=label_format or json_label_format,
+        )
+        return {"images": records, "split": split_effective}
+
+    images_dir = _resolve_path_from_descriptor(data.get("images_dir"), base=base)
+    labels_dir = _resolve_path_from_descriptor(data.get("labels_dir"), base=base)
+    if images_dir is None or labels_dir is None:
+        return None
+
+    split_from_desc = data.get("split")
+    effective_split: str | None = str(split_from_desc) if isinstance(split_from_desc, str) and split_from_desc else None
+    if split:
+        effective_split = str(split)
+        img_candidate = images_dir.parent / effective_split
+        lbl_candidate = labels_dir.parent / effective_split
+        if img_candidate.exists():
+            images_dir = img_candidate
+        if lbl_candidate.exists():
+            labels_dir = lbl_candidate
+    if effective_split is None:
+        effective_split = labels_dir.name
+
+    json_label_format = data.get("label_format") or data.get("task")
+    lf_out = str(json_label_format).strip() if isinstance(json_label_format, str) and json_label_format.strip() else None
+    records = load_yolo_dataset(
+        images_dir,
+        labels_dir,
+        dataset_root=base,
+        label_format=label_format or lf_out,
+    )
+    return {"images": records, "split": effective_split}
+
+
 def build_manifest(dataset_root, *, split: str | None = None, label_format: str | None = None):
     dataset_root = Path(dataset_root)
     if dataset_root.exists() and dataset_root.is_file():
+        if dataset_root.suffix.lower() == ".json":
+            resolved = _build_manifest_from_dataset_descriptor(dataset_root, split=split, label_format=label_format)
+            if resolved is not None:
+                return resolved
         resolved = _resolve_ultralytics_data_yaml(dataset_root, split)
         if resolved is not None:
             images_dir, labels_dir, split_effective, inferred_root, yaml_label_format = resolved
@@ -653,16 +822,11 @@ def build_manifest(dataset_root, *, split: str | None = None, label_format: str 
             return {"images": records, "split": split_effective}
         raise FileNotFoundError(f"unsupported dataset descriptor file: {dataset_root}")
 
-    resolved = _resolve_dataset_json_layout(dataset_root, split)
+    # dataset.json descriptor wrapper (YOLO wrapper or COCO wrapper).
+    desc = dataset_root / "dataset.json"
+    resolved = _build_manifest_from_dataset_descriptor(desc, split=split, label_format=label_format)
     if resolved is not None:
-        images_dir, labels_dir, split_effective, json_label_format = resolved
-        records = load_yolo_dataset(
-            images_dir,
-            labels_dir,
-            dataset_root=dataset_root,
-            label_format=label_format or json_label_format,
-        )
-        return {"images": records, "split": split_effective}
+        return resolved
 
     split_effective = _pick_split(dataset_root, split)
     images_dir = dataset_root / "images" / split_effective

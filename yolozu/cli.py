@@ -521,6 +521,53 @@ def _cmd_migrate(args: argparse.Namespace) -> int:
     raise SystemExit("unknown migrate command")
 
 
+def _cmd_import(args: argparse.Namespace) -> int:
+    from yolozu.imports import import_coco_instances_dataset, import_ultralytics_config
+    from yolozu.migrate import migrate_ultralytics_dataset_wrapper
+
+    if args.import_command == "dataset":
+        if str(args.from_format) == "ultralytics":
+            out = migrate_ultralytics_dataset_wrapper(
+                data_yaml=str(args.data) if args.data else None,
+                args_yaml=str(args.args) if args.args else None,
+                split=str(args.split) if args.split else None,
+                task=str(args.task) if args.task else None,
+                output=str(args.output),
+                force=bool(args.force),
+            )
+            print(str(out))
+            return 0
+
+        if str(args.from_format) == "coco-instances":
+            if not args.instances or not args.images_dir:
+                raise SystemExit("--instances and --images-dir are required for --from coco-instances")
+            out = import_coco_instances_dataset(
+                instances_json=str(args.instances),
+                images_dir=str(args.images_dir),
+                split=str(args.split) if args.split else "val2017",
+                output=str(args.output),
+                include_crowd=bool(args.include_crowd),
+                force=bool(args.force),
+            )
+            print(str(out))
+            return 0
+
+        raise SystemExit("unsupported --from for import dataset")
+
+    if args.import_command == "config":
+        if str(args.from_format) != "ultralytics":
+            raise SystemExit("unsupported --from for import config")
+        out = import_ultralytics_config(
+            args_yaml=str(args.args),
+            output=str(args.output),
+            force=bool(args.force),
+        )
+        print(str(out))
+        return 0
+
+    raise SystemExit("unknown import command")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="yolozu")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
@@ -825,6 +872,35 @@ def main(argv: list[str] | None = None) -> int:
         help="(Cityscapes) Mask suffix type (default: labelTrainIds).",
     )
 
+    imp = sub.add_parser("import", help="Import adapters (read-only projection into canonical schema).")
+    imp_sub = imp.add_subparsers(dest="import_command", required=True)
+
+    imp_dataset = imp_sub.add_parser("dataset", help="Generate a read-only dataset wrapper for external layouts.")
+    imp_dataset.add_argument(
+        "--from",
+        dest="from_format",
+        choices=("ultralytics", "coco-instances"),
+        required=True,
+        help="Source ecosystem.",
+    )
+    imp_dataset.add_argument("--output", required=True, help="Output directory (wrapper) or dataset.json file path.")
+    imp_dataset.add_argument("--force", action="store_true", help="Overwrite output if it exists.")
+    imp_dataset.add_argument("--split", default=None, help="Split name (COCO default: val2017; Ultralytics: from data.yaml).")
+
+    imp_dataset.add_argument("--data", default=None, help="(Ultralytics) data.yaml path (preferred).")
+    imp_dataset.add_argument("--args", default=None, help="(Ultralytics) args.yaml (optional; used for task/data inference).")
+    imp_dataset.add_argument("--task", choices=("detect", "segment", "pose"), default=None, help="(Ultralytics) Task override.")
+
+    imp_dataset.add_argument("--instances", default=None, help="(COCO) instances_*.json path.")
+    imp_dataset.add_argument("--images-dir", default=None, help="(COCO) Images directory for this split.")
+    imp_dataset.add_argument("--include-crowd", action="store_true", help="(COCO) Include iscrowd annotations.")
+
+    imp_cfg = imp_sub.add_parser("config", help="Project external configs into canonical TrainConfig (major keys only).")
+    imp_cfg.add_argument("--from", dest="from_format", choices=("ultralytics",), required=True, help="Source ecosystem.")
+    imp_cfg.add_argument("--args", required=True, help="Ultralytics args.yaml path.")
+    imp_cfg.add_argument("--output", required=True, help="Output path (file or directory).")
+    imp_cfg.add_argument("--force", action="store_true", help="Overwrite output if it exists.")
+
     train_p = sub.add_parser("train", help="Train with RT-DETR pose scaffold (requires `yolozu[train]`).")
     train_p.add_argument("config", type=str, help="Path to train config YAML/JSON (train_setting.yaml).")
     train_p.add_argument(
@@ -922,6 +998,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_resources(args)
     if args.command == "migrate":
         return _cmd_migrate(args)
+    if args.command == "import":
+        return _cmd_import(args)
     if args.command == "demo":
         if args.demo_command == "instance-seg":
             from yolozu.demos.instance_seg import run_instance_seg_demo
