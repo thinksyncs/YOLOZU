@@ -19,7 +19,16 @@ sys.path.insert(0, str(repo_root))
 # Clear it so `import_module("rtdetr_pose.train_minimal")` resolves to the real
 # package under repo_root.
 _self = __name__
-_keep = {_self, _self.rsplit(".", 1)[0]} if "." in _self else {_self}
+_spec = globals().get("__spec__")
+_spec_name = getattr(_spec, "name", None)
+
+_keep = {_self}
+if "." in _self:
+    _keep.add(_self.rsplit(".", 1)[0])
+if isinstance(_spec_name, str) and _spec_name:
+    _keep.add(_spec_name)
+    if "." in _spec_name:
+        _keep.add(_spec_name.rsplit(".", 1)[0])
 sys.modules.pop("rtdetr_pose", None)
 for key in list(sys.modules.keys()):
     if key in _keep:
