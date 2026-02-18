@@ -194,6 +194,7 @@ Recent compatibility additions:
   then
   `yolozu eval-long-tail --dataset <yolo-dataset> --predictions <calibrated_predictions.json>`.
   Reuse training-time stats with `--stats-in reports/fracal_stats_bbox.json` (also supported for `--task seg`).
+  Alternative methods are also available for comparison: `--method la --tau <value>` and `--method norcal --gamma <value>`.
 - Model weights/datasets stay outside git by design; reproducibility is maintained through stable JSON artifacts and
   pinned path conventions documented in `docs/external_inference.md` and `docs/yolo26_inference_adapters.md`.
 

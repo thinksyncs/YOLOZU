@@ -5,6 +5,8 @@ from yolozu.long_tail_metrics import (
     evaluate_long_tail_detection,
     fracal_calibrate_instance_segmentation,
     fracal_calibrate_predictions,
+    la_calibrate_predictions,
+    norcal_calibrate_predictions,
 )
 
 try:
@@ -91,6 +93,33 @@ class TestLongTailMetrics(unittest.TestCase):
         self.assertLess(head_after, head_before)
         self.assertGreater(tail_after, tail_before)
         self.assertEqual(report["class_counts"], {"0": 100, "1": 1, "2": 1})
+
+    def test_la_boosts_tail_vs_head(self):
+        records, preds = self._fixture()
+        calibrated, report = la_calibrate_predictions(records, preds, tau=0.7)
+
+        head_before = preds[0]["detections"][0]["score"]
+        head_after = calibrated[0]["detections"][0]["score"]
+        tail_before = preds[0]["detections"][1]["score"]
+        tail_after = calibrated[0]["detections"][1]["score"]
+
+        self.assertGreater(head_after, head_before)
+        self.assertGreater(tail_after, tail_before)
+        self.assertGreater((tail_after - tail_before), (head_after - head_before))
+        self.assertEqual(report.get("method"), "la")
+
+    def test_norcal_boosts_tail_vs_head(self):
+        records, preds = self._fixture()
+        calibrated, report = norcal_calibrate_predictions(records, preds, gamma=0.8)
+
+        head_before = preds[0]["detections"][0]["score"]
+        head_after = calibrated[0]["detections"][0]["score"]
+        tail_before = preds[0]["detections"][1]["score"]
+        tail_after = calibrated[0]["detections"][1]["score"]
+
+        self.assertLess(head_after, head_before)
+        self.assertAlmostEqual(tail_after, tail_before, places=12)
+        self.assertEqual(report.get("method"), "norcal")
 
     def test_fracal_pose_stats_and_keypoints_are_preserved(self):
         records = [

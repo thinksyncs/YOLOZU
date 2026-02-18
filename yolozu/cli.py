@@ -720,11 +720,15 @@ def _cmd_calibrate(args: argparse.Namespace) -> int:
         build_fracal_stats,
         fracal_calibrate_instance_segmentation,
         fracal_calibrate_predictions,
+        la_calibrate_instance_segmentation,
+        la_calibrate_predictions,
+        norcal_calibrate_instance_segmentation,
+        norcal_calibrate_predictions,
     )
     from yolozu.predictions import normalize_predictions_payload, validate_predictions_entries
 
     method = str(getattr(args, "method", "fracal") or "fracal").strip().lower()
-    if method != "fracal":
+    if method not in ("fracal", "la", "norcal"):
         raise SystemExit(f"unsupported calibration method: {method}")
 
     dataset_root = Path(str(args.dataset)).expanduser()
@@ -786,42 +790,87 @@ def _cmd_calibrate(args: argparse.Namespace) -> int:
                 continue
         stats_source = str(stats_path)
 
-    computed_stats = build_fracal_stats(records, task=task, allow_rgb_masks=bool(getattr(args, "allow_rgb_masks", False)))
+    computed_stats = build_fracal_stats(
+        records,
+        task=task,
+        allow_rgb_masks=bool(getattr(args, "allow_rgb_masks", False)),
+        method=method,
+    )
     if loaded_counts is None:
         loaded_counts = {int(k): int(v) for k, v in (computed_stats.get("class_counts") or {}).items()}
 
     if task == "seg":
         entries, wrapped_meta = normalize_instance_segmentation_predictions_payload(raw_data)
         validation = validate_instance_segmentation_predictions_entries(entries, where="predictions")
-        calibrated_entries, calibration_report = fracal_calibrate_instance_segmentation(
-            records,
-            entries,
-            alpha=float(args.alpha),
-            strength=float(args.strength),
-            min_score=(None if args.min_score is None else float(args.min_score)),
-            max_score=(None if args.max_score is None else float(args.max_score)),
-            class_counts=loaded_counts,
-            allow_rgb_masks=bool(getattr(args, "allow_rgb_masks", False)),
-        )
+        if method == "fracal":
+            calibrated_entries, calibration_report = fracal_calibrate_instance_segmentation(
+                records,
+                entries,
+                alpha=float(args.alpha),
+                strength=float(args.strength),
+                min_score=(None if args.min_score is None else float(args.min_score)),
+                max_score=(None if args.max_score is None else float(args.max_score)),
+                class_counts=loaded_counts,
+                allow_rgb_masks=bool(getattr(args, "allow_rgb_masks", False)),
+            )
+        elif method == "la":
+            calibrated_entries, calibration_report = la_calibrate_instance_segmentation(
+                records,
+                entries,
+                tau=float(args.tau),
+                min_score=(None if args.min_score is None else float(args.min_score)),
+                max_score=(None if args.max_score is None else float(args.max_score)),
+                class_counts=loaded_counts,
+                allow_rgb_masks=bool(getattr(args, "allow_rgb_masks", False)),
+            )
+        else:
+            calibrated_entries, calibration_report = norcal_calibrate_instance_segmentation(
+                records,
+                entries,
+                gamma=float(args.gamma),
+                min_score=(None if args.min_score is None else float(args.min_score)),
+                max_score=(None if args.max_score is None else float(args.max_score)),
+                class_counts=loaded_counts,
+                allow_rgb_masks=bool(getattr(args, "allow_rgb_masks", False)),
+            )
     else:
         entries, wrapped_meta = normalize_predictions_payload(raw_data)
         validation = validate_predictions_entries(entries, strict=False)
-        calibrated_entries, calibration_report = fracal_calibrate_predictions(
-            records,
-            entries,
-            alpha=float(args.alpha),
-            strength=float(args.strength),
-            min_score=(None if args.min_score is None else float(args.min_score)),
-            max_score=(None if args.max_score is None else float(args.max_score)),
-            class_counts=loaded_counts,
-        )
+        if method == "fracal":
+            calibrated_entries, calibration_report = fracal_calibrate_predictions(
+                records,
+                entries,
+                alpha=float(args.alpha),
+                strength=float(args.strength),
+                min_score=(None if args.min_score is None else float(args.min_score)),
+                max_score=(None if args.max_score is None else float(args.max_score)),
+                class_counts=loaded_counts,
+            )
+        elif method == "la":
+            calibrated_entries, calibration_report = la_calibrate_predictions(
+                records,
+                entries,
+                tau=float(args.tau),
+                min_score=(None if args.min_score is None else float(args.min_score)),
+                max_score=(None if args.max_score is None else float(args.max_score)),
+                class_counts=loaded_counts,
+            )
+        else:
+            calibrated_entries, calibration_report = norcal_calibrate_predictions(
+                records,
+                entries,
+                gamma=float(args.gamma),
+                min_score=(None if args.min_score is None else float(args.min_score)),
+                max_score=(None if args.max_score is None else float(args.max_score)),
+                class_counts=loaded_counts,
+            )
     calibration_report["task"] = task
     calibration_report["stats_source"] = stats_source
 
     out_meta: dict[str, Any] = dict(wrapped_meta or {})
     out_meta["posthoc_calibration"] = {
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "method": "fracal",
+        "method": method,
         "report": calibration_report,
     }
 
@@ -862,7 +911,7 @@ def _cmd_calibrate(args: argparse.Namespace) -> int:
         "split": manifest.get("split"),
         "predictions": str(predictions_path),
         "output": str(out_path),
-        "method": "fracal",
+        "method": method,
         "task": task,
         "stats_source": stats_source,
         "warnings": list(validation.warnings),
@@ -1291,7 +1340,7 @@ def main(argv: list[str] | None = None) -> int:
     eval_coco.add_argument("--output", default="reports/coco_eval.json", help="Output report path.")
 
     calibrate = sub.add_parser("calibrate", help="Apply post-hoc FRACAL calibration to bbox or instance-seg predictions JSON.")
-    calibrate.add_argument("--method", choices=("fracal",), default="fracal", help="Calibration method (default: fracal).")
+    calibrate.add_argument("--method", choices=("fracal", "la", "norcal"), default="fracal", help="Calibration method (default: fracal).")
     calibrate.add_argument("--dataset", required=True, help="YOLO-format dataset root (images/ + labels/).")
     calibrate.add_argument("--split", default=None, help="Dataset split under images/ and labels/ (default: auto).")
     calibrate.add_argument("--task", choices=("auto", "bbox", "seg", "pose"), default="auto", help="Prediction task type (default: auto).")
@@ -1303,6 +1352,8 @@ def main(argv: list[str] | None = None) -> int:
     calibrate.add_argument("--max-images", type=int, default=None, help="Optional cap for calibration/eval subset size.")
     calibrate.add_argument("--alpha", type=float, default=0.5, help="FRACAL class-frequency exponent (default: 0.5).")
     calibrate.add_argument("--strength", type=float, default=1.0, help="Blend ratio [0,1] between original and FRACAL scores (default: 1.0).")
+    calibrate.add_argument("--tau", type=float, default=1.0, help="(method=la) logit adjustment coefficient tau (default: 1.0).")
+    calibrate.add_argument("--gamma", type=float, default=1.0, help="(method=norcal) frequency exponent gamma (default: 1.0).")
     calibrate.add_argument("--min-score", type=float, default=None, help="Optional post-clamp minimum score.")
     calibrate.add_argument("--max-score", type=float, default=None, help="Optional post-clamp maximum score.")
     calibrate.add_argument("--allow-rgb-masks", action="store_true", help="(task=seg) Treat RGB masks as valid by using channel-0 as foreground.")

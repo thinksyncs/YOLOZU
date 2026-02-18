@@ -596,6 +596,75 @@ class TestYOLOZUCLI(unittest.TestCase):
             report = json.loads(out_report.read_text(encoding="utf-8"))
             self.assertEqual(report.get("task"), "pose")
 
+    def test_calibrate_supports_la_and_norcal_methods(self):
+        repo_root = Path(__file__).resolve().parents[1]
+        script = repo_root / "tools" / "yolozu.py"
+
+        with tempfile.TemporaryDirectory(dir=str(repo_root)) as td:
+            root = Path(td)
+            dataset_root = root / "dataset"
+            images = dataset_root / "images" / "train2017"
+            labels = dataset_root / "labels" / "train2017"
+            images.mkdir(parents=True, exist_ok=True)
+            labels.mkdir(parents=True, exist_ok=True)
+            (images / "000001.jpg").write_bytes(b"")
+            (labels / "000001.txt").write_text("0 0.5 0.5 0.2 0.2\n", encoding="utf-8")
+
+            preds_in = root / "pred_bbox.json"
+            preds_in.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "predictions": [
+                            {
+                                "image": "000001.jpg",
+                                "detections": [
+                                    {"class_id": 0, "score": 0.8, "bbox": {"cx": 0.5, "cy": 0.5, "w": 0.2, "h": 0.2}},
+                                ],
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            for method in ("la", "norcal"):
+                out_preds = root / f"pred_bbox_{method}.json"
+                out_report = root / f"calib_report_{method}.json"
+                proc = subprocess.run(
+                    [
+                        sys.executable,
+                        str(script),
+                        "calibrate",
+                        "--method",
+                        method,
+                        "--task",
+                        "bbox",
+                        "--dataset",
+                        str(dataset_root),
+                        "--split",
+                        "train2017",
+                        "--predictions",
+                        str(preds_in),
+                        "--output",
+                        str(out_preds),
+                        "--output-report",
+                        str(out_report),
+                        "--force",
+                    ],
+                    cwd=str(repo_root),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=False,
+                    text=True,
+                )
+                if proc.returncode != 0:
+                    self.fail(f"yolozu calibrate --method {method} failed:\n{proc.stdout}\n{proc.stderr}")
+
+                report = json.loads(out_report.read_text(encoding="utf-8"))
+                self.assertEqual(report.get("method"), method)
+                self.assertEqual((report.get("calibration") or {}).get("method"), method)
+
 
 if __name__ == "__main__":
     unittest.main()

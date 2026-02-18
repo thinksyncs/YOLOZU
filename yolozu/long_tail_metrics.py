@@ -62,6 +62,7 @@ def build_fracal_stats(
     *,
     task: str = "bbox",
     allow_rgb_masks: bool = False,
+    method: str = "fracal",
 ) -> dict[str, Any]:
     task_norm = str(task or "bbox").strip().lower()
     warnings: list[str] = []
@@ -74,7 +75,7 @@ def build_fracal_stats(
 
     return {
         "schema_version": 1,
-        "method": "fracal",
+        "method": str(method),
         "task": task_norm,
         "class_counts": {str(k): int(v) for k, v in sorted(counts.items())},
         "summary": {
@@ -140,6 +141,77 @@ def _fracal_apply_score(
     weight = float(class_weights.get(int(class_id), 1.0))
     score_fractal = _fractal_score_transform(score_orig, weight)
     score_new = (1.0 - float(strength)) * score_orig + float(strength) * score_fractal
+    if min_score is not None:
+        score_new = max(float(min_score), score_new)
+    if max_score is not None:
+        score_new = min(float(max_score), score_new)
+    return _clip01(score_new)
+
+
+def _score_to_logit(score: float) -> float:
+    score = _clip01(float(score))
+    eps = 1e-9
+    score = min(1.0 - eps, max(eps, score))
+    return float(math.log(score / (1.0 - score)))
+
+
+def _logit_to_score(logit: float) -> float:
+    try:
+        z = float(logit)
+    except Exception:
+        return 0.0
+    if z >= 0.0:
+        e = math.exp(-z)
+        return _clip01(1.0 / (1.0 + e))
+    e = math.exp(z)
+    return _clip01(e / (1.0 + e))
+
+
+def _build_class_priors(class_counts: dict[int, int]) -> dict[int, float]:
+    counts = {int(k): int(v) for k, v in class_counts.items() if int(v) > 0}
+    total = float(sum(counts.values()))
+    if total <= 0.0:
+        return {}
+    return {int(k): float(v) / total for k, v in counts.items()}
+
+
+def _la_apply_score(
+    *,
+    score_orig: float,
+    class_id: int,
+    class_priors: dict[int, float],
+    tau: float,
+    min_score: float | None,
+    max_score: float | None,
+) -> float:
+    prior = float(class_priors.get(int(class_id), 0.0))
+    if prior <= 0.0:
+        return _clip01(float(score_orig))
+    z = _score_to_logit(score_orig)
+    z_new = z - float(tau) * math.log(prior)
+    score_new = _logit_to_score(z_new)
+    if min_score is not None:
+        score_new = max(float(min_score), score_new)
+    if max_score is not None:
+        score_new = min(float(max_score), score_new)
+    return _clip01(score_new)
+
+
+def _norcal_apply_score(
+    *,
+    score_orig: float,
+    class_id: int,
+    class_counts: dict[int, int],
+    gamma: float,
+    min_score: float | None,
+    max_score: float | None,
+) -> float:
+    count = int(class_counts.get(int(class_id), 0))
+    if count <= 0:
+        return _clip01(float(score_orig))
+    z = _score_to_logit(score_orig)
+    z_new = z - float(gamma) * math.log(float(count))
+    score_new = _logit_to_score(z_new)
     if min_score is not None:
         score_new = max(float(min_score), score_new)
     if max_score is not None:
@@ -295,6 +367,256 @@ def fracal_calibrate_instance_segmentation(
         },
         "class_counts": {str(k): int(v) for k, v in sorted(counts.items())},
         "class_weights": {str(k): float(v) for k, v in sorted(class_weights.items())},
+        "summary": {
+            "instances_total": int(total_instances),
+            "instances_changed": int(changed_instances),
+        },
+        "warnings": list(warnings),
+    }
+    return calibrated, report
+
+
+def la_calibrate_predictions(
+    records: list[dict[str, Any]],
+    predictions_entries: list[dict[str, Any]],
+    *,
+    tau: float = 1.0,
+    min_score: float | None = None,
+    max_score: float | None = None,
+    class_counts: dict[int, int] | None = None,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    if tau < 0:
+        raise ValueError("tau must be >= 0")
+
+    counts = _coerce_class_counts(class_counts) if class_counts is not None else class_frequency_counts(records)
+    priors = _build_class_priors(counts)
+
+    calibrated: list[dict[str, Any]] = []
+    total_dets = 0
+    changed_dets = 0
+    for entry in predictions_entries:
+        dets_out: list[dict[str, Any]] = []
+        for det in entry.get("detections", []) or []:
+            det_out = dict(det)
+            total_dets += 1
+            class_id = int(det.get("class_id", -1))
+            score_orig = _clip01(float(det.get("score", 0.0)))
+            score_new = _la_apply_score(
+                score_orig=score_orig,
+                class_id=class_id,
+                class_priors=priors,
+                tau=float(tau),
+                min_score=min_score,
+                max_score=max_score,
+            )
+            if abs(score_new - score_orig) > 1e-12:
+                changed_dets += 1
+            det_out["score"] = float(score_new)
+            dets_out.append(det_out)
+        calibrated.append({"image": entry.get("image"), "detections": dets_out})
+
+    report = {
+        "method": "la",
+        "config": {
+            "tau": float(tau),
+            "min_score": (None if min_score is None else float(min_score)),
+            "max_score": (None if max_score is None else float(max_score)),
+        },
+        "class_counts": {str(k): int(v) for k, v in sorted(counts.items())},
+        "class_priors": {str(k): float(v) for k, v in sorted(priors.items())},
+        "summary": {
+            "detections_total": int(total_dets),
+            "detections_changed": int(changed_dets),
+        },
+    }
+    return calibrated, report
+
+
+def la_calibrate_instance_segmentation(
+    records: list[dict[str, Any]],
+    predictions_entries: list[dict[str, Any]],
+    *,
+    tau: float = 1.0,
+    min_score: float | None = None,
+    max_score: float | None = None,
+    class_counts: dict[int, int] | None = None,
+    allow_rgb_masks: bool = False,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    if tau < 0:
+        raise ValueError("tau must be >= 0")
+
+    warnings: list[str] = []
+    if class_counts is not None:
+        counts = _coerce_class_counts(class_counts)
+    else:
+        counts, warnings = class_frequency_counts_instance_segmentation(records, allow_rgb_masks=allow_rgb_masks)
+    priors = _build_class_priors(counts)
+
+    calibrated: list[dict[str, Any]] = []
+    total_instances = 0
+    changed_instances = 0
+    for entry in predictions_entries:
+        if not isinstance(entry, dict):
+            continue
+        out_entry = dict(entry)
+        insts_out: list[dict[str, Any]] = []
+        for inst in entry.get("instances", []) or []:
+            if not isinstance(inst, dict):
+                continue
+            inst_out = dict(inst)
+            total_instances += 1
+            class_id = int(inst.get("class_id", -1))
+            score_orig = _clip01(float(inst.get("score", 1.0)))
+            score_new = _la_apply_score(
+                score_orig=score_orig,
+                class_id=class_id,
+                class_priors=priors,
+                tau=float(tau),
+                min_score=min_score,
+                max_score=max_score,
+            )
+            if abs(score_new - score_orig) > 1e-12:
+                changed_instances += 1
+            inst_out["score"] = float(score_new)
+            insts_out.append(inst_out)
+        out_entry["instances"] = insts_out
+        calibrated.append(out_entry)
+
+    report = {
+        "method": "la",
+        "task": "seg",
+        "config": {
+            "tau": float(tau),
+            "min_score": (None if min_score is None else float(min_score)),
+            "max_score": (None if max_score is None else float(max_score)),
+            "allow_rgb_masks": bool(allow_rgb_masks),
+        },
+        "class_counts": {str(k): int(v) for k, v in sorted(counts.items())},
+        "class_priors": {str(k): float(v) for k, v in sorted(priors.items())},
+        "summary": {
+            "instances_total": int(total_instances),
+            "instances_changed": int(changed_instances),
+        },
+        "warnings": list(warnings),
+    }
+    return calibrated, report
+
+
+def norcal_calibrate_predictions(
+    records: list[dict[str, Any]],
+    predictions_entries: list[dict[str, Any]],
+    *,
+    gamma: float = 1.0,
+    min_score: float | None = None,
+    max_score: float | None = None,
+    class_counts: dict[int, int] | None = None,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    if gamma < 0:
+        raise ValueError("gamma must be >= 0")
+
+    counts = _coerce_class_counts(class_counts) if class_counts is not None else class_frequency_counts(records)
+
+    calibrated: list[dict[str, Any]] = []
+    total_dets = 0
+    changed_dets = 0
+    for entry in predictions_entries:
+        dets_out: list[dict[str, Any]] = []
+        for det in entry.get("detections", []) or []:
+            det_out = dict(det)
+            total_dets += 1
+            class_id = int(det.get("class_id", -1))
+            score_orig = _clip01(float(det.get("score", 0.0)))
+            score_new = _norcal_apply_score(
+                score_orig=score_orig,
+                class_id=class_id,
+                class_counts=counts,
+                gamma=float(gamma),
+                min_score=min_score,
+                max_score=max_score,
+            )
+            if abs(score_new - score_orig) > 1e-12:
+                changed_dets += 1
+            det_out["score"] = float(score_new)
+            dets_out.append(det_out)
+        calibrated.append({"image": entry.get("image"), "detections": dets_out})
+
+    report = {
+        "method": "norcal",
+        "config": {
+            "gamma": float(gamma),
+            "min_score": (None if min_score is None else float(min_score)),
+            "max_score": (None if max_score is None else float(max_score)),
+            "mode": "one_vs_bg_logit_shift",
+        },
+        "class_counts": {str(k): int(v) for k, v in sorted(counts.items())},
+        "summary": {
+            "detections_total": int(total_dets),
+            "detections_changed": int(changed_dets),
+        },
+    }
+    return calibrated, report
+
+
+def norcal_calibrate_instance_segmentation(
+    records: list[dict[str, Any]],
+    predictions_entries: list[dict[str, Any]],
+    *,
+    gamma: float = 1.0,
+    min_score: float | None = None,
+    max_score: float | None = None,
+    class_counts: dict[int, int] | None = None,
+    allow_rgb_masks: bool = False,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    if gamma < 0:
+        raise ValueError("gamma must be >= 0")
+
+    warnings: list[str] = []
+    if class_counts is not None:
+        counts = _coerce_class_counts(class_counts)
+    else:
+        counts, warnings = class_frequency_counts_instance_segmentation(records, allow_rgb_masks=allow_rgb_masks)
+
+    calibrated: list[dict[str, Any]] = []
+    total_instances = 0
+    changed_instances = 0
+    for entry in predictions_entries:
+        if not isinstance(entry, dict):
+            continue
+        out_entry = dict(entry)
+        insts_out: list[dict[str, Any]] = []
+        for inst in entry.get("instances", []) or []:
+            if not isinstance(inst, dict):
+                continue
+            inst_out = dict(inst)
+            total_instances += 1
+            class_id = int(inst.get("class_id", -1))
+            score_orig = _clip01(float(inst.get("score", 1.0)))
+            score_new = _norcal_apply_score(
+                score_orig=score_orig,
+                class_id=class_id,
+                class_counts=counts,
+                gamma=float(gamma),
+                min_score=min_score,
+                max_score=max_score,
+            )
+            if abs(score_new - score_orig) > 1e-12:
+                changed_instances += 1
+            inst_out["score"] = float(score_new)
+            insts_out.append(inst_out)
+        out_entry["instances"] = insts_out
+        calibrated.append(out_entry)
+
+    report = {
+        "method": "norcal",
+        "task": "seg",
+        "config": {
+            "gamma": float(gamma),
+            "min_score": (None if min_score is None else float(min_score)),
+            "max_score": (None if max_score is None else float(max_score)),
+            "allow_rgb_masks": bool(allow_rgb_masks),
+            "mode": "one_vs_bg_logit_shift",
+        },
+        "class_counts": {str(k): int(v) for k, v in sorted(counts.items())},
         "summary": {
             "instances_total": int(total_instances),
             "instances_changed": int(changed_instances),
