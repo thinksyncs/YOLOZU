@@ -53,7 +53,14 @@ yolozu migrate dataset \
 This writes a new label directory while leaving the original COCO JSON and images unchanged.
 
 \subsection{Importing predictions from other ecosystems}
-Detectron2/MMDetection/YOLOX often export COCO detection results (\cmd{image_id/category_id/bbox/score}).
+Detectron2/MMDetection/YOLOX often export COCO detection results.
+Typical fields are:
+\begin{itemize}
+  \item \cmd{image_id}
+  \item \cmd{category_id}
+  \item \cmd{bbox}
+  \item \cmd{score}
+\end{itemize}
 YOLOZU can convert those into \path{predictions.json}:
 \begin{lstlisting}[language=bash]
 yolozu migrate predictions \

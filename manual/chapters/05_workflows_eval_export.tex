@@ -64,7 +64,10 @@ After inference/evaluation, YOLOZU provides both machine-readable and human-read
 
 \subsection{Recommended result inspection sequence}
 \begin{enumerate}
-  \item Validate schema: \cmd{yolozu validate predictions reports/predict_images.json --strict}
+  \item Validate schema:
+  \begin{lstlisting}[language=bash]
+yolozu validate predictions reports/predict_images.json --strict
+  \end{lstlisting}
   \item Open HTML report for quick qualitative checks.
   \item Inspect JSON/CSV/MD for quantitative comparisons in CI and papers.
 \end{enumerate}
@@ -91,7 +94,7 @@ python3 tools/validate_predictions.py /path/to/predictions.json --strict
 
 This prevents silent evaluation errors due to malformed outputs.
 
-\section{Workflow D: Migrate datasets/predictions from other toolchains}
+\section{Workflow D: Migrate datasets and predictions}
 YOLOZU includes migration helpers that produce small wrapper artifacts (or converters) so you can reuse common ecosystem datasets.
 See \path{docs/migrate.md}.
 
