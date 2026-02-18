@@ -20,6 +20,8 @@ For repo workflows: \cmd{python3 tools/yolozu.py --help}.
 \textbf{Command} & \textbf{Purpose} \\
 \midrule
 \cmd{yolozu doctor} & Environment diagnostics (deps/GPU/backend availability). \\
+\cmd{yolozu train} & YAML/JSON config-driven RT-DETR training (supports run contract and resume). \\
+\cmd{yolozu test} & YAML/JSON scenario runner (dummy/precomputed/rtdetr\_pose adapters). \\
 \cmd{yolozu predict-images} & Folder inference \(\to\) predictions + overlays + HTML. \\
 \cmd{yolozu eval-coco} & COCO mAP evaluation from predictions.json (when COCO tooling installed). \\
 \cmd{yolozu parity} & Compare two predictions artifacts (backend drift checks). \\
@@ -30,6 +32,37 @@ For repo workflows: \cmd{python3 tools/yolozu.py --help}.
 \cmd{python3 tools/validate_tool_manifest.py} & Validate the machine-readable registry (tools/manifest.json). \\
 \bottomrule
 \end{longtable}
+
+\section{YAML config-driven usage (train/test/resume)}
+\yolozu{} supports passing a YAML/JSON file as the first positional argument.
+Internally, \cmd{yolozu train} forwards \cmd{--config <file>} to
+\path{rtdetr\_pose.train\_minimal}, and \cmd{yolozu test} converts YAML keys to
+\path{yolozu.scenarios\_cli} arguments.
+
+\begin{longtable}{@{}p{0.18\textwidth}p{0.30\textwidth}p{0.46\textwidth}@{}}
+\toprule
+\textbf{Case} & \textbf{YAML file} & \textbf{Command pattern} \\
+\midrule
+Train (default) & \path{configs/examples/train\_setting.yaml} & \cmd{yolozu train configs/examples/train\_setting.yaml} \\
+Train (contract) & \path{configs/examples/train\_contract.yaml} & \cmd{yolozu train configs/examples/train\_contract.yaml --run-id exp01} \\
+Resume & same as train contract & \cmd{yolozu train configs/examples/train\_contract.yaml --run-id exp01 --resume} \\
+Test (scenario) & \path{configs/examples/test\_setting.yaml} & \cmd{yolozu test configs/examples/test\_setting.yaml --adapter precomputed --predictions reports/predictions.json} \\
+\bottomrule
+\end{longtable}
+
+\subsection{Test YAML and override rule}
+The default test YAML is intentionally minimal (adapter/dataset/split/max\_images), and runtime-specific
+options are typically passed as CLI overrides:
+\begin{lstlisting}[language=bash]
+yolozu test configs/examples/test_setting.yaml \
+  --adapter rtdetr_pose \
+  --config rtdetr_pose/configs/base.json \
+  --checkpoint /path/to/checkpoint.pt \
+  --dataset data/coco128 \
+  --max-images 50
+\end{lstlisting}
+
+\noindent This mirrors the documented real-model flow in \path{docs/real\_model\_interface.md}.
 
 \section{Repository power tools}
 Many task-specific scripts live under \path{tools/}. Examples include:

@@ -34,6 +34,23 @@ Config keys must use argparse destination names (example: \cmd{--weight-decay} m
 \texttt{weight\_decay}). In run-contract mode (\texttt{run\_contract} or \texttt{run\_id} present),
 unknown keys are rejected to prevent silent config drift.
 
+\section{YAML workflows: train / resume / test}
+The same project can be operated with YAML files for both training and test scenarios.
+
+\begin{longtable}{@{}p{0.18\textwidth}p{0.30\textwidth}p{0.46\textwidth}@{}}
+\toprule
+\textbf{Workflow} & \textbf{Primary config} & \textbf{Reference command} \\
+\midrule
+Train (scaffold) & \path{configs/examples/train\_setting.yaml} & \cmd{yolozu train configs/examples/train\_setting.yaml} \\
+Train (contract) & \path{configs/examples/train\_contract.yaml} & \cmd{yolozu train configs/examples/train\_contract.yaml --run-id exp01} \\
+Resume (full state) & same as contract & \cmd{yolozu train configs/examples/train\_contract.yaml --run-id exp01 --resume} \\
+Test (scenario runner) & \path{configs/examples/test\_setting.yaml} & \cmd{yolozu test configs/examples/test\_setting.yaml --adapter precomputed --predictions reports/predictions.json} \\
+\bottomrule
+\end{longtable}
+
+\noindent For \cmd{yolozu test}, YAML keys are translated to \cmd{--key value} arguments
+(booleans become flags), then extra CLI args override as needed.
+
 \section{Solver (optimizer) parameters and defaults}
 Supported optimizers are \texttt{adamw} (default) and \texttt{sgd}.
 
@@ -98,6 +115,7 @@ The canonical default list is maintained in:
 \begin{itemize}
   \item \path{configs/examples/train_setting.yaml}
   \item \path{configs/examples/train_contract.yaml}
+  \item \path{configs/examples/test_setting.yaml}
 \end{itemize}
 
 Frequently edited defaults:
@@ -132,4 +150,39 @@ yolozu train configs/examples/train_contract.yaml --run-id exp01
 
 # Resume from runs/exp01/checkpoints/last.pt
 yolozu train configs/examples/train_contract.yaml --run-id exp01 --resume
+\end{lstlisting}
+
+\section{Backbone change (model architecture switch)}
+Backbone-related settings are not primarily controlled by solver flags; they come from
+the model config file referenced by \texttt{model\_config} in the training YAML.
+
+\begin{longtable}{@{}p{0.30\textwidth}p{0.18\textwidth}p{0.46\textwidth}@{}}
+\toprule
+\textbf{Where} & \textbf{Key} & \textbf{Role} \\
+\midrule
+train YAML & \texttt{model\_config} & points to model JSON (example: \path{rtdetr_pose/configs/base.json}) \\
+model JSON (\texttt{model.*}) & \texttt{backbone\_name} & backbone family (default: \texttt{cspresnet}) \\
+model JSON (\texttt{model.*}) & \texttt{stem\_channels}, \texttt{backbone\_channels}, \texttt{stage\_blocks} & width/depth structure \\
+model JSON (\texttt{model.*}) & \texttt{backbone\_activation}, \texttt{backbone\_kwargs} & activation and optional backbone args \\
+solver YAML/CLI & \texttt{backbone\_lr\_mult}, \texttt{backbone\_wd\_mult} & optimization scaling for backbone params \\
+\bottomrule
+\end{longtable}
+
+Recommended procedure:
+\begin{enumerate}
+  \item Copy \path{rtdetr_pose/configs/base.json} to a project-local model JSON.
+  \item Edit \texttt{model.backbone\_name} and related channel/block fields.
+  \item Point training YAML \texttt{model\_config} to the new JSON.
+  \item Start with smoke settings (small \texttt{image\_size}/\texttt{max\_steps}), then scale.
+\end{enumerate}
+
+Example:
+\begin{lstlisting}[language=bash]
+cp rtdetr_pose/configs/base.json rtdetr_pose/configs/my_backbone.json
+# edit model.backbone_name / backbone_channels / stage_blocks
+
+yolozu train configs/examples/train_setting.yaml \
+  --model-config rtdetr_pose/configs/my_backbone.json \
+  --use-param-groups \
+  --backbone-lr-mult 0.1
 \end{lstlisting}
