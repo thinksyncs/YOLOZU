@@ -1,0 +1,30 @@
+\chapter{Troubleshooting}
+
+\section{Validate early}
+If evaluation results look wrong, validate the artifacts first.
+
+Predictions schema:
+\begin{lstlisting}[language=bash]
+python3 tools/validate_predictions.py /path/to/predictions.json --strict
+\end{lstlisting}
+
+Instance segmentation predictions:
+\begin{lstlisting}[language=bash]
+python3 tools/validate_instance_segmentation_predictions.py /path/to/preds.json
+\end{lstlisting}
+
+\section{Common problems}
+\begin{itemize}
+  \item \textbf{Path issues}: relative paths inside JSON that do not match \cmd{--pred-root}.
+  \item \textbf{Class mapping mismatch}: \path{classes.txt} ordering differs from the model/exporter.
+  \item \textbf{Backend mismatch}: pre/post-processing differs across backends.
+  \item \textbf{TensorRT environment}: pinned to Linux/NVIDIA; use the documented container workflow.
+\end{itemize}
+
+\section{Where to look next}
+\begin{itemize}
+  \item Tools index: \path{docs/tools_index.md}
+  \item External inference notes: \path{docs/external_inference.md}
+  \item Predictions schema: \path{docs/predictions_schema.md}
+  \item Training/export overview: \path{docs/training_inference_export.md}
+\end{itemize}

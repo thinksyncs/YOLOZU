@@ -1,0 +1,52 @@
+\chapter{Tasks: Detection, Segmentation, Keypoints}
+
+\section{Bounding-box detection}
+BBox detection is the baseline task: per-image detections with class IDs, boxes, and scores.
+Evaluation is typically COCO-style mAP or protocol-pinned metrics.
+
+\section{Instance segmentation (PNG masks)}
+\yolozu{} evaluates instance segmentation using \textbf{per-instance binary PNG masks}.
+This avoids complex RLE/polygon tooling.
+
+Minimal predictions shape:
+\begin{lstlisting}[language=json]
+[
+  {
+    "image": "000001.png",
+    "instances": [
+      {"class_id": 0, "score": 0.9, "mask": "masks/000001_inst0.png"}
+    ]
+  }
+]
+\end{lstlisting}
+
+Validate:
+\begin{lstlisting}[language=bash]
+python3 tools/validate_instance_segmentation_predictions.py \
+  reports/instance_seg_predictions.json
+\end{lstlisting}
+
+Evaluate with overlays/HTML:
+\begin{lstlisting}[language=bash]
+python3 tools/eval_instance_segmentation.py \
+  --dataset /path/to/dataset \
+  --split val \
+  --predictions /path/to/predictions.json \
+  --pred-root /path/to/pred-root \
+  --classes /path/to/classes.txt \
+  --html reports/instance_seg_eval.html \
+  --overlays-dir reports/instance_seg_overlays \
+  --max-overlays 10
+\end{lstlisting}
+
+\section{Semantic segmentation}
+Semantic segmentation utilities include dataset preparation helpers and mIoU evaluation.
+See \path{docs/} and \path{tools/eval_segmentation.py}.
+
+\section{Keypoints / pose}
+\yolozu{} supports YOLO pose-style keypoints in labels and predictions, plus evaluation utilities.
+Depending on your workflow, you may use PCK evaluation and/or COCO OKS mAP.
+
+Keypoint evaluation entry points include scripts under \path{tools/} (for example, keypoints eval
+helpers).
+See the repository documentation for the authoritative schema and usage.

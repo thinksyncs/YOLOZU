@@ -1,0 +1,20 @@
+\chapter{TTT (Test-time Training) and Hessian Solver}
+
+\section{TTT: safe adaptation}
+\yolozu{} includes support for controlled test-time training (TTT) flows.
+The design goal is to make adaptation experiments safer by providing:
+\begin{itemize}
+  \item presets,
+  \item guard rails,
+  \item reset policies,
+  \item predictable reporting.
+\end{itemize}
+
+Read next: \path{docs/ttt_protocol.md}.
+
+\section{Hessian solver for regression refinement}
+Certain tasks benefit from iteratively refining regression head outputs.
+\yolozu{} provides a Gauss--Newton style refinement utility (Hessian-based) for regression heads
+such as depth, rotation, and offsets.
+
+Read next: \path{docs/hessian_solver.md}.

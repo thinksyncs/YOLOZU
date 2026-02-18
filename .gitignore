@@ -16,6 +16,9 @@ build/
 dist/
 *.egg-info/
 
+# LaTeX manual build artifacts
+manual/build/
+
 # virtualenvs
 .venv/
 .venv-runpod/

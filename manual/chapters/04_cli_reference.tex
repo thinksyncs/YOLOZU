@@ -1,0 +1,40 @@
+\chapter{CLI Reference (Practical)}
+
+\section{Philosophy}
+The CLI surface is intentionally split:
+\begin{itemize}
+  \item \cmd{yolozu}: end-user safe CLI (installed via pip).
+  \item \cmd{python3 tools/yolozu.py}: repository wrapper for research/eval pipelines.
+\end{itemize}
+
+This chapter documents the \textit{high-traffic commands} and how to discover the rest.
+
+\section{Discoverability}
+Always start with:\\
+\cmd{yolozu --help} and \cmd{yolozu <command> --help}.\\
+For repo workflows: \cmd{python3 tools/yolozu.py --help}.
+
+\section{Common commands}
+\begin{longtable}{@{}p{0.24\textwidth}p{0.70\textwidth}@{}}
+\toprule
+\textbf{Command} & \textbf{Purpose} \\
+\midrule
+\cmd{yolozu doctor} & Environment diagnostics (deps/GPU/backend availability). \\
+\cmd{yolozu predict-images} & Folder inference \(\to\) predictions + overlays + HTML. \\
+\cmd{yolozu eval-coco} & COCO mAP evaluation from predictions.json (when COCO tooling installed). \\
+\cmd{yolozu parity} & Compare two predictions artifacts (backend drift checks). \\
+\cmd{yolozu calibrate} & Score calibration / long-tail post-hoc adjustments. \\
+\cmd{python3 tools/eval_suite.py} & Suite evaluation; protocol-pinned reporting and comparisons. \\
+\bottomrule
+\end{longtable}
+
+\section{Repository power tools}
+Many task-specific scripts live under \path{tools/}. Examples include:
+\begin{itemize}
+  \item \path{tools/validate_predictions.py}
+  \item \path{tools/eval_instance_segmentation.py}
+  \item \path{tools/eval_segmentation.py}
+  \item \path{tools/export_predictions.py} (adapter-based export)
+\end{itemize}
+
+For a comprehensive list, see \path{docs/tools_index.md} and \path{tools/manifest.json}.

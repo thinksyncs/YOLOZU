@@ -1,0 +1,28 @@
+\chapter{Training and the Run Contract}
+
+\section{RT-DETR pose training stack}
+The repository includes an RT-DETR-based training pipeline under \path{rtdetr_pose/}.
+The important property is not the exact model, but the \textbf{run contract}: stable artifact paths
+and resumable runs.
+
+\section{Run contract: why it matters}
+A run directory typically contains:
+\begin{itemize}
+  \item checkpoints (e.g., \path{runs/<run-id>/checkpoints/best.pt}),
+  \item exports (e.g., ONNX),
+  \item predictions and evaluation reports,
+  \item calibration stats artifacts (when enabled).
+\end{itemize}
+
+This makes it easy to:
+\begin{itemize}
+  \item reproduce results,
+  \item run parity checks,
+  \item compare across branches/machines.
+\end{itemize}
+
+Read next: \path{docs/run_contract.md} and \path{docs/training_inference_export.md}.
+
+\section{Smoke training}
+A typical smoke entry point is exposed as a script under \path{tools/}.
+The exact command may change; search for \path{smoke} scripts in \path{tools/}.

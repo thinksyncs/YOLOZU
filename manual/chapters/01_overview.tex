@@ -1,0 +1,34 @@
+\chapter{Overview}
+
+\section{What \yolozu{} is}
+\yolozu{} is a \textbf{contract-first evaluation harness}.
+The core idea is: \textit{run inference anywhere}, export a stable \path{predictions.json},
+then evaluate consistently.
+
+Key goals (high-level):
+\begin{itemize}
+  \item Stable, versioned JSON artifacts (predictions, reports, run metadata).
+  \item CPU-minimum development and tests; GPU is optional for training/inference.
+  \item Backend-agnostic workflows (PyTorch / ONNX Runtime / TensorRT / custom C++/Rust).
+  \item Production-oriented run contract for training (artifact paths, resume, export).
+  \item Apache-2.0-only operational posture (see \path{docs/license_policy.md}).
+\end{itemize}
+
+\section{How to navigate the repository}
+The main entry points are:
+\begin{itemize}
+  \item \path{README.md}: quick overview and a few canonical commands.
+  \item \path{docs/README.md}: docs index organized by \textit{what you want to do}.
+  \item \path{docs/yolozu_spec.md}: feature summary/spec.
+  \item \path{tools/}: power-user scripts and the repository wrapper CLI.
+\end{itemize}
+
+\section{Two CLIs: pip vs repo}
+\yolozu{} typically exposes two command surfaces:
+\begin{itemize}
+  \item \textbf{pip CLI}: \cmd{yolozu ...} (install-safe, user-facing commands)
+  \item \textbf{repo CLI}: \cmd{python3 tools/yolozu.py ...} (research/eval workflows)
+\end{itemize}
+
+They share concepts and contracts. This manual uses whichever is most common for the workflow
+being discussed.

@@ -1,0 +1,84 @@
+\documentclass[11pt,a4paper]{report}
+
+% Core packages
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{geometry}
+\geometry{margin=25mm}
+
+% Links / URLs
+\usepackage{hyperref}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue,
+  urlcolor=blue,
+  citecolor=blue,
+  pdftitle={YOLOZU Manual},
+  pdfauthor={YOLOZU contributors}
+}
+\usepackage{url}
+
+% Lists / tables
+\usepackage{enumitem}
+\setlist{nosep}
+\usepackage{booktabs}
+\usepackage{longtable}
+
+% Code blocks (no shell-escape dependency)
+\usepackage{listings}
+\usepackage{xcolor}
+\definecolor{codebg}{RGB}{248,248,248}
+\definecolor{codeframe}{RGB}{220,220,220}
+\lstset{
+  basicstyle=\ttfamily\small,
+  backgroundcolor=\color{codebg},
+  frame=single,
+  rulecolor=\color{codeframe},
+  breaklines=true,
+  columns=fullflexible,
+  keepspaces=true,
+  showstringspaces=false
+}
+
+% Minimal JSON highlighting (avoid external deps)
+\lstdefinelanguage{json}{
+  morestring=[b]",
+  stringstyle=\color{teal},
+  showstringspaces=false,
+  breaklines=true
+}
+
+% Simple macros
+\newcommand{\yolozu}{\textsc{YOLOZU}}
+\newcommand{\cmd}[1]{\texttt{\detokenize{#1}}}
+
+\title{\yolozu{} Manual (Detailed)}
+\author{YOLOZU contributors}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\yolozu{} is an Apache-2.0-only, contract-first evaluation and tooling harness.
+This manual is a printable, searchable reference that explains the concepts, workflows, and
+practical commands needed to use the repository effectively.
+\end{abstract}
+
+\tableofcontents
+
+\include{chapters/01_overview}
+\include{chapters/02_installation}
+\include{chapters/03_concepts_contracts}
+\include{chapters/04_cli_reference}
+\include{chapters/05_workflows_eval_export}
+\include{chapters/06_calibration_longtail}
+\include{chapters/07_training_run_contract}
+\include{chapters/08_tasks_detection_seg_pose}
+\include{chapters/09_parity_bench_protocols}
+\include{chapters/10_ttt_hessian}
+\include{chapters/11_troubleshooting}
+
+\end{document}

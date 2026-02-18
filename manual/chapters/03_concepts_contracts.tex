@@ -1,0 +1,50 @@
+\chapter{Core Concepts and Contracts}
+
+\section{Contract-first evaluation}
+The contracts (schemas) are the product. They let you:
+\begin{itemize}
+  \item compare different inference backends fairly,
+  \item reproduce evaluations later,
+  \item keep tooling stable even as models evolve.
+\end{itemize}
+
+Core contracts:
+\begin{itemize}
+  \item Predictions schema: \path{docs/predictions_schema.md}
+  \item Adapter contract: \path{docs/adapter_contract.md}
+  \item Training run contract: \path{docs/run_contract.md}
+\end{itemize}
+
+\section{Datasets}
+Many tools expect a YOLO-style dataset layout (images/labels/splits) plus optional metadata.
+Use the docs as the authoritative source for dataset formats.
+
+\section{Predictions JSON}
+A predictions artifact is typically a JSON array of per-image objects.
+The exact shape depends on task (bbox/seg/pose), but the guiding principles are:
+\begin{itemize}
+  \item Stable keys and types (schema-validated).
+  \item Paths are relative and relocatable when possible.
+  \item Metadata is written alongside results (run ID, git SHA, environment).
+\end{itemize}
+
+Validate a predictions artifact strictly:
+\begin{lstlisting}[language=bash]
+python3 tools/validate_predictions.py /path/to/predictions.json --strict
+\end{lstlisting}
+
+\section{Adapters (bring-your-own inference)}
+An adapter is a thin interface layer between some inference implementation and \yolozu{}'s
+contracts.
+If you can produce \path{predictions.json}, you can evaluate.
+See \path{docs/external_inference.md} and \path{docs/yolo26_inference_adapters.md}.
+
+\section{Reports and reproducibility}
+Most workflows are designed to emit:
+\begin{itemize}
+  \item machine-readable JSON reports,
+  \item optional HTML overlays for debugging,
+  \item stable artifact naming inside a run directory.
+\end{itemize}
+
+This is intentional: it keeps regression testing and comparison easy.

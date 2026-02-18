@@ -1,0 +1,38 @@
+\chapter{Installation and Setup}
+
+\section{Python requirements}
+\yolozu{} targets Python 3.10+.
+
+\section{pip install (user path)}
+For most users:
+\begin{lstlisting}[language=bash]
+python3 -m pip install yolozu
+yolozu --help
+yolozu doctor --output -
+\end{lstlisting}
+
+Optional extras (install only what you need):
+\begin{lstlisting}[language=bash]
+python3 -m pip install 'yolozu[demo]'    # torch demos
+python3 -m pip install 'yolozu[onnxrt]'  # ONNX Runtime tooling
+python3 -m pip install 'yolozu[coco]'    # COCOeval support
+python3 -m pip install 'yolozu[full]'
+\end{lstlisting}
+
+\section{Source checkout (repo path)}
+If you are working in the repository (training stack, power-user scripts):
+\begin{lstlisting}[language=bash]
+python3 -m pip install -r requirements-test.txt
+python3 -m pip install -e .
+pytest -q
+\end{lstlisting}
+
+\section{Recommended deployment flow}
+A canonical deployment flow is:
+\begin{quote}
+PyTorch \(\to\) ONNX \(\to\) TensorRT
+\end{quote}
+
+On macOS, you can typically run CPU tooling (validation/eval/export via ONNX Runtime CPU), while
+TensorRT paths are usually Linux/NVIDIA-centric.
+See \path{docs/tensorrt_pipeline.md} for the pinned workflow.

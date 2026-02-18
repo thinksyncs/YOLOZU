@@ -1,0 +1,50 @@
+\chapter{Workflows: Evaluate and Export}
+
+\section{Workflow A: Evaluate existing predictions.json}
+If you already have \path{predictions.json} from any inference backend:
+\begin{lstlisting}[language=bash]
+python3 tools/eval_suite.py \
+  --dataset /path/to/yolo-dataset \
+  --predictions /path/to/predictions.json
+\end{lstlisting}
+
+This is the most common integration path for external inference systems.
+
+\section{Workflow B: Run inference and export predictions}
+Depending on your environment:
+\begin{itemize}
+  \item Torch backend (research): export predictions from a checkpoint.
+  \item ONNX Runtime: CPU-friendly export and parity checks.
+  \item TensorRT: pinned Linux/NVIDIA pipeline for maximum throughput.
+\end{itemize}
+
+Repo wrapper example (conceptual):
+\begin{lstlisting}[language=bash]
+python3 tools/yolozu.py export \
+  --backend onnxrt \
+  --dataset /path/to/yolo-dataset \
+  --split val \
+  --onnx /path/to/model.onnx \
+  --out reports/predictions.json
+\end{lstlisting}
+
+See:\\
+\path{docs/training_inference_export.md} and \path{docs/external_inference.md}.
+
+\section{Workflow C: Folder inference (pip CLI)}
+A convenient user-facing path is:
+\begin{lstlisting}[language=bash]
+yolozu predict-images \
+  --backend dummy \
+  --input-dir /path/to/images
+\end{lstlisting}
+
+This writes a predictions artifact plus optional overlays/HTML to a run directory.
+
+\section{Schema validation as a gate}
+Always validate predictions artifacts before evaluation:
+\begin{lstlisting}[language=bash]
+python3 tools/validate_predictions.py /path/to/predictions.json --strict
+\end{lstlisting}
+
+This prevents silent evaluation errors due to malformed outputs.

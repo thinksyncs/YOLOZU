@@ -1,0 +1,27 @@
+\chapter{Parity, Benchmarks, and Protocols}
+
+\section{Backend parity}
+When exporting predictions from different backends (torch vs onnxrt vs trt), you want to detect
+silent drift.
+Parity tooling compares two predictions artifacts and reports diffs.
+
+Conceptual usage:
+\begin{lstlisting}[language=bash]
+yolozu parity \
+  --reference reports/pred_torch.json \
+  --candidate reports/pred_onnxrt.json
+\end{lstlisting}
+
+\section{Protocols (pin evaluation settings)}
+Protocols define fixed evaluation settings (split, image size, metric keys, etc.).
+This enables stable comparisons over time.
+
+Read next: \path{docs/yolo26_eval_protocol.md}.
+
+\section{Benchmarks}
+Latency/FPS benchmarks are part of the regression surface.
+Read next: \path{docs/benchmark_latency.md}.
+
+\section{Sweeps}
+A sweep harness helps compare many runs/configs consistently.
+Read next: \path{docs/hpo_sweep.md}.

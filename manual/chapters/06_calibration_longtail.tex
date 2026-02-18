@@ -1,0 +1,55 @@
+\chapter{Score Calibration and Long-tail Adjustments}
+
+\section{When calibration helps}
+If your model is accurate but systematically miscalibrated (scores are too high/low), or if
+long-tail classes are under-confident, post-hoc calibration can improve thresholding behavior and
+long-tail metrics \textit{without retraining}.
+
+\section{The calibrate command}
+\yolozu{} supports multiple methods under a unified interface.
+See \path{docs/score_calibration.md} for the most up-to-date details.
+
+Example (FRACAL, bbox):
+\begin{lstlisting}[language=bash]
+yolozu calibrate \
+  --method fracal \
+  --task bbox \
+  --dataset /path/to/yolo-dataset \
+  --predictions reports/predictions.json \
+  --out reports/predictions_calibrated.json \
+  --stats-out reports/fracal_stats_bbox.json
+\end{lstlisting}
+
+Reuse stats later:
+\begin{lstlisting}[language=bash]
+yolozu calibrate \
+  --method fracal \
+  --task bbox \
+  --dataset /path/to/yolo-dataset \
+  --predictions reports/predictions.json \
+  --out reports/predictions_calibrated.json \
+  --stats-in reports/fracal_stats_bbox.json
+\end{lstlisting}
+
+\section{Supported methods (high level)}
+\begin{itemize}
+  \item \textbf{FRACAL}: frequency-aware calibration using class count statistics.
+  \item \textbf{LA (logit adjustment)}: apply a class-prior logit shift (parameter \cmd{--tau}).
+  \item \textbf{NorCal}: frequency-based adjustment (parameter \cmd{--gamma}).
+  \item \textbf{Temperature scaling}: global temperature \cmd{--temperature}, with optional fitting for certain tasks.
+\end{itemize}
+
+\section{Tasks}
+Calibration is task-aware:
+\begin{itemize}
+  \item \textbf{bbox}: adjusts detection scores.
+  \item \textbf{seg}: adjusts instance segmentation scores (masks are unchanged).
+  \item \textbf{pose}: adjusts detection scores; keypoints are preserved (no geometric change).
+\end{itemize}
+
+\section{Operational tips}
+\begin{itemize}
+  \item Prefer keeping calibrated outputs as separate artifacts.
+  \item Record the method and parameters (the CLI writes a report).
+  \item Compare methods side-by-side on the same predictions.
+\end{itemize}
