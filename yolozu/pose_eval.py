@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import math
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Iterable
 
 from .boxes import iou_cxcywh_norm_dict
@@ -91,6 +93,132 @@ def _extract_t_gt(record: dict[str, Any], n: int) -> list[list[float] | None]:
         else:
             out.append([float(vals[0]), float(vals[1]), float(vals[2])])
     return out
+
+
+def _as_point_cloud(value: Any) -> list[list[float]] | None:
+    if value is None:
+        return None
+    if isinstance(value, (str, Path)):
+        path = Path(value)
+        if not path.exists():
+            return None
+        try:
+            loaded = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return None
+        return _as_point_cloud(loaded)
+    if hasattr(value, "tolist"):
+        try:
+            value = value.tolist()
+        except Exception:
+            return None
+    if not isinstance(value, (list, tuple)) or len(value) <= 0:
+        return None
+    first = value[0]
+    if not isinstance(first, (list, tuple, dict)):
+        return None
+
+    out: list[list[float]] = []
+    for item in value:
+        if isinstance(item, dict):
+            try:
+                x = float(item["x"])
+                y = float(item["y"])
+                z = float(item["z"])
+            except Exception:
+                return None
+            out.append([x, y, z])
+            continue
+        if isinstance(item, (list, tuple)) and len(item) >= 3:
+            try:
+                out.append([float(item[0]), float(item[1]), float(item[2])])
+            except Exception:
+                return None
+            continue
+        return None
+    return out if out else None
+
+
+def _extract_cad_points(record: dict[str, Any], n: int) -> list[list[list[float]] | None]:
+    cad_raw = record.get("cad_points")
+    if cad_raw is None:
+        return [None] * n
+
+    if isinstance(cad_raw, (list, tuple)) and len(cad_raw) == n and n > 0:
+        per_instance: list[list[list[float]] | None] = []
+        ok = True
+        for item in cad_raw:
+            cloud = _as_point_cloud(item)
+            if cloud is None:
+                ok = False
+                break
+            per_instance.append(cloud)
+        if ok:
+            return per_instance
+
+    shared = _as_point_cloud(cad_raw)
+    if shared is None:
+        return [None] * n
+    return [shared] * n
+
+
+def _transform_points(points: list[list[float]], r: list[list[float]], t: list[float]) -> list[list[float]]:
+    out: list[list[float]] = []
+    for p in points:
+        x = float(r[0][0]) * float(p[0]) + float(r[0][1]) * float(p[1]) + float(r[0][2]) * float(p[2]) + float(t[0])
+        y = float(r[1][0]) * float(p[0]) + float(r[1][1]) * float(p[1]) + float(r[1][2]) * float(p[2]) + float(t[1])
+        z = float(r[2][0]) * float(p[0]) + float(r[2][1]) * float(p[1]) + float(r[2][2]) * float(p[2]) + float(t[2])
+        out.append([x, y, z])
+    return out
+
+
+def _add_distance(
+    points: list[list[float]],
+    r_pred: list[list[float]],
+    t_pred: list[float],
+    r_gt: list[list[float]],
+    t_gt: list[float],
+) -> float | None:
+    if not points:
+        return None
+    pred_pts = _transform_points(points, r_pred, t_pred)
+    gt_pts = _transform_points(points, r_gt, t_gt)
+    total = 0.0
+    for p_pred, p_gt in zip(pred_pts, gt_pts):
+        dx = float(p_pred[0]) - float(p_gt[0])
+        dy = float(p_pred[1]) - float(p_gt[1])
+        dz = float(p_pred[2]) - float(p_gt[2])
+        total += float((dx * dx + dy * dy + dz * dz) ** 0.5)
+    return float(total / float(len(pred_pts)))
+
+
+def _adds_distance(
+    points: list[list[float]],
+    r_pred: list[list[float]],
+    t_pred: list[float],
+    r_gt: list[list[float]],
+    t_gt: list[float],
+) -> float | None:
+    if not points:
+        return None
+    pred_pts = _transform_points(points, r_pred, t_pred)
+    gt_pts = _transform_points(points, r_gt, t_gt)
+    if not pred_pts or not gt_pts:
+        return None
+    total = 0.0
+    for p_pred in pred_pts:
+        best = None
+        for p_gt in gt_pts:
+            dx = float(p_pred[0]) - float(p_gt[0])
+            dy = float(p_pred[1]) - float(p_gt[1])
+            dz = float(p_pred[2]) - float(p_gt[2])
+            d = float((dx * dx + dy * dy + dz * dz) ** 0.5)
+            if best is None or d < best:
+                best = d
+        if best is None:
+            return None
+        total += float(best)
+    return float(total / float(len(pred_pts)))
 
 
 def _rot6d_to_matrix(rot6d: Any) -> list[list[float]] | None:
@@ -260,6 +388,8 @@ def evaluate_pose(
     rot_deg: list[float] = []
     trans_l2: list[float] = []
     depth_abs: list[float] = []
+    add: list[float] = []
+    adds: list[float] = []
     pose_pairs = 0
     pose_pairs_ok = 0
 
@@ -295,6 +425,7 @@ def evaluate_pose(
 
         r_gt_list = _extract_r_gt(record, n_gt)
         t_gt_list = _extract_t_gt(record, n_gt)
+        cad_points_list = _extract_cad_points(record, n_gt)
 
         entry = lookup_image_alias(pred_index, image)
         dets_raw = entry.get("detections", []) if isinstance(entry, dict) else []
@@ -409,6 +540,21 @@ def evaluate_pose(
                 except Exception:
                     warnings.append("translation_eval_failed")
 
+            cad_points = cad_points_list[int(gt_idx)] if 0 <= int(gt_idx) < len(cad_points_list) else None
+            if r_pred is not None and r_gt is not None and t_gt is not None and t_pred is not None and cad_points is not None:
+                try:
+                    add_val = _add_distance(cad_points, r_pred, t_pred, r_gt, t_gt)
+                    if add_val is not None:
+                        add.append(float(add_val))
+                except Exception:
+                    warnings.append("add_eval_failed")
+                try:
+                    adds_val = _adds_distance(cad_points, r_pred, t_pred, r_gt, t_gt)
+                    if adds_val is not None:
+                        adds.append(float(adds_val))
+                except Exception:
+                    warnings.append("adds_eval_failed")
+
             if match_rot_deg is not None and match_trans_l2 is not None:
                 pose_pairs += 1
                 img_pose_pairs += 1
@@ -442,6 +588,10 @@ def evaluate_pose(
         "trans_l2_median": _median(trans_l2),
         "depth_abs_mean": _mean(depth_abs),
         "depth_abs_median": _median(depth_abs),
+        "add_mean": _mean(add),
+        "add_median": _median(add),
+        "adds_mean": _mean(adds),
+        "adds_median": _median(adds),
         "rot_success": _success_rate(rot_deg, threshold=float(success_rot_deg)),
         "trans_success": _success_rate(trans_l2, threshold=float(success_trans)),
         "pose_success": (float(pose_pairs_ok) / float(pose_pairs) if pose_pairs > 0 else None),
@@ -454,6 +604,8 @@ def evaluate_pose(
         "rot_measured": int(len(rot_deg)),
         "trans_measured": int(len(trans_l2)),
         "depth_measured": int(len(depth_abs)),
+        "add_measured": int(len(add)),
+        "adds_measured": int(len(adds)),
         "pose_measured": int(pose_pairs),
     }
 

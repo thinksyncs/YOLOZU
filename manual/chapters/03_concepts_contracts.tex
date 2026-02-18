@@ -22,35 +22,26 @@ Many tools expect a YOLO-style dataset layout (images/labels/splits) plus option
 YOLOZU is designed so that common training ecosystems can be evaluated with minimal friction.
 The core idea is to avoid rewriting datasets by hand and instead generate small \textbf{descriptor artifacts}.
 
-Authoritative reference: \path{docs/migrate.md}.
+In practice, migration commands produce:
+\begin{itemize}
+  \item a small \path{dataset.json} wrapper (points at existing images/labels), and/or
+  \item converted label files (e.g., COCO JSON $\rightarrow$ YOLO label txts) plus a wrapper.
+\end{itemize}
 
-\subsection{Ultralytics / YOLO (YOLOv8/YOLO11)}
+The goal is to keep source datasets untouched and make evaluation inputs explicit and versionable.
+
+\subsection{Ultralytics datasets (YOLOv8/YOLO11)}
 If your dataset is already described by an Ultralytics-style \path{data.yaml} (pointing at \path{images/<split>/} and \path{labels/<split>/}),
-you can generate a lightweight \path{dataset.json} wrapper:
-\begin{lstlisting}[language=bash]
-yolozu migrate dataset \
-  --from ultralytics \
-  --data /path/to/data.yaml \
-  --output data/ultralytics_wrapper
-\end{lstlisting}
+YOLOZU can generate a lightweight \path{dataset.json} wrapper while keeping the original dataset untouched.
 
-You can then pass \path{data/ultralytics_wrapper} anywhere YOLOZU expects a dataset root.
-This keeps the original dataset untouched.
+For the exact command and validation steps, see Chapter~5 (Workflow~D: Migrate datasets and predictions).
 
-\subsection{COCO JSON datasets (YOLOX / Detectron2 / MMDetection)}
+\subsection{COCO JSON datasets (migration)}
 Many ecosystems use COCO-style \path{instances_*.json} for detection.
 YOLOZU consumes YOLO-style label txts, so the supported migration path is:
 COCO JSON $\rightarrow$ YOLO labels + \path{dataset.json} wrapper.
-\begin{lstlisting}[language=bash]
-yolozu migrate dataset \
-  --from coco \
-  --coco-root /path/to/coco_like_root \
-  --split val2017 \
-  --output data/coco_yolo_like \
-  --mode manifest
-\end{lstlisting}
 
-This writes a new label directory while leaving the original COCO JSON and images unchanged.
+For the concrete conversion command, see Chapter~5 (Workflow~D: Migrate datasets and predictions).
 
 \subsection{Importing predictions from other ecosystems}
 Detectron2/MMDetection/YOLOX often export COCO detection results.
@@ -91,7 +82,12 @@ python3 tools/validate_predictions.py /path/to/predictions.json --strict
 An adapter is a thin interface layer between some inference implementation and \yolozu{}'s
 contracts.
 If you can produce \path{predictions.json}, you can evaluate.
-See \path{docs/external_inference.md} and \path{docs/yolo26_inference_adapters.md}.
+In practice, this means:
+\begin{itemize}
+  \item input: dataset records provide an \cmd{image} path (and optional label/sidecar metadata),
+  \item output: per-image \cmd{detections} with \cmd{class\_id}, \cmd{score}, \cmd{bbox} (typically \cmd{cxcywh\_norm}), plus task-specific optional fields,
+  \item validation: always run \cmd{tools/validate_predictions.py --strict} before evaluation.
+\end{itemize}
 
 \section{Reports and reproducibility}
 Most workflows are designed to emit:

@@ -112,6 +112,10 @@ def _load_sidecar_metadata(meta_path: Path, root: Path) -> dict[str, Any]:
         out["depth"] = resolved
         out["D_obj"] = resolved
 
+    cad_value = _first_key(data, ("cad_points", "cad_path", "cad_points_path"))
+    if cad_value is not None:
+        out["cad_points"] = _resolve_optional_path(cad_value, root)
+
     return out
 
 

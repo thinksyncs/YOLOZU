@@ -14,7 +14,7 @@ In practice, that means:
   \item JSON schemas and machine-readable registries are treated as first-class interfaces, not optional metadata.
 \end{itemize}
 
-See \path{docs/ai_first.md} for the operational guidance used by agentic workflows.
+Operational guidance (used by both humans and agentic workflows): make artifacts first-class, validate contracts early, and keep evaluation protocols pinned.
 
 Key goals (high-level):
 \begin{itemize}
@@ -23,7 +23,7 @@ Key goals (high-level):
   \item Backend-agnostic workflows (PyTorch / ONNX Runtime / TensorRT / custom C++/Rust).
   \item Easy migration: accept common dataset ecosystems (Ultralytics/YOLO, COCO JSON) via small wrapper artifacts, without modifying your original dataset.
   \item Production-oriented run contract for training (artifact paths, resume, export).
-  \item Apache-2.0-only operational posture (see \path{docs/license_policy.md}).
+  \item Apache-2.0-only operational posture (no non-Apache dependencies in shipped code paths).
 \end{itemize}
 
 \section{How to navigate the repository}

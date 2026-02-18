@@ -16,12 +16,45 @@ yolozu parity \
 Protocols define fixed evaluation settings (split, image size, metric keys, etc.).
 This enables stable comparisons over time.
 
-Read next: \path{docs/yolo26_eval_protocol.md}.
+For YOLO26 comparison, the pinned protocol is:
+\begin{itemize}
+  \item protocol file: \path{protocols/yolo26_eval.json}
+  \item task: detect, dataset: COCO, split: \texttt{val2017}
+  \item image size: \texttt{640} (export side responsibility)
+  \item bbox format: \texttt{cxcywh\_norm}
+  \item score key: \texttt{map50\_95}
+\end{itemize}
+
+Important semantic rule from the protocol docs:
+\begin{itemize}
+  \item e2e mAP means evaluator scores detections as provided; it does not apply NMS.
+\end{itemize}
 
 \section{Benchmarks}
 Latency/FPS benchmarks are part of the regression surface.
-Read next: \path{docs/benchmark_latency.md}.
+
+The benchmark harness \path{tools/benchmark_latency.py} writes:
+\begin{itemize}
+  \item stable JSON report (single run),
+  \item JSONL history (append-only trend tracking).
+\end{itemize}
+
+It supports both synthetic timing and config-driven per-bucket runs, where each bucket can load
+external measured metrics JSON (for example from TensorRT latency measurement scripts).
+
+Typical tracked fields include FPS and latency quantiles (mean/p50/p90/p95/p99).
 
 \section{Sweeps}
 A sweep harness helps compare many runs/configs consistently.
-Read next: \path{docs/hpo_sweep.md}.
+
+The sweep runner \path{tools/hpo_sweep.py} is framework-agnostic and executes templated commands.
+Core config model:
+\begin{itemize}
+  \item \texttt{base\_cmd}: command template with \texttt{\{param\}} placeholders,
+  \item \texttt{param\_grid} or \texttt{param\_list}: search space,
+  \item optional metrics extraction keys and output destinations.
+\end{itemize}
+
+Default artifacts are easy to diff and publish:
+\path{reports/hpo\_sweep.jsonl}, \path{reports/hpo\_sweep.csv}, \path{reports/hpo\_sweep.md}.
+Use \cmd{--resume} to skip already completed parameter combinations.

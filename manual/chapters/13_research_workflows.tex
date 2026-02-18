@@ -36,7 +36,7 @@ This produces:
 
 \section{Protocol-pinned evaluation (YOLO26 example)}
 Protocols pin evaluation settings so numbers are comparable over time.
-For YOLO26, see \path{docs/yolo26_eval_protocol.md} and \path{protocols/yolo26_eval.json}.
+For YOLO26, the protocol is defined by \path{protocols/yolo26_eval.json} (the tool reads it and records it into suite reports).
 
 Run a suite over many prediction artifacts:
 \begin{lstlisting}[language=bash]
@@ -61,7 +61,7 @@ This is especially important when you export predictions from external pipelines
 
 \section{Backend parity (torch vs onnxrt vs trt)}
 When comparing inference backends, first ensure the outputs are aligned.
-Use parity tooling (see \path{README.md} and \path{docs/onnx_export_parity.md}).
+Use parity tooling to compare two \path{predictions.json} artifacts and flag systematic mismatches (preprocess, coordinate formats, numerics).
 
 Conceptual usage:
 \begin{lstlisting}[language=bash]
@@ -100,7 +100,7 @@ The harness is framework-agnostic: it does not assume a specific training stack.
 
 \section{Prediction distillation workflow}
 \yolozu{} includes a lightweight distillation helper at
-\path{tools/distill_predictions.py} (see \path{docs/distillation.md}).
+\path{tools/distill_predictions.py}.
 
 Canonical usage:
 \begin{lstlisting}[language=bash]
@@ -120,6 +120,12 @@ Distillation config keys include:
   \item \cmd{alpha}
   \item \cmd{add\_missing}
   \item \cmd{add\_score\_scale}
+\end{itemize}
+
+Notes:
+\begin{itemize}
+  \item The helper blends teacher predictions into student predictions and emits a small distillation report JSON.
+  \item Some quick comparisons use a lightweight \cmd{yolozu.simple_map} proxy on a fixed subset (fast CPU feedback), and you should follow up with the full evaluator when reporting results.
 \end{itemize}
 
 In research loops, this is useful for quick teacher-student ablations using fixed subsets and
@@ -142,7 +148,7 @@ hardware.
 
 \section{Run contract artifacts (training research)}
 If you use the in-repo trainer, prefer the contracted run mode for consistent artifacts.
-See \path{docs/run_contract.md}.
+This is summarized in Chapter~7 (Training run contract).
 
 Minimal example:
 \begin{lstlisting}[language=bash]
@@ -155,4 +161,4 @@ exports, and parity reports.
 \section{Notes on long-tail calibration experiments}
 Post-hoc calibration is often a research axis. Use \cmd{yolozu calibrate} to generate calibrated
 prediction artifacts and compare methods side-by-side.
-See \path{docs/score_calibration.md}.
+This is summarized in Chapter~6 (Score calibration and long-tail adjustments).

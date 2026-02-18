@@ -96,7 +96,7 @@ This prevents silent evaluation errors due to malformed outputs.
 
 \section{Workflow D: Migrate datasets and predictions}
 YOLOZU includes migration helpers that produce small wrapper artifacts (or converters) so you can reuse common ecosystem datasets.
-See \path{docs/migrate.md}.
+The key idea is to keep the original dataset untouched and instead generate small, versionable wrappers/conversions.
 
 \subsection{Ultralytics / YOLO (YOLOv8/YOLO11)}
 Generate a \path{dataset.json} wrapper from \path{data.yaml}:

@@ -54,6 +54,36 @@ python3 tools/eval_continual.py \
   --metric-key pose_success
 ```
 
+Pose mode supports these `--metric-key` values:
+- `pose_success`, `rot_success`, `trans_success`, `match_rate`, `iou_mean`
+- `depth_abs_mean`, `depth_abs_median`
+- `add_mean`, `add_median`, `adds_mean`, `adds_median`
+
+Notes:
+- `depth_abs_*` requires GT depth (`t_gt`) plus predicted depth/translation fields.
+- `add*`/`adds*` require CAD points in sidecar metadata (`cad_points` / `cad_path` / `cad_points_path`) and valid GT+pred pose.
+
+Examples for metric-key switching:
+
+```bash
+# depth error summary
+python3 tools/eval_continual.py \
+  --run-json runs/continual/<run>/continual_run.json \
+  --metric pose \
+  --metric-key depth_abs_mean
+
+# ADD / ADDS (requires CAD points)
+python3 tools/eval_continual.py \
+  --run-json runs/continual/<run>/continual_run.json \
+  --metric pose \
+  --metric-key add_mean
+
+python3 tools/eval_continual.py \
+  --run-json runs/continual/<run>/continual_run.json \
+  --metric pose \
+  --metric-key adds_mean
+```
+
 This writes:
 - `runs/continual/<run>/continual_eval.json`
 - `runs/continual/<run>/continual_eval.html`

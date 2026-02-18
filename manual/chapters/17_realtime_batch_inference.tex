@@ -22,7 +22,15 @@ References:
 
 \section{TensorRT pipeline (canonical)}
 The typical export route is PyTorch $\rightarrow$ ONNX $\rightarrow$ TensorRT (engine build), with parity checks.
-See \path{docs/tensorrt_pipeline.md} for the authoritative commands and artifacts.
+
+Canonical pattern (artifacts-first):
+\begin{itemize}
+  \item Export ONNX (+ metadata JSON): \cmd{python3 tools/export_trt.py --onnx ... --opset 17 --dynamic-hw ...}
+  \item Build engine (+ metadata JSON): \cmd{python3 tools/build_trt_engine.py --onnx ... --engine ... --precision fp16}
+  \item Export \path{predictions.json} from TensorRT and run parity vs ONNXRuntime predictions.
+\end{itemize}
+
+The main rule for parity is to keep preprocessing and output formats identical (letterbox/RGB, box format, score scaling), and keep NMS disabled in exported graphs when comparing raw outputs.
 
 \section{Real-time constraints and optional features}
 \subsection{TTT in real-time}

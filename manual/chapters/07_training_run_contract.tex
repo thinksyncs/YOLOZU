@@ -21,7 +21,20 @@ This makes it easy to:
   \item compare across branches/machines.
 \end{itemize}
 
-Read next: \path{docs/run_contract.md} and \path{docs/training_inference_export.md}.
+Run-contract essentials (codified in the docs and implemented in the trainer):
+\begin{itemize}
+  \item Enable with \cmd{--run-contract} or \cmd{--run-id <id>}.
+  \item Contract mode requires explicit config keys and rejects unknown keys in strict mode.
+  \item Fixed artifact layout under \path{runs/<run\_id>/}:
+    \path{checkpoints/last.pt}, \path{checkpoints/best.pt},\
+    \path{reports/train\_metrics.jsonl}, \path{reports/val\_metrics.jsonl},\
+    \path{reports/config\_resolved.yaml}, \path{reports/run\_meta.json}.
+  \item Export/parity artifacts are produced in contracted runs by default:\
+    \path{exports/model.onnx}, \path{exports/model.onnx.meta.json},\
+    \path{reports/onnx\_parity.json}.
+  \item Full-state resume is standardized with \cmd{--resume} from
+    \path{runs/<run\_id>/checkpoints/last.pt}.
+\end{itemize}
 
 \section{Config resolution and strictness}
 The training entrypoint reads YAML/JSON via \cmd{--config}, then applies explicit CLI flags.

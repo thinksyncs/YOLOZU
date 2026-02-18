@@ -1,20 +1,63 @@
-\chapter{TTT (Test-time Training) and Hessian Solver}
+\chapter{Hessian-based Refinement (Practical)}
 
-\section{TTT: safe adaptation}
-\yolozu{} includes support for controlled test-time training (TTT) flows.
-The design goal is to make adaptation experiments safer by providing:
+\section{Scope and relation to TTT}
+This chapter focuses on per-detection numerical refinement after inference.
+TTT/Tent/MIM adaptation policy is covered in Chapter~15 to avoid duplicated guidance.
+
+\section{What the Hessian solver does}
+The Hessian solver refines regression outputs (for example \cmd{log\_z}, \cmd{rot6d}, \cmd{offsets})
+per detection using Gauss--Newton style updates with Levenberg--Marquardt damping.
+
+At a high level, each iteration computes residuals and Jacobian, solves a damped normal equation,
+updates parameters, and stops when convergence criteria are met.
+
+\section{When to use it}
+Recommended situations:
 \begin{itemize}
-  \item presets,
-  \item guard rails,
-  \item reset policies,
-  \item predictable reporting.
+  \item offline validation/analysis where GT supervision or geometric constraints are available,
+  \item targeted error reduction on difficult samples,
+  \item post-inference refinement studies after global calibration.
 \end{itemize}
 
-Read next: \path{docs/ttt_protocol.md}.
+Avoid by default in strict real-time production because it adds latency.
 
-\section{Hessian solver for regression refinement}
-Certain tasks benefit from iteratively refining regression head outputs.
-\yolozu{} provides a Gauss--Newton style refinement utility (Hessian-based) for regression heads
-such as depth, rotation, and offsets.
+\section{CLI quickstart}
+Depth-only refinement:
+\begin{lstlisting}[language=bash]
+python tools/refine_predictions_hessian.py \
+  --predictions reports/predictions.json \
+  --dataset data/coco128 \
+  --output reports/predictions_refined.json \
+  --refine-depth
+\end{lstlisting}
 
-Read next: \path{docs/hessian_solver.md}.
+Depth + rotation with custom solver controls:
+\begin{lstlisting}[language=bash]
+python tools/refine_predictions_hessian.py \
+  --predictions reports/predictions.json \
+  --dataset data/coco128 \
+  --output reports/predictions_refined.json \
+  --refine-depth \
+  --refine-rotation \
+  --max-iterations 10 \
+  --convergence-threshold 1e-5 \
+  --damping 1e-2
+\end{lstlisting}
+
+\section{Core knobs}
+Commonly tuned parameters (matching \path{docs/hessian_solver.md}):
+\begin{itemize}
+  \item iteration/control: \cmd{max\_iterations}, \cmd{convergence\_threshold}, \cmd{damping}
+  \item target toggles: \cmd{refine\_depth}, \cmd{refine\_rotation}, \cmd{refine\_offsets}
+  \item residual weights: \cmd{w\_depth}, \cmd{w\_rotation}, \cmd{w\_offsets}
+\end{itemize}
+
+\section{Position in the workflow}
+A practical ordering is:
+\begin{enumerate}
+  \item train model,
+  \item optionally run dataset-wide calibration (global scale/intrinsics),
+  \item apply Hessian refinement only where per-detection correction is needed.
+\end{enumerate}
+
+This chapter lists the common knobs; for the full parameter surface, rely on the tool's \cmd{--help} output (kept in sync with code).

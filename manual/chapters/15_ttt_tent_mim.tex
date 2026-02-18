@@ -114,7 +114,13 @@ Conceptually:
   \item Update a restricted parameter subset (e.g., norm or adapter/head) under guard rails.
 \end{itemize}
 
-See \path{docs/mim_inference.md} for the conceptual API and loss definitions.
+Conceptually, MIM-style inference adds an auxiliary loss (computed at inference time) to adapt parameters or latent state under distribution shift.
+In this repo, the important operational points are:
+\begin{itemize}
+  \item keep the loss bounded and the update schedule explicit,
+  \item record adaptation settings into run artifacts,
+  \item compare against a non-adapted baseline under the same pinned evaluation protocol.
+\end{itemize}
 
 \section{Operational notes}
 \begin{itemize}

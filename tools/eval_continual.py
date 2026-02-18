@@ -102,10 +102,25 @@ def _write_html(*, html_path: Path, report: dict[str, Any]) -> None:
                 "rot_deg_mean",
                 "trans_l2_mean",
                 "depth_abs_mean",
+                "depth_abs_median",
+                "add_mean",
+                "add_median",
+                "adds_mean",
+                "adds_median",
             ):
                 if k in metrics:
                     parts.append(f"{k}={_fmt(metrics.get(k))}")
-            for k in ("gt_instances", "pred_instances", "matches", "pose_measured", "rot_measured", "trans_measured", "depth_measured"):
+            for k in (
+                "gt_instances",
+                "pred_instances",
+                "matches",
+                "pose_measured",
+                "rot_measured",
+                "trans_measured",
+                "depth_measured",
+                "add_measured",
+                "adds_measured",
+            ):
                 if k in counts:
                     parts.append(f"{k}={_fmt(counts.get(k))}")
         else:
@@ -233,9 +248,21 @@ def main(argv: list[str] | None = None) -> None:
         if metric_key not in ("map50", "map50_95"):
             raise SystemExit("--metric-key must be one of: map50, map50_95 (for --metric simple_map)")
     elif args.metric == "pose":
-        if metric_key not in ("pose_success", "rot_success", "trans_success", "match_rate", "iou_mean"):
+        if metric_key not in (
+            "pose_success",
+            "rot_success",
+            "trans_success",
+            "match_rate",
+            "iou_mean",
+            "depth_abs_mean",
+            "depth_abs_median",
+            "add_mean",
+            "add_median",
+            "adds_mean",
+            "adds_median",
+        ):
             raise SystemExit(
-                "--metric-key must be one of: pose_success, rot_success, trans_success, match_rate, iou_mean (for --metric pose)"
+                "--metric-key must be one of: pose_success, rot_success, trans_success, match_rate, iou_mean, depth_abs_mean, depth_abs_median, add_mean, add_median, adds_mean, adds_median (for --metric pose)"
             )
 
     for t, stage in enumerate(tasks):

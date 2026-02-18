@@ -7,7 +7,8 @@ long-tail metrics \textit{without retraining}.
 
 \section{The calibrate command}
 \yolozu{} supports multiple methods under a unified interface.
-See \path{docs/score_calibration.md} for the most up-to-date details.
+Conceptually, calibration modifies \textbf{confidence scores} while leaving geometry (bbox/mask/keypoints) unchanged.
+The CLI writes both the calibrated predictions artifact and a small stats/report JSON so the transform is reproducible.
 
 Example (FRACAL, bbox):
 \begin{lstlisting}[language=bash]

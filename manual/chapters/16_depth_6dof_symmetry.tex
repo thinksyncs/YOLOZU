@@ -10,7 +10,12 @@ Key conventions used across docs in this repo:
   \item Depth \cmd{z} uses the dataset's length unit (YOLOZU does not convert mm\,$\leftrightarrow$\,m).
 \end{itemize}
 
-Authoritative reference: \path{docs/real_model_interface.md}.
+Practical entry points (``real model'' path):
+\begin{itemize}
+  \item Training scaffold: \cmd{python3 rtdetr_pose/tools/train_minimal.py ...} (writes metrics and optional run artifacts).
+  \item Export predictions: \cmd{python3 tools/export_predictions.py --adapter rtdetr_pose ... --wrap}
+  \item No-torch path: use the \cmd{precomputed} adapter with a schema-valid \path{predictions.json}.
+\end{itemize}
 
 \section{Typical regression heads}
 The 6DoF-oriented design documents and utilities assume per-detection regression heads such as:
@@ -45,7 +50,7 @@ The point of this design is to avoid unstable direct regression of $(X,Y)$.
 \yolozu{} includes a Gauss--Newton / Levenberg--Marquardt style refinement utility to iteratively refine
 regression head outputs per detection.
 
-Authoritative reference: \path{docs/hessian_solver.md}.
+Key idea: refine per-detection parameters (depth/rotation/offsets) with bounded iterations; treat it as a research postprocess (not a default real-time feature).
 
 \subsection{CLI}
 Refine depth (example):
@@ -113,6 +118,26 @@ For context and intended gates (including real-time constraints), see:
 \begin{itemize}
   \item \path{docs/specs/rt_detr_6dof_geom_mim_spec_en_v0_4.md}
   \item \path{docs/roadmaps/symmetry_commonsense_realtime.md} (historical notes)
+\end{itemize}
+
+\section{Available evaluation metrics (current implementation)}
+The pose/depth evaluator (\path{yolozu/pose_eval.py}) reports these keys:
+\begin{itemize}
+  \item Depth: \cmd{depth\_abs\_mean}, \cmd{depth\_abs\_median}
+  \item Pose core: \cmd{rot\_deg\_mean}, \cmd{trans\_l2\_mean}, \cmd{pose\_success}
+  \item CAD-point pose: \cmd{add\_mean}, \cmd{add\_median}, \cmd{adds\_mean}, \cmd{adds\_median}
+\end{itemize}
+
+Definitions:
+\begin{itemize}
+  \item \textbf{ADD}: mean point distance under fixed point correspondence between $(R_{pred}, t_{pred})$ and $(R_{gt}, t_{gt})$.
+  \item \textbf{ADDS}: mean distance from each transformed predicted point to its nearest transformed GT point.
+\end{itemize}
+
+Input requirements:
+\begin{itemize}
+  \item Depth metrics require valid GT translation/depth and predicted depth or translation.
+  \item ADD/ADDS require CAD points in sidecar metadata (\cmd{cad\_points} / \cmd{cad\_path} / \cmd{cad\_points\_path}) plus valid GT+pred pose.
 \end{itemize}
 
 \section{Practical advice}

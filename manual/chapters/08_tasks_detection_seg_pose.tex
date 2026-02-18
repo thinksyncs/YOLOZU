@@ -41,7 +41,8 @@ python3 tools/eval_instance_segmentation.py \
 
 \section{Semantic segmentation}
 Semantic segmentation utilities include dataset preparation helpers and mIoU evaluation.
-See \path{docs/} and \path{tools/eval_segmentation.py}.
+Semantic segmentation evaluation reports mIoU (and per-class IoU); instance segmentation evaluation reports COCO-style mask mAP.
+Use \path{tools/eval_segmentation.py} for semantic seg and \path{tools/eval_instance_segmentation.py} for instance seg.
 
 \section{Keypoints / pose}
 \yolozu{} supports YOLO pose-style keypoints in labels and predictions, plus evaluation utilities.
