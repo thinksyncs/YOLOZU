@@ -41,6 +41,18 @@ A practical loop when you join the repo (or return after a while):
   \item Run the validator so the registry is trustworthy.
 \end{enumerate}
 
+\section{AI-first entrypoints for agents}
+For autonomous or semi-autonomous usage, the recommended stable entrypoints are:
+\begin{itemize}
+  \item unified wrapper: \cmd{python3 tools/yolozu.py --help}
+  \item tool registry: \path{tools/manifest.json}
+  \item contracts/schemas: \path{docs/schemas/*.schema.json}
+  \item usage guide: \path{docs/ai_first.md}
+\end{itemize}
+
+This is an explicit design target of \yolozu{}: AI agents should be able to discover,
+validate, execute, and extend workflows using stable contracts.
+
 Validate the tool registry:
 \begin{lstlisting}[language=bash]
 python3 tools/validate_tool_manifest.py
@@ -53,6 +65,14 @@ Many tools follow consistent path rules (summarized in \path{docs/tools_index.md
   \item CLI relative input paths resolve from the current working directory.
   \item Config-relative paths (where supported) resolve from the config file directory.
   \item Relative outputs write under the current working directory.
+\end{itemize}
+
+\section{Safety checks for agentic write actions}
+Before writing artifacts or mutating state, prefer:
+\begin{itemize}
+  \item dry-run modes where available,
+  \item explicit caps/ranges (for example \cmd{--max-images}),
+  \item deterministic output locations under \path{reports/} or a run directory.
 \end{itemize}
 
 For research, this helps you run batches reliably from different working directories and

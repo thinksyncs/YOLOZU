@@ -88,6 +88,43 @@ Outputs (by default):
 
 Use \cmd{--resume} to make sweeps incremental and robust to interruptions.
 
+Important config fields (from \path{docs/hpo_sweep.md}):
+\begin{itemize}
+  \item required: \cmd{base\_cmd}, and either \cmd{param\_grid} or \cmd{param\_list}
+  \item optional: \cmd{run\_dir}, \cmd{metrics.path}, \cmd{metrics.keys}
+  \item optional outputs: \cmd{result\_jsonl}, \cmd{result\_csv}, \cmd{result\_md}
+  \item optional runtime controls: \cmd{env}, \cmd{shell}
+\end{itemize}
+
+The harness is framework-agnostic: it does not assume a specific training stack.
+
+\section{Prediction distillation workflow}
+\yolozu{} includes a lightweight distillation helper at
+\path{tools/distill_predictions.py} (see \path{docs/distillation.md}).
+
+Canonical usage:
+\begin{lstlisting}[language=bash]
+python3 tools/distill_predictions.py \
+  --student reports/predictions_student.json \
+  --teacher reports/predictions_teacher.json \
+  --dataset data/coco128 \
+  --output reports/predictions_distilled.json \
+  --output-report reports/distill_report.json \
+  --add-missing
+\end{lstlisting}
+
+Distillation config keys include:
+\begin{itemize}
+  \item \cmd{enabled}
+  \item \cmd{iou\_threshold}
+  \item \cmd{alpha}
+  \item \cmd{add\_missing}
+  \item \cmd{add\_score\_scale}
+\end{itemize}
+
+In research loops, this is useful for quick teacher-student ablations using fixed subsets and
+the same downstream evaluation protocol.
+
 \section{Latency/FPS benchmarks with history (JSONL)}
 Benchmark reports are also artifacts.
 The latency harness emits a stable JSON report and can append to a JSONL history:

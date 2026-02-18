@@ -5,6 +5,17 @@
 The core idea is: \textit{run inference anywhere}, export a stable \path{predictions.json},
 then evaluate consistently.
 
+\section{AI-first design intent}
+This repository is organized as an \textbf{AI-first} codebase.
+In practice, that means:
+\begin{itemize}
+  \item AI agents should be able to \textbf{use} the code safely via stable command surfaces and contracts.
+  \item AI agents should be able to \textbf{extend} workflows (new experiments, new scripts, new reports) without breaking interfaces.
+  \item JSON schemas and machine-readable registries are treated as first-class interfaces, not optional metadata.
+\end{itemize}
+
+See \path{docs/ai_first.md} for the operational guidance used by agentic workflows.
+
 Key goals (high-level):
 \begin{itemize}
   \item Stable, versioned JSON artifacts (predictions, reports, run metadata).
