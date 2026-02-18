@@ -311,6 +311,143 @@ class TestYOLOZUCLI(unittest.TestCase):
             overlays = list(overlays_dir.glob("*.png"))
             self.assertTrue(overlays, "expected at least one overlay image")
 
+    def test_calibrate_auto_detects_seg_task(self):
+        repo_root = Path(__file__).resolve().parents[1]
+        script = repo_root / "tools" / "yolozu.py"
+
+        with tempfile.TemporaryDirectory(dir=str(repo_root)) as td:
+            root = Path(td)
+            dataset_root = root / "dataset"
+            images = dataset_root / "images" / "train2017"
+            labels = dataset_root / "labels" / "train2017"
+            images.mkdir(parents=True, exist_ok=True)
+            labels.mkdir(parents=True, exist_ok=True)
+            (images / "000001.jpg").write_bytes(b"")
+            (labels / "000001.txt").write_text("0 0.5 0.5 0.2 0.2\n", encoding="utf-8")
+
+            preds_in = root / "pred_seg.json"
+            preds_in.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "predictions": [
+                            {
+                                "image": "000001.jpg",
+                                "instances": [
+                                    {"class_id": 0, "score": 0.7, "mask": "masks/a.png"},
+                                ],
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            out_preds = root / "pred_seg_calibrated.json"
+            out_report = root / "calib_report_seg.json"
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(script),
+                    "calibrate",
+                    "--method",
+                    "fracal",
+                    "--task",
+                    "auto",
+                    "--dataset",
+                    str(dataset_root),
+                    "--split",
+                    "train2017",
+                    "--predictions",
+                    str(preds_in),
+                    "--output",
+                    str(out_preds),
+                    "--output-report",
+                    str(out_report),
+                    "--force",
+                ],
+                cwd=str(repo_root),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+                text=True,
+            )
+            if proc.returncode != 0:
+                self.fail(f"yolozu calibrate --task auto (seg) failed:\n{proc.stdout}\n{proc.stderr}")
+
+            self.assertTrue(out_preds.is_file())
+            self.assertTrue(out_report.is_file())
+            report = json.loads(out_report.read_text(encoding="utf-8"))
+            self.assertEqual(report.get("task"), "seg")
+            self.assertEqual((report.get("calibration") or {}).get("method"), "fracal")
+
+    def test_calibrate_rejects_invalid_stats_in_schema(self):
+        repo_root = Path(__file__).resolve().parents[1]
+        script = repo_root / "tools" / "yolozu.py"
+
+        with tempfile.TemporaryDirectory(dir=str(repo_root)) as td:
+            root = Path(td)
+            dataset_root = root / "dataset"
+            images = dataset_root / "images" / "train2017"
+            labels = dataset_root / "labels" / "train2017"
+            images.mkdir(parents=True, exist_ok=True)
+            labels.mkdir(parents=True, exist_ok=True)
+            (images / "000001.jpg").write_bytes(b"")
+            (labels / "000001.txt").write_text("0 0.5 0.5 0.2 0.2\n", encoding="utf-8")
+
+            preds_in = root / "pred_bbox.json"
+            preds_in.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "predictions": [
+                            {
+                                "image": "000001.jpg",
+                                "detections": [
+                                    {"class_id": 0, "score": 0.8, "bbox": {"cx": 0.5, "cy": 0.5, "w": 0.2, "h": 0.2}},
+                                ],
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            bad_stats = root / "bad_stats.json"
+            bad_stats.write_text(json.dumps({"schema_version": 1, "method": "fracal"}), encoding="utf-8")
+
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(script),
+                    "calibrate",
+                    "--method",
+                    "fracal",
+                    "--task",
+                    "bbox",
+                    "--dataset",
+                    str(dataset_root),
+                    "--split",
+                    "train2017",
+                    "--predictions",
+                    str(preds_in),
+                    "--stats-in",
+                    str(bad_stats),
+                    "--output",
+                    str(root / "pred_bbox_calibrated.json"),
+                    "--output-report",
+                    str(root / "calib_report_bbox.json"),
+                    "--force",
+                ],
+                cwd=str(repo_root),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+                text=True,
+            )
+            self.assertNotEqual(proc.returncode, 0)
+            self.assertIn("invalid stats file", proc.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()
