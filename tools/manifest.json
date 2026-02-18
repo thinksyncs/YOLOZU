@@ -254,6 +254,7 @@
       "tags": ["predictions", "adapter"],
       "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
       "contracts": { "produces": ["predictions_json"] },
+      "contract_outputs": { "predictions_json": "predictions_json" },
       "inputs": [
         { "name": "adapter", "kind": "string", "required": false, "flag": "--adapter", "default": "dummy" },
         { "name": "dataset", "kind": "dir", "required": false, "flag": "--dataset", "default": "data/coco128" },
@@ -365,6 +366,7 @@
       "tags": ["predictions", "transform"],
       "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
       "contracts": { "consumes": ["predictions_json"], "produces": ["predictions_json"] },
+      "contract_outputs": { "predictions_json": "predictions_json" },
       "inputs": [
         { "name": "input", "kind": "file", "required": true, "flag": "--input" },
         { "name": "output", "kind": "file", "required": true, "flag": "--output" },
@@ -389,6 +391,7 @@
         "consumes": ["seg_dataset_json", "segmentation_predictions_json"],
         "produces": ["seg_eval_report_json"]
       },
+      "contract_outputs": { "seg_eval_report_json": "seg_eval_json" },
       "inputs": [
         { "name": "dataset_json", "kind": "file", "required": true, "flag": "--dataset-json" },
         { "name": "predictions", "kind": "file", "required": true, "flag": "--predictions" },
@@ -413,6 +416,7 @@
         "consumes": ["instance_segmentation_predictions_json"],
         "produces": ["instance_seg_eval_report_json"]
       },
+      "contract_outputs": { "instance_seg_eval_report_json": "instance_seg_eval_json" },
       "inputs": [
         { "name": "dataset", "kind": "dir", "required": true, "flag": "--dataset" },
         { "name": "predictions", "kind": "file", "required": true, "flag": "--predictions" },
@@ -459,6 +463,7 @@
       "tags": ["eval", "coco"],
       "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
       "contracts": { "consumes": ["predictions_json"], "produces": ["coco_eval_report_json"] },
+      "contract_outputs": { "coco_eval_report_json": "coco_eval_json" },
       "inputs": [
         { "name": "dataset", "kind": "dir", "required": true, "flag": "--dataset" },
         { "name": "predictions", "kind": "file", "required": true, "flag": "--predictions" },
@@ -480,6 +485,7 @@
       "tags": ["eval", "suite", "yolo26"],
       "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
       "contracts": { "consumes": ["predictions_json"], "produces": ["eval_suite_report_json"] },
+      "contract_outputs": { "eval_suite_report_json": "eval_suite_json" },
       "inputs": [
         { "name": "predictions_glob", "kind": "string", "required": true, "flag": "--predictions-glob" },
         { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/eval_suite.json" }

@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import platform
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -19,6 +20,286 @@ sys.path.insert(0, str(repo_root))
 from yolozu.tta.presets import apply_ttt_preset_args  # noqa: E402
 
 DEFAULT_PREDICTIONS_PATH = "reports/predictions.json"
+
+
+def _manifest_path() -> Path:
+    return repo_root / "tools" / "manifest.json"
+
+
+def _load_tool_manifest() -> dict[str, Any]:
+    p = _manifest_path()
+    return json.loads(p.read_text(encoding="utf-8"))
+
+
+def _registry_payload(*, tool: dict[str, Any] | None = None) -> dict[str, Any]:
+    obj = _load_tool_manifest()
+    if tool is not None:
+        return {
+            "kind": "yolozu_tool_spec",
+            "schema_version": 1,
+            "timestamp": _now_utc(),
+            "repo": obj.get("repo"),
+            "contracts": obj.get("contracts"),
+            "tool": tool,
+        }
+    return {
+        "kind": "yolozu_tool_registry",
+        "schema_version": 1,
+        "timestamp": _now_utc(),
+        "repo": obj.get("repo"),
+        "contracts": obj.get("contracts"),
+        "tools": obj.get("tools") or [],
+    }
+
+
+def _find_flag_value(argv: list[str], flag: str) -> str | None:
+    # Very small argv parser: --flag value (no equals form)
+    for i in range(len(argv) - 1):
+        if argv[i] == flag:
+            return argv[i + 1]
+    return None
+
+
+def _is_repo_relative_path_like(value: str) -> bool:
+    if not isinstance(value, str) or not value:
+        return False
+    if value.startswith("/"):
+        return False
+    parts = Path(value).parts
+    if ".." in parts:
+        return False
+    return True
+
+
+def _within(root: Path, path: Path) -> bool:
+    try:
+        path.resolve().relative_to(root.resolve())
+        return True
+    except Exception:
+        return False
+
+
+def _parse_contract_validator_cmd(template: str, *, path: str) -> list[str] | None:
+    if not isinstance(template, str) or not template.strip():
+        return None
+    # Remove optional tokens written like [--strict]
+    cleaned = " ".join(tok for tok in template.split() if not (tok.startswith("[") and tok.endswith("]")))
+    if "<path>" not in cleaned:
+        return None
+    try:
+        tokens = shlex.split(cleaned)
+    except Exception:
+        tokens = cleaned.split()
+    out: list[str] = []
+    for tok in tokens:
+        out.append(path if tok == "<path>" else tok)
+    return out
+
+
+def _registry_validate(_: argparse.Namespace) -> int:
+    script = repo_root / "tools" / "validate_tool_manifest.py"
+    out = _subprocess_or_die([sys.executable, str(script)])
+    if out:
+        print(out, end="" if out.endswith("\n") else "\n")
+    return 0
+
+
+def _registry_list(args: argparse.Namespace) -> int:
+    obj = _load_tool_manifest()
+    tools = list(obj.get("tools") or [])
+    tags = getattr(args, "tag", None) or []
+    contracts = getattr(args, "contract", None) or []
+
+    def _tool_matches(t: dict[str, Any]) -> bool:
+        if tags:
+            tt = set(t.get("tags") or [])
+            if not all(tag in tt for tag in tags):
+                return False
+        if contracts:
+            c = t.get("contracts") or {}
+            cons = set(c.get("consumes") or [])
+            prod = set(c.get("produces") or [])
+            have = cons | prod
+            if not all(cid in have for cid in contracts):
+                return False
+        return True
+
+    tools = [t for t in tools if isinstance(t, dict) and _tool_matches(t)]
+
+    if getattr(args, "json", False):
+        payload = _registry_payload()
+        payload["tools"] = tools
+        print(json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False))
+        return 0
+
+    for t in tools:
+        tid = t.get("id")
+        summary = t.get("summary")
+        runner = t.get("runner")
+        entrypoint = t.get("entrypoint")
+        print(f"- {tid}: {summary} ({runner} {entrypoint})")
+    return 0
+
+
+def _registry_show(args: argparse.Namespace) -> int:
+    tool_id = str(getattr(args, "id"))
+    obj = _load_tool_manifest()
+    tools = [t for t in (obj.get("tools") or []) if isinstance(t, dict) and t.get("id") == tool_id]
+    if not tools:
+        raise SystemExit(f"unknown tool id: {tool_id}")
+    tool = tools[0]
+
+    if getattr(args, "json", False):
+        payload = _registry_payload(tool=tool)
+        print(json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False))
+        return 0
+
+    print(json.dumps(tool, indent=2, sort_keys=True, ensure_ascii=False))
+    return 0
+
+
+def _registry_run(args: argparse.Namespace) -> int:
+    tool_id = str(getattr(args, "id"))
+    forwarded = getattr(args, "forward_args", None)
+    forward_args: list[str] = [str(x) for x in forwarded] if isinstance(forwarded, list) else []
+    if forward_args and forward_args[0] == "--":
+        forward_args = forward_args[1:]
+
+    manifest = _load_tool_manifest()
+    tools = [t for t in (manifest.get("tools") or []) if isinstance(t, dict) and t.get("id") == tool_id]
+    if not tools:
+        raise SystemExit(f"unknown tool id: {tool_id}")
+    tool = tools[0]
+
+    requires = tool.get("requires") or {}
+    platform_spec = tool.get("platform") or {}
+    needs_network = bool(requires.get("network"))
+    gpu_required = bool(platform_spec.get("gpu_required"))
+    if needs_network and not bool(getattr(args, "allow_network", False)):
+        raise SystemExit("tool requires network access; rerun with --allow-network")
+    if gpu_required and not bool(getattr(args, "allow_gpu", False)):
+        raise SystemExit("tool requires GPU; rerun with --allow-gpu")
+
+    allowed_write_roots = list(getattr(args, "allow_write_root", None) or ["reports"])
+    allow_unsafe_paths = bool(getattr(args, "allow_unsafe_paths", False))
+    dry_run = bool(getattr(args, "dry_run", False))
+
+    # Construct base command
+    runner = tool.get("runner")
+    entrypoint = tool.get("entrypoint")
+    if runner not in {"python3", "bash"}:
+        raise SystemExit("unsupported runner")
+    if not isinstance(entrypoint, str) or not entrypoint:
+        raise SystemExit("missing entrypoint")
+    if entrypoint.startswith("/") or ".." in Path(entrypoint).parts:
+        raise SystemExit("invalid entrypoint path")
+    entry_path = (repo_root / entrypoint)
+    if not entry_path.exists():
+        raise SystemExit(f"entrypoint not found: {entrypoint}")
+
+    cmd: list[str] = ["python3", str(entry_path)] if runner == "python3" else ["bash", str(entry_path)]
+    cmd.extend(forward_args)
+
+    # Safety: block unsafe output paths by default (repo-relative, under allowlisted roots)
+    write_flags: set[str] = {"--output", "--out", "--run-dir", "--cache-dir", "--masks-dir", "--overlays-dir"}
+    for item in (tool.get("inputs") or []):
+        if not isinstance(item, dict):
+            continue
+        kind = item.get("kind")
+        flag = item.get("flag")
+        name = item.get("name")
+        if kind in {"file", "dir"} and isinstance(flag, str) and flag.startswith("--"):
+            # Heuristic: only some io flags are considered write targets.
+            if flag in write_flags or name in {"output", "out", "run_dir", "cache_dir", "masks_dir", "overlays_dir"}:
+                write_flags.add(flag)
+
+    candidate_paths: list[tuple[str, str]] = []
+    # 1) paths explicitly passed via known write flags
+    for flag in sorted(write_flags):
+        v = _find_flag_value(forward_args, flag)
+        if v:
+            candidate_paths.append((flag, v))
+
+    # 2) implicit default outputs declared in manifest
+    for out in (tool.get("outputs") or []):
+        if not isinstance(out, dict):
+            continue
+        if out.get("kind") not in {"file", "dir"}:
+            continue
+        d = out.get("default")
+        if isinstance(d, str) and d:
+            candidate_paths.append((f"default:{out.get('name')}", d))
+
+    # Apply checks
+    roots: list[Path] = []
+    for r in allowed_write_roots:
+        if not isinstance(r, str) or not r:
+            continue
+        if r.startswith("/") or ".." in Path(r).parts:
+            raise SystemExit(f"invalid --allow-write-root: {r}")
+        roots.append(repo_root / r)
+
+    for src, value in candidate_paths:
+        if not isinstance(value, str) or not value:
+            continue
+        if (value.startswith("/") or ".." in Path(value).parts) and not allow_unsafe_paths:
+            raise SystemExit(f"unsafe path blocked ({src}): {value} (use --allow-unsafe-paths to override)")
+
+        # Only enforce containment for repo-relative outputs.
+        if _is_repo_relative_path_like(value):
+            resolved = (repo_root / value)
+            if roots and not any(_within(r, resolved) for r in roots):
+                roots_str = ", ".join(str(Path(r).relative_to(repo_root)) for r in roots)
+                raise SystemExit(
+                    f"write path blocked ({src}): {value} is outside allowed roots: {roots_str} "
+                    "(use --allow-write-root to add a root)"
+                )
+
+    if dry_run:
+        print("DRY_RUN:")
+        print(" ".join(shlex.quote(x) for x in cmd))
+        return 0
+
+    proc = subprocess.run(cmd, cwd=str(repo_root), check=False)
+    if proc.returncode != 0:
+        raise SystemExit(proc.returncode)
+
+    # Post-run: best-effort contract validation of produced artifacts.
+    contracts_registry = manifest.get("contracts") or {}
+    produces = (tool.get("contracts") or {}).get("produces") or []
+    contract_outputs = tool.get("contract_outputs") or {}
+
+    for contract_id in produces:
+        if not isinstance(contract_id, str) or not contract_id:
+            continue
+        spec = contracts_registry.get(contract_id) if isinstance(contracts_registry, dict) else None
+        if not isinstance(spec, dict):
+            continue
+        validator_tpl = spec.get("validator")
+        if not isinstance(validator_tpl, str) or not validator_tpl.strip():
+            continue
+
+        output_name = contract_outputs.get(contract_id) if isinstance(contract_outputs, dict) else None
+        output_default: str | None = None
+        if isinstance(output_name, str) and output_name:
+            for out in (tool.get("outputs") or []):
+                if isinstance(out, dict) and out.get("name") == output_name:
+                    d = out.get("default")
+                    if isinstance(d, str) and d:
+                        output_default = d
+                    break
+
+        # Common convention: tools use --output for primary JSON artifact.
+        out_path = _find_flag_value(forward_args, "--output") or output_default
+        if not out_path:
+            continue
+
+        vcmd = _parse_contract_validator_cmd(validator_tpl, path=out_path)
+        if not vcmd:
+            continue
+        subprocess.run(vcmd, cwd=str(repo_root), check=True)
+
+    return 0
 
 
 def _now_utc() -> str:
@@ -1320,6 +1601,38 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     p_ltr = sub.add_parser("long-tail-recipe", help="Delegate to yolozu package CLI long-tail-recipe command.")
     p_ltr.add_argument("forward_args", nargs=argparse.REMAINDER, help="Arguments forwarded to `yolozu long-tail-recipe`.")
     p_ltr.set_defaults(_fn=_passthrough_pkg_cli, _pkg_cmd="long-tail-recipe")
+
+    p_reg = sub.add_parser("registry", help="AI-first tool registry: list/show/validate/run tools from tools/manifest.json.")
+    reg = p_reg.add_subparsers(dest="registry_cmd", required=True)
+
+    p_reg_validate = reg.add_parser("validate", help="Validate tools/manifest.json references.")
+    p_reg_validate.set_defaults(_fn=_registry_validate)
+
+    p_reg_list = reg.add_parser("list", help="List tools in the manifest (text or JSON).")
+    p_reg_list.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
+    p_reg_list.add_argument("--tag", action="append", default=None, help="Filter by tag (repeatable, AND).")
+    p_reg_list.add_argument("--contract", action="append", default=None, help="Filter by contract id (repeatable, AND).")
+    p_reg_list.set_defaults(_fn=_registry_list)
+
+    p_reg_show = reg.add_parser("show", help="Show a single tool spec (text or JSON).")
+    p_reg_show.add_argument("id", help="Tool id from the manifest.")
+    p_reg_show.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
+    p_reg_show.set_defaults(_fn=_registry_show)
+
+    p_reg_run = reg.add_parser("run", help="Safely run a tool by id with allowlisted side effects.")
+    p_reg_run.add_argument("id", help="Tool id from the manifest.")
+    p_reg_run.add_argument("--dry-run", action="store_true", help="Print the resolved command without executing.")
+    p_reg_run.add_argument("--allow-network", action="store_true", help="Allow tools that require network access.")
+    p_reg_run.add_argument("--allow-gpu", action="store_true", help="Allow tools that require GPU.")
+    p_reg_run.add_argument(
+        "--allow-write-root",
+        action="append",
+        default=None,
+        help="Allow writing under this repo-relative root (repeatable). Default: reports",
+    )
+    p_reg_run.add_argument("--allow-unsafe-paths", action="store_true", help="Allow absolute paths or '..' segments.")
+    p_reg_run.add_argument("forward_args", nargs=argparse.REMAINDER, help="Arguments forwarded to the tool entrypoint.")
+    p_reg_run.set_defaults(_fn=_registry_run)
 
     return p.parse_args(argv)
 

@@ -114,6 +114,18 @@ def _validate_tool(tool: Any, *, index: int) -> list[str]:
                 if not p.exists():
                     errors.append(f"{where}.docs[{j}]: file not found: {doc}")
 
+    contract_outputs = tool.get("contract_outputs")
+    if contract_outputs is not None:
+        if not isinstance(contract_outputs, dict):
+            errors.append(f"{where}.contract_outputs: expected object")
+        else:
+            for k, v in contract_outputs.items():
+                if not isinstance(k, str) or not k:
+                    errors.append(f"{where}.contract_outputs: contract id must be non-empty string")
+                    continue
+                if not isinstance(v, str) or not v:
+                    errors.append(f"{where}.contract_outputs.{k}: expected non-empty string (output name)")
+
     for field in ("inputs", "outputs"):
         items = tool.get(field)
         if items is None:
@@ -171,6 +183,28 @@ def validate_manifest(obj: Any) -> list[str]:
     seen: set[str] = set()
     for i, tool in enumerate(tools):
         errors.extend(_validate_tool(tool, index=i))
+
+        # Validate tool.contract_outputs cross-references (if present)
+        if isinstance(tool, dict) and isinstance(tool.get("contract_outputs"), dict):
+            outputs = tool.get("outputs")
+            output_names: set[str] = set()
+            if isinstance(outputs, list):
+                for out in outputs:
+                    if isinstance(out, dict) and isinstance(out.get("name"), str) and out.get("name"):
+                        output_names.add(str(out["name"]))
+
+            for contract_id, output_name in tool["contract_outputs"].items():
+                if not isinstance(contract_id, str) or not contract_id:
+                    continue
+                if contracts_map and contract_id not in contracts_map:
+                    errors.append(f"tools[{i}].contract_outputs: unknown contract id '{contract_id}'")
+                if not isinstance(output_name, str) or not output_name:
+                    continue
+                if output_names and output_name not in output_names:
+                    errors.append(
+                        f"tools[{i}].contract_outputs.{contract_id}: unknown output name '{output_name}' (not in tool.outputs)"
+                    )
+
         if isinstance(tool, dict) and isinstance(tool.get("contracts"), dict):
             for direction in ("consumes", "produces"):
                 refs = tool["contracts"].get(direction)

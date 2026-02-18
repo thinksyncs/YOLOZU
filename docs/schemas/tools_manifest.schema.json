@@ -65,6 +65,11 @@
         "platform": { "$ref": "#/$defs/platform" },
         "requires": { "$ref": "#/$defs/requires" },
         "contracts": { "$ref": "#/$defs/contracts_ref" },
+        "contract_outputs": {
+          "type": "object",
+          "description": "Optional mapping from contract id to an output item name (in tool.outputs) that contains the primary artifact for that contract. Used by automation to locate outputs for post-run validation.",
+          "additionalProperties": { "type": "string" }
+        },
         "inputs": {
           "type": "array",
           "items": { "$ref": "#/$defs/io_item" }
