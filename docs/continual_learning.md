@@ -70,40 +70,108 @@ This writes:
   - `metrics.jsonl/json/csv`
   - `run_record.json`
 
-## Config knobs (selected)
+## Full config schema (code-accurate)
 
-Under `continual:` in the YAML/JSON:
+Source of truth: `rtdetr_pose/tools/train_continual.py`.
 
-- Replay:
-  - `replay_size`: buffer capacity (0 disables replay).
-  - `replay_fraction`: if set, use `round(fraction * train_records)` replay samples per task instead of the full buffer.
-  - `replay_per_task_cap`: optional cap of replay samples per past task (helps avoid imbalance).
+Validation rules enforced by code:
+- `schema_version` defaults to `1`; values other than `1` are rejected.
+- `model_config` is required.
+- `tasks` must be a non-empty list.
+- each task must define `dataset_root`.
+- `replay_fraction >= 0`, `replay_per_task_cap >= 0`.
 
-- Self-distillation (memoryless baseline; enabled by default in the runner):
-  - `distill.enabled`: enable/disable distillation against the previous checkpoint.
-  - `distill.keys`: e.g. `"logits,bbox"`.
-  - `distill.weight`, `distill.temperature`, `distill.kl`.
+Top-level keys:
 
-- DER++-style replay distillation (optional, stronger baseline):
-  - `derpp.enabled`: enable DER++ loss for replay samples that have teacher outputs stored in their records.
-  - `derpp.teacher_key`: record key for stored teacher outputs (default: `derpp_teacher_npz`).
-  - `derpp.keys`, `derpp.weight`, `derpp.temperature`, `derpp.kl`.
-  - `derpp.logits_weight`, `derpp.bbox_weight`, `derpp.other_l1_weight`.
+| Key | Type | Default | Notes |
+|---|---|---|---|
+| `schema_version` | int | `1` | only `1` supported |
+| `model_config` | str | required | RTDETR pose model JSON path |
+| `train` | object | `{}` | forwarded to `train_minimal.py` (snake_case keys) |
+| `continual` | object | `{}` | CL-specific options |
+| `tasks` | list | required | sequential tasks |
 
-  Notes:
-  - This implementation expects **per-sample teacher outputs** to be present in the dataset records (either as an inline dict or an `.npz/.json` path).
-  - It is CPU-safe (no extra teacher forward required at training time), but full validation needs real continual runs.
+`train` block:
+- Keys are forwarded as `--<key-with-dashes>` to `train_minimal.py`.
+- `seed`, `dataset_root`, `split` are managed by the runner and removed from forwarded keys.
+- Recommended reference for accepted keys/defaults: `docs/training_inference_export.md`.
 
-- Regularizers (optional; tracked per task):
-  - EWC (Elastic Weight Consolidation):
-    - `ewc.enabled`: enable.
-    - `ewc.lambda`: penalty weight.
-    - Per-task state is saved as `taskXX_*/ewc_state.pt` and used as `--ewc-state-in` for the next task.
-  - SI (Synaptic Intelligence):
-    - `si.enabled`: enable.
-    - `si.c`: penalty weight.
-    - `si.epsilon`: denominator stabilizer (default: `1e-3`).
-    - Per-task state is saved as `taskXX_*/si_state.pt` and used as `--si-state-in` for the next task.
+`continual` block:
+
+| Key | Type | Default | Notes |
+|---|---|---|---|
+| `seed` | int | `train.seed` or `0` | runner/global seed |
+| `replay_size` | int | `50` | `0` disables replay |
+| `replay_strategy` | str | `reservoir` | reported in metadata |
+| `replay_fraction` | float/null | `null` | replay_k = `round(fraction * train_records)` |
+| `replay_per_task_cap` | int/null | `null` | cap replay samples per past task |
+
+`continual.distill` (memoryless baseline):
+
+| Key | Type | Default |
+|---|---|---|
+| `enabled` | bool | `true` |
+| `keys` | str | `logits,bbox` |
+| `weight` | float | `1.0` |
+| `temperature` | float | `1.0` |
+| `kl` | str | `reverse` |
+
+`continual.lora` (optional):
+
+| Key | Type | Default |
+|---|---|---|
+| `enabled` | bool | `false` |
+| `r` | int | `0` (effective when enabled) |
+| `alpha` | float/null | `null` |
+| `dropout` | float | `0.0` |
+| `target` | str | `head` |
+| `freeze_base` | bool | `true` |
+| `train_bias` | str | `none` |
+
+`continual.derpp` (optional):
+
+| Key | Type | Default |
+|---|---|---|
+| `enabled` | bool | `false` |
+| `teacher_key` | str | `derpp_teacher_npz` |
+| `keys` | str | `logits,bbox` |
+| `weight` | float | `1.0` |
+| `temperature` | float | `1.0` |
+| `kl` | str | `reverse` |
+| `logits_weight` | float | `1.0` |
+| `bbox_weight` | float | `1.0` |
+| `other_l1_weight` | float | `1.0` |
+
+`continual.ewc` / `continual.si` (optional):
+
+| Key | Type | Default | Notes |
+|---|---|---|---|
+| `ewc.enabled` | bool | `false` | enables `--ewc` |
+| `ewc.lambda` | float | unchanged trainer default (`1.0`) if omitted | passed as `--ewc-lambda` only when present |
+| `si.enabled` | bool | `false` | enables `--si` |
+| `si.c` | float | unchanged trainer default (`1.0`) if omitted | passed as `--si-c` only when present |
+| `si.epsilon` | float | unchanged trainer default (`1e-3`) if omitted | passed as `--si-epsilon` only when present |
+
+`tasks[]` items:
+
+| Key | Type | Default | Notes |
+|---|---|---|---|
+| `name` | str | `taskXX` | used in output folder naming |
+| `dataset_root` | str | required | YOLO-format root |
+| `train_split` | str | `train2017` (`split` fallback) | training split |
+| `val_split` | str | `val2017` | metadata/eval split tag |
+
+### CLI overrides for the runner
+
+`train_continual.py` runner-only flags:
+
+| Flag | Default | Effect |
+|---|---|---|
+| `--config` | required | continual YAML/JSON |
+| `--run-dir` | auto timestamp dir | output base dir |
+| `--replay-size` | `None` | overrides `continual.replay_size` |
+| `--replay-fraction` | `None` | overrides `continual.replay_fraction` |
+| `--replay-per-task-cap` | `None` | overrides `continual.replay_per_task_cap` |
 
 ## Notes / caveats
 

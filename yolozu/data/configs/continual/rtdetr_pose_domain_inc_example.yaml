@@ -52,6 +52,23 @@ continual:
     target: head
     freeze_base: true
     train_bias: none
+  derpp:
+    enabled: false
+    teacher_key: derpp_teacher_npz
+    keys: logits,bbox
+    weight: 1.0
+    temperature: 1.0
+    kl: reverse
+    logits_weight: 1.0
+    bbox_weight: 1.0
+    other_l1_weight: 1.0
+  ewc:
+    enabled: false
+    lambda: 1.0
+  si:
+    enabled: false
+    c: 1.0
+    epsilon: 1.0e-3
 
 tasks:
   - name: source
