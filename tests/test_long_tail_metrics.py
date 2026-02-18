@@ -92,6 +92,47 @@ class TestLongTailMetrics(unittest.TestCase):
         self.assertGreater(tail_after, tail_before)
         self.assertEqual(report["class_counts"], {"0": 100, "1": 1, "2": 1})
 
+    def test_fracal_pose_stats_and_keypoints_are_preserved(self):
+        records = [
+            {"image": "img1.jpg", "labels": [_mk_label(0, 0.30), _mk_label(1, 0.70)]},
+            {"image": "img2.jpg", "labels": [_mk_label(0, 0.30)]},
+        ]
+        preds = [
+            {
+                "image": "img1.jpg",
+                "detections": [
+                    {
+                        "class_id": 0,
+                        "score": 0.90,
+                        "bbox": {"cx": 0.3, "cy": 0.5, "w": 0.2, "h": 0.2},
+                        "keypoints": [[0.1, 0.2, 0.9], [0.3, 0.4, 0.8]],
+                    },
+                    {
+                        "class_id": 1,
+                        "score": 0.40,
+                        "bbox": {"cx": 0.7, "cy": 0.5, "w": 0.2, "h": 0.2},
+                        "keypoints": [[0.6, 0.2, 0.7], [0.8, 0.4, 0.6]],
+                    },
+                ],
+            }
+        ]
+
+        stats = build_fracal_stats(records, task="pose")
+        self.assertEqual(stats.get("task"), "pose")
+        self.assertEqual(stats.get("class_counts"), {"0": 2, "1": 1})
+
+        calibrated, _report = fracal_calibrate_predictions(records, preds, alpha=1.0, strength=1.0)
+        self.assertEqual(
+            calibrated[0]["detections"][0]["keypoints"],
+            preds[0]["detections"][0]["keypoints"],
+        )
+        self.assertEqual(
+            calibrated[0]["detections"][1]["keypoints"],
+            preds[0]["detections"][1]["keypoints"],
+        )
+        self.assertLess(calibrated[0]["detections"][0]["score"], preds[0]["detections"][0]["score"])
+        self.assertGreater(calibrated[0]["detections"][1]["score"], preds[0]["detections"][1]["score"])
+
     @unittest.skipUnless(_HAS_SEG_DEPS, "instance-seg calibration requires numpy and Pillow")
     def test_build_fracal_stats_for_seg_and_calibrate_instances(self):
         records = [

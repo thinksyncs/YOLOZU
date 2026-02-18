@@ -448,6 +448,154 @@ class TestYOLOZUCLI(unittest.TestCase):
             self.assertNotEqual(proc.returncode, 0)
             self.assertIn("invalid stats file", proc.stderr)
 
+    def test_calibrate_pose_preserves_keypoints_and_sets_task(self):
+        repo_root = Path(__file__).resolve().parents[1]
+        script = repo_root / "tools" / "yolozu.py"
+
+        with tempfile.TemporaryDirectory(dir=str(repo_root)) as td:
+            root = Path(td)
+            dataset_root = root / "dataset"
+            images = dataset_root / "images" / "train2017"
+            labels = dataset_root / "labels" / "train2017"
+            images.mkdir(parents=True, exist_ok=True)
+            labels.mkdir(parents=True, exist_ok=True)
+            (images / "000001.jpg").write_bytes(b"")
+            (labels / "000001.txt").write_text("0 0.5 0.5 0.2 0.2\n", encoding="utf-8")
+
+            preds_in = root / "pred_pose.json"
+            keypoints = [[0.1, 0.2, 0.9], [0.4, 0.5, 0.8]]
+            preds_in.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "predictions": [
+                            {
+                                "image": "000001.jpg",
+                                "detections": [
+                                    {
+                                        "class_id": 0,
+                                        "score": 0.8,
+                                        "bbox": {"cx": 0.5, "cy": 0.5, "w": 0.2, "h": 0.2},
+                                        "keypoints": keypoints,
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            out_preds = root / "pred_pose_calibrated.json"
+            out_report = root / "calib_report_pose.json"
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(script),
+                    "calibrate",
+                    "--method",
+                    "fracal",
+                    "--task",
+                    "pose",
+                    "--dataset",
+                    str(dataset_root),
+                    "--split",
+                    "train2017",
+                    "--predictions",
+                    str(preds_in),
+                    "--output",
+                    str(out_preds),
+                    "--output-report",
+                    str(out_report),
+                    "--force",
+                ],
+                cwd=str(repo_root),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+                text=True,
+            )
+            if proc.returncode != 0:
+                self.fail(f"yolozu calibrate --task pose failed:\n{proc.stdout}\n{proc.stderr}")
+
+            payload = json.loads(out_preds.read_text(encoding="utf-8"))
+            det = payload["predictions"][0]["detections"][0]
+            self.assertEqual(det.get("keypoints"), keypoints)
+
+            report = json.loads(out_report.read_text(encoding="utf-8"))
+            self.assertEqual(report.get("task"), "pose")
+
+    def test_calibrate_auto_detects_pose_task(self):
+        repo_root = Path(__file__).resolve().parents[1]
+        script = repo_root / "tools" / "yolozu.py"
+
+        with tempfile.TemporaryDirectory(dir=str(repo_root)) as td:
+            root = Path(td)
+            dataset_root = root / "dataset"
+            images = dataset_root / "images" / "train2017"
+            labels = dataset_root / "labels" / "train2017"
+            images.mkdir(parents=True, exist_ok=True)
+            labels.mkdir(parents=True, exist_ok=True)
+            (images / "000001.jpg").write_bytes(b"")
+            (labels / "000001.txt").write_text("0 0.5 0.5 0.2 0.2\n", encoding="utf-8")
+
+            preds_in = root / "pred_pose_auto.json"
+            preds_in.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "predictions": [
+                            {
+                                "image": "000001.jpg",
+                                "detections": [
+                                    {
+                                        "class_id": 0,
+                                        "score": 0.8,
+                                        "bbox": {"cx": 0.5, "cy": 0.5, "w": 0.2, "h": 0.2},
+                                        "keypoints": [[0.1, 0.2, 0.9]],
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            out_report = root / "calib_report_pose_auto.json"
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(script),
+                    "calibrate",
+                    "--method",
+                    "fracal",
+                    "--task",
+                    "auto",
+                    "--dataset",
+                    str(dataset_root),
+                    "--split",
+                    "train2017",
+                    "--predictions",
+                    str(preds_in),
+                    "--output",
+                    str(root / "pred_pose_auto_calibrated.json"),
+                    "--output-report",
+                    str(out_report),
+                    "--force",
+                ],
+                cwd=str(repo_root),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+                text=True,
+            )
+            if proc.returncode != 0:
+                self.fail(f"yolozu calibrate --task auto (pose) failed:\n{proc.stdout}\n{proc.stderr}")
+
+            report = json.loads(out_report.read_text(encoding="utf-8"))
+            self.assertEqual(report.get("task"), "pose")
+
 
 if __name__ == "__main__":
     unittest.main()

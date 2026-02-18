@@ -65,12 +65,12 @@ def build_fracal_stats(
 ) -> dict[str, Any]:
     task_norm = str(task or "bbox").strip().lower()
     warnings: list[str] = []
-    if task_norm == "bbox":
+    if task_norm in ("bbox", "pose"):
         counts = class_frequency_counts(records)
     elif task_norm == "seg":
         counts, warnings = class_frequency_counts_instance_segmentation(records, allow_rgb_masks=allow_rgb_masks)
     else:
-        raise ValueError("task must be one of: bbox, seg")
+        raise ValueError("task must be one of: bbox, seg, pose")
 
     return {
         "schema_version": 1,

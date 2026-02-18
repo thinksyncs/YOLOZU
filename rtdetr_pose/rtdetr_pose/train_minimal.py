@@ -990,7 +990,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--fracal-stats-task",
-        choices=("bbox", "seg"),
+        choices=("bbox", "seg", "pose"),
         default="bbox",
         help="Task for FRACAL stats generation (default: bbox).",
     )

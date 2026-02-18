@@ -743,8 +743,8 @@ def _cmd_calibrate(args: argparse.Namespace) -> int:
     raw_data = json.loads(predictions_path.read_text(encoding="utf-8"))
 
     task = str(getattr(args, "task", "auto") or "auto").strip().lower()
-    if task not in ("auto", "bbox", "seg"):
-        raise SystemExit("--task must be one of: auto, bbox, seg")
+    if task not in ("auto", "bbox", "seg", "pose"):
+        raise SystemExit("--task must be one of: auto, bbox, seg, pose")
 
     if task == "auto":
         if isinstance(raw_data, list) and raw_data and isinstance(raw_data[0], dict) and "instances" in raw_data[0]:
@@ -754,6 +754,12 @@ def _cmd_calibrate(args: argparse.Namespace) -> int:
             first = preds[0] if preds else {}
             if isinstance(first, dict) and "instances" in first:
                 task = "seg"
+            elif isinstance(first, dict) and isinstance(first.get("detections"), list):
+                first_det = first.get("detections", [None])[0] if first.get("detections") else None
+                if isinstance(first_det, dict) and "keypoints" in first_det:
+                    task = "pose"
+                else:
+                    task = "bbox"
             else:
                 task = "bbox"
         else:
@@ -1288,7 +1294,7 @@ def main(argv: list[str] | None = None) -> int:
     calibrate.add_argument("--method", choices=("fracal",), default="fracal", help="Calibration method (default: fracal).")
     calibrate.add_argument("--dataset", required=True, help="YOLO-format dataset root (images/ + labels/).")
     calibrate.add_argument("--split", default=None, help="Dataset split under images/ and labels/ (default: auto).")
-    calibrate.add_argument("--task", choices=("auto", "bbox", "seg"), default="auto", help="Prediction task type (default: auto).")
+    calibrate.add_argument("--task", choices=("auto", "bbox", "seg", "pose"), default="auto", help="Prediction task type (default: auto).")
     calibrate.add_argument("--predictions", required=True, help="Input predictions JSON path.")
     calibrate.add_argument("--output", default="reports/predictions_calibrated.json", help="Output calibrated predictions JSON path.")
     calibrate.add_argument("--output-report", default="reports/calibration_fracal_report.json", help="Output calibration report JSON path.")
