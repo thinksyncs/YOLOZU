@@ -25,6 +25,9 @@ For repo workflows: \cmd{python3 tools/yolozu.py --help}.
 \cmd{yolozu parity} & Compare two predictions artifacts (backend drift checks). \\
 \cmd{yolozu calibrate} & Score calibration / long-tail post-hoc adjustments. \\
 \cmd{python3 tools/eval_suite.py} & Suite evaluation; protocol-pinned reporting and comparisons. \\
+\cmd{python3 tools/hpo_sweep.py} & Execute parameter sweeps and aggregate metrics (CSV/MD/JSONL). \\
+\cmd{python3 tools/benchmark_latency.py} & Latency/FPS harness with JSONL history for regressions. \\
+\cmd{python3 tools/validate_tool_manifest.py} & Validate the machine-readable registry (tools/manifest.json). \\
 \bottomrule
 \end{longtable}
 

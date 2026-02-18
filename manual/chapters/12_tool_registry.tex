@@ -1,0 +1,59 @@
+\chapter{Tool Registry and Automation (Research Use)}
+
+\section{Why a tool registry matters}
+Research workflows tend to accumulate scripts. \yolozu{} treats \path{tools/} as a stable,
+scriptable interface layer, and adds a machine-readable registry:
+\begin{itemize}
+  \item Tool manifest: \path{tools/manifest.json}
+  \item Manifest schema: \path{docs/schemas/tools_manifest.schema.json}
+  \item Validator: \cmd{python3 tools/validate_tool_manifest.py}
+\end{itemize}
+
+This is designed for:
+\begin{itemize}
+  \item humans ("what command do I run to do X?"),
+  \item agentic automation (safe discovery of entrypoints and I/O contracts),
+  \item CI-style reproducibility (stable commands and stable artifacts).
+\end{itemize}
+
+\section{Contracts referenced from the manifest}
+The manifest references stable JSON schemas under \path{docs/schemas/}. Common ones include:
+\begin{itemize}
+  \item predictions: \path{docs/schemas/predictions.schema.json}
+  \item eval suite report: \path{docs/schemas/eval_suite_report.schema.json}
+  \item COCO eval report: \path{docs/schemas/coco_eval_report.schema.json}
+  \item segmentation and instance segmentation predictions/eval reports
+\end{itemize}
+
+In research, these schemas are useful because they make it cheap to:
+\begin{itemize}
+  \item parse results across many runs,
+  \item build dashboards/plots from JSONL histories,
+  \item write assertions (regression gates) against well-typed outputs.
+\end{itemize}
+
+\section{Discovery loop}
+A practical loop when you join the repo (or return after a while):
+\begin{enumerate}
+  \item Read the docs index: \path{docs/README.md}.
+  \item Scan the tool index: \path{docs/tools_index.md}.
+  \item Search the manifest for tags you care about (dataset/eval/parity/bench).
+  \item Run the validator so the registry is trustworthy.
+\end{enumerate}
+
+Validate the tool registry:
+\begin{lstlisting}[language=bash]
+python3 tools/validate_tool_manifest.py
+\end{lstlisting}
+
+\section{Path behavior (important for automation)}
+Many tools follow consistent path rules (summarized in \path{docs/tools_index.md} and
+\path{docs/ai_first.md}):
+\begin{itemize}
+  \item CLI relative input paths resolve from the current working directory.
+  \item Config-relative paths (where supported) resolve from the config file directory.
+  \item Relative outputs write under the current working directory.
+\end{itemize}
+
+For research, this helps you run batches reliably from different working directories and
+makes scripted runs more portable.
