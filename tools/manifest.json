@@ -462,7 +462,8 @@
           { "flag": "--overlays-dir", "kind": "dir", "scope": "tree", "description": "Optional overlay image directory." },
           { "flag": "--html", "kind": "file", "scope": "path", "description": "Optional HTML report output." }
         ],
-        "fixed_writes": []
+        "fixed_writes": [],
+        "allow_unknown_flags": true
       },
       "examples": [
         { "description": "Doctor report.", "command": "python3 tools/yolozu.py doctor --output reports/doctor.json" },
@@ -1257,7 +1258,8 @@
         "fixed_writes": [
           { "path": "engines", "kind": "dir", "scope": "tree", "description": "Default engine outputs and timing cache." },
           { "path": "reports", "kind": "dir", "scope": "tree", "description": "Default reports/artifacts (predictions, parity, eval suite, latency, generated configs)." }
-        ]
+        ],
+        "allow_unknown_flags": true
       },
       "outputs": [{ "name": "run_dir", "kind": "dir", "description": "Run folder containing run.json and copied artifacts." }],
       "examples": [
