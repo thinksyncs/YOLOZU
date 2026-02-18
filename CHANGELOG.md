@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- FRACAL calibration now supports both bbox and instance-segmentation predictions via `yolozu calibrate --task {bbox,seg,auto}`.
+- FRACAL class-frequency stats can now be exported/reused through `--stats-out` and `--stats-in`, enabling stable calibration across runs.
+- Trainer now emits FRACAL stats from training records via `--fracal-stats-out`; with `--run-contract`, default output is `runs/<run-id>/reports/fracal_stats_bbox.json`.
+
+### Tests
+- Added regression coverage for FRACAL stats reuse and instance-segmentation calibration behavior.
+- Added run-contract default-path coverage for FRACAL stats artifact output.
+
 ## [0.1.2] - 2026-02-17
 
 ### Added
