@@ -36,10 +36,52 @@ A convenient user-facing path is:
 \begin{lstlisting}[language=bash]
 yolozu predict-images \
   --backend dummy \
-  --input-dir /path/to/images
+  --input-dir /path/to/images \
+  --output reports/predict_images.json \
+  --overlays-dir reports/predict_images_overlays \
+  --html reports/predict_images.html
 \end{lstlisting}
 
 This writes a predictions artifact plus optional overlays/HTML to a run directory.
+
+\section{Post-result display and reporting}
+After inference/evaluation, YOLOZU provides both machine-readable and human-readable outputs.
+
+\begin{longtable}{@{}p{0.34\textwidth}p{0.30\textwidth}p{0.30\textwidth}@{}}
+\toprule
+\textbf{Command family} & \textbf{Typical output} & \textbf{Usage} \\
+\midrule
+\cmd{yolozu predict-images} & \path{reports/predict_images.json} & normalized predictions artifact \\
+\cmd{yolozu predict-images} & \path{reports/predict_images.html} & visual summary page \\
+\cmd{yolozu predict-images} & \path{reports/predict_images_overlays/} & per-image overlays \\
+\cmd{python3 tools/eval_suite.py} & \path{reports/eval_suite.json} & protocol-pinned comparison report \\
+\cmd{python3 tools/hpo_sweep.py} & \path{reports/hpo_sweep.jsonl} & trial-level raw history \\
+\cmd{python3 tools/hpo_sweep.py} & \path{reports/hpo_sweep.csv}, \path{reports/hpo_sweep.md} & leaderboard/table view \\
+\cmd{yolozu eval-instance-seg} & \path{reports/instance_seg_eval.json} & instance-seg metrics \\
+\cmd{yolozu eval-instance-seg} & \path{reports/instance_seg_eval.html} & HTML report with optional overlays \\
+\bottomrule
+\end{longtable}
+
+\subsection{Recommended result inspection sequence}
+\begin{enumerate}
+  \item Validate schema: \cmd{yolozu validate predictions reports/predict_images.json --strict}
+  \item Open HTML report for quick qualitative checks.
+  \item Inspect JSON/CSV/MD for quantitative comparisons in CI and papers.
+\end{enumerate}
+
+Example for instance segmentation with HTML/overlay outputs:
+\begin{lstlisting}[language=bash]
+yolozu eval-instance-seg \
+  --dataset examples/instance_seg_demo/dataset \
+  --split val2017 \
+  --predictions examples/instance_seg_demo/predictions/instance_seg_predictions.json \
+  --pred-root examples/instance_seg_demo/predictions \
+  --classes examples/instance_seg_demo/classes.txt \
+  --output reports/instance_seg_eval.json \
+  --html reports/instance_seg_eval.html \
+  --overlays-dir reports/instance_seg_overlays \
+  --max-overlays 10
+\end{lstlisting}
 
 \section{Schema validation as a gate}
 Always validate predictions artifacts before evaluation:

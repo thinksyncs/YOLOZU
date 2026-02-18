@@ -23,6 +23,113 @@ This makes it easy to:
 
 Read next: \path{docs/run_contract.md} and \path{docs/training_inference_export.md}.
 
+\section{Config resolution and strictness}
+The training entrypoint reads YAML/JSON via \cmd{--config}, then applies explicit CLI flags.
+Priority is:
+\begin{center}
+\textbf{CLI flags \(>\) config file \(>\) built-in defaults}
+\end{center}
+
+Config keys must use argparse destination names (example: \cmd{--weight-decay} maps to
+\texttt{weight\_decay}). In run-contract mode (\texttt{run\_contract} or \texttt{run\_id} present),
+unknown keys are rejected to prevent silent config drift.
+
+\section{Solver (optimizer) parameters and defaults}
+Supported optimizers are \texttt{adamw} (default) and \texttt{sgd}.
+
+\begin{longtable}{@{}p{0.30\textwidth}p{0.12\textwidth}p{0.14\textwidth}p{0.38\textwidth}@{}}
+\toprule
+\textbf{CLI / config key} & \textbf{Type} & \textbf{Default} & \textbf{Notes} \\
+\midrule
+\cmd{--optimizer} / \texttt{optimizer} & str & \texttt{adamw} & \texttt{adamw}, \texttt{sgd} \\
+\cmd{--lr} / \texttt{lr} & float & \texttt{1e-4} & base learning rate \\
+\cmd{--weight-decay} / \texttt{weight\_decay} & float & \texttt{0.01} & base weight decay \\
+\cmd{--momentum} / \texttt{momentum} & float & \texttt{0.9} & SGD only \\
+\cmd{--nesterov} / \texttt{nesterov} & bool & \texttt{false} & SGD only \\
+\cmd{--use-param-groups} / \texttt{use\_param\_groups} & bool & \texttt{false} & separate backbone/head groups \\
+\cmd{--backbone-lr-mult} / \texttt{backbone\_lr\_mult} & float & \texttt{1.0} & LR multiplier \\
+\cmd{--head-lr-mult} / \texttt{head\_lr\_mult} & float & \texttt{1.0} & LR multiplier \\
+\cmd{--backbone-wd-mult} / \texttt{backbone\_wd\_mult} & float & \texttt{1.0} & WD multiplier \\
+\cmd{--head-wd-mult} / \texttt{head\_wd\_mult} & float & \texttt{1.0} & WD multiplier \\
+\cmd{--wd-exclude-bias} / \texttt{wd\_exclude\_bias} & bool & \texttt{true} & bias decay = 0 \\
+\cmd{--wd-exclude-norm} / \texttt{wd\_exclude\_norm} & bool & \texttt{true} & norm decay = 0 \\
+\bottomrule
+\end{longtable}
+
+\section{LR scheduling parameters and defaults}
+Supported scheduler values are \texttt{none} (default), \texttt{cosine}, \texttt{onecycle}, and \texttt{multistep}.
+
+\begin{longtable}{@{}p{0.30\textwidth}p{0.12\textwidth}p{0.14\textwidth}p{0.38\textwidth}@{}}
+\toprule
+\textbf{CLI / config key} & \textbf{Type} & \textbf{Default} & \textbf{Notes} \\
+\midrule
+\cmd{--scheduler} / \texttt{scheduler} & str & \texttt{none} & \texttt{none}, \texttt{cosine}, \texttt{onecycle}, \texttt{multistep} \\
+\cmd{--min-lr} / \texttt{min\_lr} & float & \texttt{0.0} & cosine \texttt{eta\_min} \\
+\cmd{--scheduler-milestones} / \texttt{scheduler\_milestones} & str/list & \texttt{""} & comma list for multistep \\
+\cmd{--scheduler-gamma} / \texttt{scheduler\_gamma} & float & \texttt{0.1} & multistep decay factor \\
+\cmd{--lr-warmup-steps} / \texttt{lr\_warmup\_steps} & int & \texttt{0} & linear warmup steps \\
+\cmd{--lr-warmup-init} / \texttt{lr\_warmup\_init} & float & \texttt{0.0} & warmup initial LR \\
+\bottomrule
+\end{longtable}
+
+\noindent\textbf{Note:} \texttt{linear} is not a supported scheduler value in current code.
+
+\section{LoRA / QLoRA parameters and defaults}
+LoRA is enabled when \texttt{lora\_r > 0}.
+
+\begin{longtable}{@{}p{0.30\textwidth}p{0.12\textwidth}p{0.14\textwidth}p{0.38\textwidth}@{}}
+\toprule
+\textbf{CLI / config key} & \textbf{Type} & \textbf{Default} & \textbf{Notes} \\
+\midrule
+\cmd{--lora-r} / \texttt{lora\_r} & int & \texttt{0} & \texttt{>0} enables LoRA \\
+\cmd{--lora-alpha} / \texttt{lora\_alpha} & float/null & \texttt{null} & null means \(\alpha=r\) \\
+\cmd{--lora-dropout} / \texttt{lora\_dropout} & float & \texttt{0.0} & LoRA input dropout \\
+\cmd{--lora-target} / \texttt{lora\_target} & str & \texttt{head} & \texttt{head}, \texttt{all\_linear}, \texttt{all\_conv1x1}, \texttt{all\_linear\_conv1x1} \\
+\cmd{--lora-freeze-base} / \texttt{lora\_freeze\_base} & bool & \texttt{true} & LoRA-only training \\
+\cmd{--lora-train-bias} / \texttt{lora\_train\_bias} & str & \texttt{none} & \texttt{none}, \texttt{all} \\
+\cmd{--torchao-quant} / \texttt{torchao\_quant} & str & \texttt{none} & \texttt{none}, \texttt{int8wo}, \texttt{int4wo} \\
+\cmd{--torchao-required} / \texttt{torchao\_required} & bool & \texttt{false} & fail if quant backend missing \\
+\cmd{--qlora} / \texttt{qlora} & bool & \texttt{false} & requires LoRA, enforces int4wo + freeze \\
+\bottomrule
+\end{longtable}
+
+\section{Default config list (practical minimum)}
+The canonical default list is maintained in:
+\begin{itemize}
+  \item \path{configs/examples/train_setting.yaml}
+  \item \path{configs/examples/train_contract.yaml}
+\end{itemize}
+
+Frequently edited defaults:
+\begin{longtable}{@{}p{0.34\textwidth}p{0.20\textwidth}p{0.40\textwidth}@{}}
+\toprule
+\textbf{Config key} & \textbf{Default} & \textbf{Meaning} \\
+\midrule
+\texttt{optimizer} & \texttt{adamw} & optimizer family \\
+\texttt{lr} & \texttt{1e-4} & base LR \\
+\texttt{weight\_decay} & \texttt{0.01} & base WD \\
+\texttt{scheduler} & \texttt{none} & LR scheduler mode \\
+\texttt{lr\_warmup\_steps} & \texttt{0} & warmup disabled by default \\
+\texttt{lora\_r} & \texttt{0} & LoRA disabled by default \\
+\texttt{gradient\_accumulation\_steps} & \texttt{1} & no accumulation \\
+\texttt{clip\_grad\_norm} & \texttt{0.0} & clipping disabled \\
+\texttt{use\_ema} & \texttt{false} & EMA disabled \\
+\texttt{amp} & \texttt{none} & AMP disabled \\
+\texttt{metrics\_jsonl} & \path{reports/train_metrics.jsonl} & train metric stream \\
+\texttt{metrics\_csv} & \path{reports/train_metrics.csv} & tabular metrics \\
+\texttt{export\_onnx} & \texttt{true} & ONNX export enabled \\
+\texttt{onnx\_out} & \path{reports/rtdetr_pose.onnx} & ONNX output path \\
+\bottomrule
+\end{longtable}
+
 \section{Smoke training}
 A typical smoke entry point is exposed as a script under \path{tools/}.
 The exact command may change; search for \path{smoke} scripts in \path{tools/}.
+
+\section{Contracted run example}
+\begin{lstlisting}[language=bash]
+yolozu train configs/examples/train_contract.yaml --run-id exp01
+
+# Resume from runs/exp01/checkpoints/last.pt
+yolozu train configs/examples/train_contract.yaml --run-id exp01 --resume
+\end{lstlisting}
