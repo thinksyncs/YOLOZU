@@ -46,6 +46,88 @@ $$
 
 The point of this design is to avoid unstable direct regression of $(X,Y)$.
 
+\section{Commonsense constraints (Stage 4, implemented utilities)}
+This repository contains a small, test-covered set of \textbf{commonsense constraints} for depth/pose postprocess.
+They are designed as \textbf{utilities} (not a full end-to-end model training system) and can be used both as
+train-time regularizers and as inference-time gates/penalties.
+
+Implementation / configuration:
+\begin{itemize}
+  \item Core logic: \path{yolozu/constraints.py}
+  \item Runtime config: \path{configs/runtime/constraints.yaml}
+\end{itemize}
+
+Key pieces (matching the Stage 4 roadmap vocabulary):
+\begin{itemize}
+  \item Depth prior: \cmd{depth\_prior(bbox\_wh, size\_wh, (fx,fy))} and penalty \cmd{depth\_prior\_penalty(z\_pred, z\_prior)}.
+  \item Table plane: signed distance via \cmd{plane\_signed\_distance(...)} and below-plane rejection via \cmd{is\_above\_plane(...)}.
+  \item Upright prior: roll/pitch extraction and violation via \cmd{upright\_violation\_deg(R, bounds)}.
+\end{itemize}
+
+Wiring example:
+\begin{itemize}
+  \item Candidate evaluation calls constraints from \path{yolozu/pipeline.py} (\cmd{evaluate\_candidate}).
+\end{itemize}
+
+Ablations:
+\begin{itemize}
+  \item Toggle each constraint: \path{tools/ablate_constraints.py}
+\end{itemize}
+
+Tests (unit + integration toggles):
+\begin{itemize}
+  \item \path{tests/test\_gates\_constraints.py}
+  \item \path{tests/test\_inference\_constraints.py}
+\end{itemize}
+
+\section{Handheld camera robustness (Stage 5, implemented utilities)}
+Stage 5 focuses on robustness to camera perturbations by consistently using corrected intrinsics $K'$ and
+center offsets $(u+\Delta u, v+\Delta v)$.
+
+Implementation entry points:
+\begin{itemize}
+  \item Intrinsics correction: \path{yolozu/geometry.py} (\cmd{corrected\_intrinsics})
+  \item Translation recovery using offsets: \path{yolozu/geometry.py} (\cmd{recover\_translation})
+  \item Jitter profile utilities: \path{yolozu/jitter.py}
+\end{itemize}
+
+Jitter utilities provide:
+\begin{itemize}
+  \item Intrinsics drift sampling (e.g. $\delta f,\delta c$): \cmd{sample\_intrinsics\_jitter(...)}
+  \item Extrinsics jitter sampling: \cmd{sample\_extrinsics\_jitter(...)}
+  \item A baseline profile with jitter disabled: \cmd{jitter\_off()}
+\end{itemize}
+
+Note: the jitter profile includes a \cmd{rolling\_shutter} field (\cmd{enabled}, \cmd{line\_delay}), but the current
+repository code treats it as a configuration stub; there is no physics-accurate rolling shutter model wired into
+the core geometry utilities.
+
+Tests (integration-level expectations for jitter on/off profiles):
+\begin{itemize}
+  \item \path{tests/test\_geometry\_pipeline.py}
+  \item \path{rtdetr\_pose/tests/test\_train\_minimal\_sim\_jitter.py}
+  \item \path{rtdetr\_pose/tests/test\_train\_minimal\_extrinsics\_jitter.py}
+\end{itemize}
+
+\section{Scenario suite (Stage 6, scaffolded validation harness)}
+The validation harness includes a lightweight \textbf{scenario suite} that emits a stable JSON report for CI and
+tooling integration.
+
+Implementation / schema:
+\begin{itemize}
+  \item Scenario suite generator: \path{yolozu/scenario\_suite.py} (\cmd{build\_report})
+  \item CLI wrapper: \path{tools/run\_scenario\_suite.py}
+  \item Schema-style stability test: \path{tests/test\_scenario\_suite.py}
+\end{itemize}
+
+Run it manually:
+\begin{lstlisting}[language=bash]
+python tools/run_scenario_suite.py --output reports/scenario_suite.json
+\end{lstlisting}
+
+Important: the current scenario suite produces \textbf{scaffolded/deterministic metrics} (it is a harness and
+contract surface), not a substitute for real model evaluation.
+
 \section{Per-detection refinement: Hessian solver}
 \yolozu{} includes a Gauss--Newton / Levenberg--Marquardt style refinement utility to iteratively refine
 regression head outputs per detection.
