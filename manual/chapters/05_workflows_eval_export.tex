@@ -48,3 +48,45 @@ python3 tools/validate_predictions.py /path/to/predictions.json --strict
 \end{lstlisting}
 
 This prevents silent evaluation errors due to malformed outputs.
+
+\section{Workflow D: Migrate datasets/predictions from other toolchains}
+YOLOZU includes migration helpers that produce small wrapper artifacts (or converters) so you can reuse common ecosystem datasets.
+See \path{docs/migrate.md}.
+
+\subsection{Ultralytics / YOLO (YOLOv8/YOLO11)}
+Generate a \path{dataset.json} wrapper from \path{data.yaml}:
+\begin{lstlisting}[language=bash]
+yolozu migrate dataset \
+  --from ultralytics \
+  --data /path/to/data.yaml \
+  --output data/ultralytics_wrapper
+\end{lstlisting}
+
+Validate:
+\begin{lstlisting}[language=bash]
+yolozu validate dataset data/ultralytics_wrapper
+\end{lstlisting}
+
+\subsection{COCO JSON datasets (YOLOX / Detectron2 / MMDetection)}
+Convert COCO instances JSON into YOLO label txt files and write a wrapper:
+\begin{lstlisting}[language=bash]
+yolozu migrate dataset \
+  --from coco \
+  --coco-root /path/to/coco_like_root \
+  --split val2017 \
+  --output data/coco_yolo_like \
+  --mode manifest
+\end{lstlisting}
+
+\subsection{COCO results (inference outputs) \texorpdfstring{$\rightarrow$}{->} predictions.json}
+Convert COCO-style detection results into the YOLOZU predictions contract:
+\begin{lstlisting}[language=bash]
+yolozu migrate predictions \
+  --from coco-results \
+  --results /path/to/coco_results.json \
+  --instances /path/to/instances_val2017.json \
+  --output reports/predictions.json \
+  --force
+
+yolozu validate predictions reports/predictions.json --strict
+\end{lstlisting}

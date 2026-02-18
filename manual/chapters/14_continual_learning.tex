@@ -1,0 +1,78 @@
+\chapter{Continual Learning (Anti-forgetting)}
+
+\section{What YOLOZU means by ``continual''}
+Continual learning (CL) here means fine-tuning across a sequence of tasks/domains while mitigating catastrophic forgetting.
+In this repository, the reference implementation targets the in-repo \path{rtdetr_pose} scaffold.
+
+Authoritative reference: \path{docs/continual_learning.md}.
+
+\section{Core approach (baseline)}
+The default strategy combines:
+\begin{itemize}
+  \item \textbf{Memoryless self-distillation}: keep the new model close to the previous checkpoint while learning the new task.
+  \item \textbf{Optional replay buffer}: add a small buffer of past samples (e.g., reservoir sampling) and train on \emph{(current task + replay)}.
+  \item \textbf{Optional parameter-efficiency}: restrict trainable parameters (e.g., LoRA) to reduce forgetting pressure.
+\end{itemize}
+
+\section{Main entry points}
+\subsection{Train}
+Run continual fine-tuning using a config (start from the example):
+\begin{lstlisting}[language=bash]
+python3 rtdetr_pose/tools/train_continual.py \
+  --config configs/continual/rtdetr_pose_domain_inc_example.yaml
+\end{lstlisting}
+
+To run \textbf{memoryless} (no replay), set replay size to 0 in the config.
+
+\subsection{Evaluate}
+Evaluate forgetting and per-task metrics from the recorded run JSON:
+\begin{lstlisting}[language=bash]
+python3 tools/eval_continual.py \
+  --run-json runs/continual/<run>/continual_run.json \
+  --device cpu \
+  --max-images 50
+\end{lstlisting}
+
+If your dataset provides pose sidecar metadata (e.g., under \path{labels/<split>/*.json}), you can request pose metrics:
+\begin{lstlisting}[language=bash]
+python3 tools/eval_continual.py \
+  --run-json runs/continual/<run>/continual_run.json \
+  --device cpu \
+  --max-images 50 \
+  --metric pose \
+  --metric-key pose_success
+\end{lstlisting}
+
+\section{Run artifacts (what to version / what to compare)}
+\cmd{train_continual.py} writes a run folder under \path{runs/continual/}.
+Key outputs:
+\begin{itemize}
+  \item \path{continual_run.json}: task list, checkpoints, config hash, and run record.
+  \item \path{replay_buffer.json}: buffer summary (when replay is enabled).
+  \item Per-task subfolders, typically including:\\
+    \path{checkpoint.pt}, \path{metrics.jsonl}, \path{metrics.csv}, \path{run_record.json}.
+\end{itemize}
+
+For reporting and plots, treat \path{continual_run.json} as the single source of truth.
+
+\section{Selected config knobs (high leverage)}
+See \path{docs/continual_learning.md} for the full list. Commonly tuned items include:
+\begin{itemize}
+  \item Replay: \cmd{replay_size}, \cmd{replay_fraction}, \cmd{replay_per_task_cap}.
+  \item Distillation: \cmd{distill.enabled}, \cmd{distill.keys}, \cmd{distill.weight}, \cmd{distill.temperature}.
+  \item Replay distillation (DER++-style): \cmd{derpp.enabled} and related keys (requires teacher outputs stored in records).
+  \item Regularizers across tasks (optional): EWC (\cmd{ewc.*}) and SI (\cmd{si.*}).
+\end{itemize}
+
+\section{Research workflow guidance}
+\begin{itemize}
+  \item \textbf{Pin the evaluation subset}: use a deterministic subset (same images each run) before comparing CL runs.
+  \item \textbf{Log runtime cost}: replay and distillation change throughput; report accuracy vs cost.
+  \item \textbf{Keep baselines simple}: compare (A) naive fine-tune, (B) memoryless self-distill, (C) replay+distill.
+\end{itemize}
+
+\section{Notes}
+\begin{itemize}
+  \item The current continual evaluation uses a CPU-friendly proxy metric in some paths (see the doc for details).
+  \item For ``real'' mAP, switch your evaluation workflow to a full COCO evaluator when appropriate.
+\end{itemize}

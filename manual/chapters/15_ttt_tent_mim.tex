@@ -1,0 +1,124 @@
+\chapter{Test-Time Training (TTT): Tent and MIM}
+
+\section{Scope and support}
+\yolozu{} supports controlled test-time training (TTT) for the \path{rtdetr_pose} adapter via
+\path{tools/export_predictions.py} or the unified wrapper \path{tools/yolozu.py}.
+
+Authoritative references:
+\begin{itemize}
+  \item \path{docs/ttt_protocol.md}
+  \item \path{docs/mim_inference.md}
+\end{itemize}
+
+TTT updates weights \emph{in memory} using unlabeled test data before (or during) inference.
+This makes comparisons sensitive to domain shift, random seeds, and reset policy.
+
+\section{When TTT is meaningful}
+On clean COCO-style validation, TTT can be neutral or harmful.
+To demonstrate improvements, you typically need a clear domain shift (e.g., corruptions, style shift, different camera).
+
+Practical baseline:
+\begin{itemize}
+  \item Baseline domain: clean COCO \cmd{val2017}
+  \item Target domain: shifted dataset or corrupted copy of COCO images
+\end{itemize}
+
+\section{Presets (start here)}
+Both CLIs expose \cmd{--ttt-preset}:
+\begin{itemize}
+  \item \cmd{safe}: Tent + BN-affine only (\cmd{update_filter=norm_only})
+  \item \cmd{adapter_only}: Tent + adapter/head only
+  \item \cmd{mim_safe}: MIM + adapter/head only
+\end{itemize}
+
+Presets override core knobs (method, steps, lr, update filter, max batches) and set conservative guard rails unless you override them.
+
+\section{Guard rails (safety limits)}
+If you do not explicitly set these, defaults are applied by preset:
+\begin{itemize}
+  \item \cmd{max_grad_norm}
+  \item \cmd{max_update_norm}
+  \item \cmd{max_total_update_norm}
+  \item \cmd{max_loss_ratio}
+\end{itemize}
+
+These bounds are there to prevent runaway adaptation and to keep comparisons reproducible.
+
+\section{Reset policy: stream vs sample}
+\begin{description}
+  \item[\cmd{--ttt-reset stream}] Adapt once (up to \cmd{--ttt-max-batches}) then reuse adapted weights for subsequent images.
+  \item[\cmd{--ttt-reset sample}] Restore base state per image, adapt on that image/batch, then predict. Slower but cleaner ablations.
+\end{description}
+
+For plots and controlled comparisons, start with \cmd{--ttt-reset sample}.
+
+\section{Bounded-cost knobs}
+Two knobs matter most for runtime and fairness:
+\begin{itemize}
+  \item \cmd{--ttt-batch-size N}: images per adaptation step.
+  \item \cmd{--ttt-max-batches K}: hard cap on adaptation batches consumed.
+\end{itemize}
+
+Suggested smoke-test settings:
+\cmd{--ttt-batch-size 1 --ttt-max-batches 1}.
+
+\section{Make a fixed evaluation subset}
+TTT comparisons must be run on the exact same images.
+Use \path{tools/make_subset_dataset.py} to create a deterministic subset dataset root:
+\begin{lstlisting}[language=bash]
+python3 tools/make_subset_dataset.py \
+  --dataset data/coco128 \
+  --split train2017 \
+  --n 50 \
+  --seed 0 \
+  --out reports/coco128_50
+\end{lstlisting}
+
+This writes \path{subset.json} (including an image hash) and a frozen image list.
+
+\section{Example: baseline vs TTT}
+Baseline export:
+\begin{lstlisting}[language=bash]
+python3 tools/yolozu.py export \
+  --backend torch \
+  --dataset reports/coco128_50 \
+  --split train2017 \
+  --checkpoint /path/to.ckpt \
+  --device cuda \
+  --max-images 50 \
+  --output reports/pred_baseline.json
+\end{lstlisting}
+
+TTT export (safe preset, per-sample reset, with a log):
+\begin{lstlisting}[language=bash]
+python3 tools/yolozu.py export \
+  --backend torch \
+  --dataset reports/coco128_50 \
+  --split train2017 \
+  --checkpoint /path/to.ckpt \
+  --device cuda \
+  --max-images 50 \
+  --ttt \
+  --ttt-preset safe \
+  --ttt-reset sample \
+  --ttt-log-out reports/ttt_log_safe.json \
+  --output reports/pred_ttt_safe.json
+\end{lstlisting}
+
+\section{MIM-based adaptation (high level)}
+The geometry-aligned MIM branch (when enabled in the model) can be used for test-time adaptation.
+Conceptually:
+\begin{itemize}
+  \item Use geometry-derived features as a teacher (mask + normalized depth).
+  \item Reconstruct masked features and optionally minimize entropy.
+  \item Update a restricted parameter subset (e.g., norm or adapter/head) under guard rails.
+\end{itemize}
+
+See \path{docs/mim_inference.md} for the conceptual API and loss definitions.
+
+\section{Operational notes}
+\begin{itemize}
+  \item TTT adds latency. Always report throughput and the chosen \cmd{batch\_size/max\_batches}.
+  \item Keep the evaluation subset fixed and record the exact preset and guards.
+  \item For deployment, treat TTT as an optional mode; default inference should not require it.
+\end{itemize}

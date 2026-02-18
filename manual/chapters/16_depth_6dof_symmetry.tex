@@ -1,0 +1,123 @@
+\chapter{Depth + 6DoF Pose + Symmetry Handling}
+
+\section{Units, intrinsics, and coordinate conventions}
+Depth/pose workflows are extremely sensitive to units and to intrinsics consistency.
+
+Key conventions used across docs in this repo:
+\begin{itemize}
+  \item Intrinsics \cmd{K=(fx,fy,cx,cy)} are in \textbf{pixel units}.
+  \item Intrinsics must match the \textbf{image coordinate system used by model outputs} (after resize/letterbox).
+  \item Depth \cmd{z} uses the dataset's length unit (YOLOZU does not convert mm\,$\leftrightarrow$\,m).
+\end{itemize}
+
+Authoritative reference: \path{docs/real_model_interface.md}.
+
+\section{Typical regression heads}
+The 6DoF-oriented design documents and utilities assume per-detection regression heads such as:
+\begin{itemize}
+  \item \cmd{log\_z}: object center depth in log space
+  \item \cmd{rot6d}: 6D rotation representation
+  \item \cmd{offsets}: center correction \cmd{(\u0394u,\u0394v)}
+  \item \cmd{k\_delta}: small intrinsics correction (global / per-frame)
+\end{itemize}
+
+See the design spec for clear definitions of frames and outputs:\\
+\path{docs/specs/rt_detr_6dof_geom_mim_spec_en_v0_4.md}.
+
+\section{Translation recovery (postprocess)}
+A common pattern is to recover translation from depth + intrinsics:
+
+Let bbox center be $(u,v)$ and corrected center $(u',v')$ be:
+$$
+  u' = u + \Delta u, \qquad v' = v + \Delta v.
+$$
+
+Let corrected intrinsics be $K'=(f_x', f_y', c_x', c_y')$.
+Then with $Z=z$:
+$$
+  X = \frac{u' - c_x'}{f_x'} Z, \qquad
+  Y = \frac{v' - c_y'}{f_y'} Z.
+$$
+
+The point of this design is to avoid unstable direct regression of $(X,Y)$.
+
+\section{Per-detection refinement: Hessian solver}
+\yolozu{} includes a Gauss--Newton / Levenberg--Marquardt style refinement utility to iteratively refine
+regression head outputs per detection.
+
+Authoritative reference: \path{docs/hessian_solver.md}.
+
+\subsection{CLI}
+Refine depth (example):
+\begin{lstlisting}[language=bash]
+python tools/refine_predictions_hessian.py \
+  --predictions reports/predictions.json \
+  --dataset data/coco128 \
+  --output reports/predictions_refined.json \
+  --refine-depth
+\end{lstlisting}
+
+Refine depth + rotation (bounded iterations):
+\begin{lstlisting}[language=bash]
+python tools/refine_predictions_hessian.py \
+  --predictions reports/predictions.json \
+  --dataset data/coco128 \
+  --output reports/predictions_refined.json \
+  --refine-depth \
+  --refine-rotation \
+  --max-iterations 10
+\end{lstlisting}
+
+\subsection{How it differs from calibration}
+\begin{itemize}
+  \item Hessian refinement is \textbf{per detection} (local improvements).
+  \item L-BFGS calibration is typically \textbf{dataset-wide} (global scale/intrinsics style parameters).
+\end{itemize}
+
+Use refinement when you have supervision/constraints and you want to improve individual predictions.
+Avoid it for real-time production unless the added latency is justified.
+
+\section{Symmetry: why it matters}
+For symmetric objects, a single canonical rotation label may not be unique.
+Na\"ively training with a standard rotation loss can be ill-posed and can also break template-based verification.
+
+\section{Symmetry metadata (runtime configuration)}
+The preferred approach is deterministic, class-level symmetry metadata.
+The runtime config exists at:
+\begin{itemize}
+  \item \path{configs/runtime/symmetry.json}
+\end{itemize}
+
+The expected shape (from the spec) looks like:
+\begin{lstlisting}[language=json]
+{
+  "class_id_or_name": {
+    "type": "none | Cn | Dn | Cinf | mirror",
+    "n": 4,
+    "axis": [0, 0, 1],
+    "notes": "optional"
+  }
+}
+\end{lstlisting}
+
+Note: in a fresh checkout, \path{configs/runtime/symmetry.json} may be empty (\cmd{\{\}}). Populate it for your class set.
+
+\section{Symmetry-aware loss / metrics (concept)}
+A symmetry-aware rotation distance is commonly expressed as:
+$$
+  L_{rot}^{sym} = \min_{S \in G} d(R_{pred}, R_{gt} \cdot S)
+$$
+where $G$ is the symmetry group for the object.
+
+For context and intended gates (including real-time constraints), see:
+\begin{itemize}
+  \item \path{docs/specs/rt_detr_6dof_geom_mim_spec_en_v0_4.md}
+  \item \path{docs/roadmaps/symmetry_commonsense_realtime.md} (historical notes)
+\end{itemize}
+
+\section{Practical advice}
+\begin{itemize}
+  \item First, make unit/intrinsics consistency boring and deterministic.
+  \item Next, ensure evaluation metrics treat symmetry correctly for relevant classes.
+  \item Keep symmetry/commonsense logic out of the TensorRT graph when possible; run it in postprocess.
+\end{itemize}

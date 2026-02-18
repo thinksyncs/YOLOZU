@@ -1,0 +1,60 @@
+\chapter{Real-time vs Batch Inference (Research and Deployment)}
+
+\section{Two operating modes}
+\begin{description}
+  \item[Batch/offline] Run over a dataset split, export \path{predictions.json}, then evaluate and plot.
+  \item[Real-time/streaming] Optimize end-to-end latency and stability; avoid expensive per-frame extras.
+\end{description}
+
+\section{Backend choices}
+\begin{itemize}
+  \item \textbf{Precomputed predictions}: best for integration; works on macOS; use \path{tools/run_scenarios.py} with \cmd{precomputed} adapter.
+  \item \textbf{Torch}: flexible for research (TTT, ablations), but slower and less deployable.
+  \item \textbf{ONNX Runtime}: CPU-friendly parity reference; useful in CI.
+  \item \textbf{TensorRT}: preferred for real-time throughput on Linux+NVIDIA.
+\end{itemize}
+
+References:
+\begin{itemize}
+  \item \path{docs/real_model_interface.md}
+  \item \path{docs/tensorrt_pipeline.md}
+\end{itemize}
+
+\section{TensorRT pipeline (canonical)}
+The typical export route is PyTorch $\rightarrow$ ONNX $\rightarrow$ TensorRT (engine build), with parity checks.
+See \path{docs/tensorrt_pipeline.md} for the authoritative commands and artifacts.
+
+\section{Real-time constraints and optional features}
+\subsection{TTT in real-time}
+TTT can improve robustness under domain shift but adds latency.
+If you use it in streaming mode, keep it bounded:
+\begin{itemize}
+  \item prefer \cmd{--ttt-preset safe}
+  \item start with \cmd{--ttt-batch-size 1 --ttt-max-batches 1}
+  \item prefer \cmd{--ttt-reset stream} when you accept cross-image state
+\end{itemize}
+
+For controlled comparisons and ablations, use \cmd{--ttt-reset sample} even though it is slower.
+
+\subsection{Per-detection refinement}
+Hessian refinement (depth/rotation/offsets) is usually a \textbf{post-inference research tool}.
+It is not typically enabled in production unless the added cost is explicitly budgeted.
+
+\section{Batch throughput tips}
+\begin{itemize}
+  \item Increase batch size first (until memory limits).
+  \item Keep dataset subsets deterministic for comparisons.
+  \item Record engine metadata (GPU/driver/TensorRT versions) when benchmarking.
+\end{itemize}
+
+\section{Mac development vs GPU execution}
+If you develop on macOS, keep GPU/TensorRT runs on a Linux+NVIDIA box.
+The repo provides a Runpod-oriented path; see \path{deploy/runpod/README.md}.
+
+\section{What to report in papers/notes}
+For real-time or deployment-relevant results, always report:
+\begin{itemize}
+  \item hardware (GPU, driver, CUDA/TensorRT) and engine build settings
+  \item end-to-end latency / FPS and measurement method
+  \item whether TTT/refinement/gates were enabled and their bounds
+\end{itemize}
