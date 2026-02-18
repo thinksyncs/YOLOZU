@@ -9,6 +9,36 @@ The unified CLI supports these methods:
 - `fracal`: class-frequency-aware non-linear score transform.
 - `la`: Logit Adjustment (LA).
 - `norcal`: normalized frequency reweighting (NorCal-style).
+- `temperature`: temperature scaling.
+
+### Temperature scaling
+
+Basic softmax form:
+
+$$
+p(y\mid x)=\mathrm{softmax}(z)_y,
+\quad
+p_T(y\mid x)=\mathrm{softmax}(z/T)_y
+$$
+
+Intuition:
+
+- $T>1$: softer/flatter confidence distribution (typically reduces over-confidence).
+- $T<1$: sharper confidence distribution.
+
+Fitting objective on validation data:
+
+$$
+\min_{T>0}\sum_i -\log p_T(y_i\mid x_i)
+$$
+
+In this repo, `yolozu calibrate --method temperature` applies global $T$ directly; optional `--fit-temperature` performs a lightweight 1D grid search on the validation subset (bbox/pose path) using matched prediction targets.
+
+Detector placement:
+
+- For multi-class softmax classifiers, apply $z/T$ to classification logits.
+- For sigmoid (independent class heads), apply $\sigma(z/T)$ per class.
+- Start with one global $T$; class-wise/bin-wise temperatures are possible later.
 
 ### Logit Adjustment (LA)
 
@@ -71,6 +101,27 @@ yolozu calibrate \
   --stats-in reports/fracal_stats_bbox.json \
   --output reports/predictions_norcal.json \
   --output-report reports/calibration_norcal_report.json
+
+# Temperature scaling
+yolozu calibrate \
+  --method temperature \
+  --temperature 1.5 \
+  --task bbox \
+  --dataset data/coco128 \
+  --predictions reports/predictions_smoke.json \
+  --output reports/predictions_temperature.json \
+  --output-report reports/calibration_temperature_report.json
+
+# Temperature fitting (bbox/pose)
+yolozu calibrate \
+  --method temperature \
+  --fit-temperature \
+  --temperature-grid 0.5,0.75,1.0,1.25,1.5,2.0 \
+  --task bbox \
+  --dataset data/coco128 \
+  --predictions reports/predictions_smoke.json \
+  --output reports/predictions_temperature_fitted.json \
+  --output-report reports/calibration_temperature_fitted_report.json
 ```
 
 The same methods can be compared across `--task bbox|seg|pose`.

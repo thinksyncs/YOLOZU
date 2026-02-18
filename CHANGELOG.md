@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - FRACAL class-frequency stats can now be exported/reused through `--stats-out` and `--stats-in`, enabling stable calibration across runs.
 - Trainer now emits FRACAL stats from training records via `--fracal-stats-out`; with `--run-contract`, default output is `runs/<run-id>/reports/fracal_stats_bbox.json`.
 - Added alternative calibration methods in `yolozu calibrate`: Logit Adjustment (`--method la --tau`) and NorCal (`--method norcal --gamma`) for side-by-side comparison with FRACAL.
+- Added temperature scaling in `yolozu calibrate` (`--method temperature --temperature`, optional `--fit-temperature` with `--temperature-grid`).
 
 ### Tests
 - Added regression coverage for FRACAL stats reuse and instance-segmentation calibration behavior.

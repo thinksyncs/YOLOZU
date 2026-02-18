@@ -7,6 +7,7 @@ from yolozu.long_tail_metrics import (
     fracal_calibrate_predictions,
     la_calibrate_predictions,
     norcal_calibrate_predictions,
+    temperature_calibrate_predictions,
 )
 
 try:
@@ -120,6 +121,35 @@ class TestLongTailMetrics(unittest.TestCase):
         self.assertLess(head_after, head_before)
         self.assertAlmostEqual(tail_after, tail_before, places=12)
         self.assertEqual(report.get("method"), "norcal")
+
+    def test_temperature_scaling_softens_scores_when_t_gt_1(self):
+        records, preds = self._fixture()
+        calibrated, report = temperature_calibrate_predictions(records, preds, temperature=2.0)
+
+        head_before = preds[0]["detections"][0]["score"]
+        head_after = calibrated[0]["detections"][0]["score"]
+        tail_before = preds[0]["detections"][1]["score"]
+        tail_after = calibrated[0]["detections"][1]["score"]
+
+        self.assertLess(head_after, head_before)
+        self.assertGreater(tail_after, tail_before)
+        self.assertEqual(report.get("method"), "temperature")
+        self.assertAlmostEqual(float(report.get("config", {}).get("temperature", 0.0)), 2.0, places=8)
+
+    def test_temperature_fit_path_returns_selected_temperature(self):
+        records, preds = self._fixture()
+        calibrated, report = temperature_calibrate_predictions(
+            records,
+            preds,
+            temperature=1.0,
+            fit_temperature=True,
+            temperature_grid=[0.5, 1.0, 2.0],
+        )
+
+        self.assertTrue(calibrated)
+        fit = report.get("fit") or {}
+        self.assertTrue(bool(fit.get("fitted")))
+        self.assertIn(float(fit.get("selected_temperature")), [0.5, 1.0, 2.0])
 
     def test_fracal_pose_stats_and_keypoints_are_preserved(self):
         records = [

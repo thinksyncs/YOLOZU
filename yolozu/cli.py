@@ -724,11 +724,13 @@ def _cmd_calibrate(args: argparse.Namespace) -> int:
         la_calibrate_predictions,
         norcal_calibrate_instance_segmentation,
         norcal_calibrate_predictions,
+        temperature_calibrate_instance_segmentation,
+        temperature_calibrate_predictions,
     )
     from yolozu.predictions import normalize_predictions_payload, validate_predictions_entries
 
     method = str(getattr(args, "method", "fracal") or "fracal").strip().lower()
-    if method not in ("fracal", "la", "norcal"):
+    if method not in ("fracal", "la", "norcal", "temperature"):
         raise SystemExit(f"unsupported calibration method: {method}")
 
     dataset_root = Path(str(args.dataset)).expanduser()
@@ -824,15 +826,24 @@ def _cmd_calibrate(args: argparse.Namespace) -> int:
                 allow_rgb_masks=bool(getattr(args, "allow_rgb_masks", False)),
             )
         else:
-            calibrated_entries, calibration_report = norcal_calibrate_instance_segmentation(
-                records,
-                entries,
-                gamma=float(args.gamma),
-                min_score=(None if args.min_score is None else float(args.min_score)),
-                max_score=(None if args.max_score is None else float(args.max_score)),
-                class_counts=loaded_counts,
-                allow_rgb_masks=bool(getattr(args, "allow_rgb_masks", False)),
-            )
+            if method == "norcal":
+                calibrated_entries, calibration_report = norcal_calibrate_instance_segmentation(
+                    records,
+                    entries,
+                    gamma=float(args.gamma),
+                    min_score=(None if args.min_score is None else float(args.min_score)),
+                    max_score=(None if args.max_score is None else float(args.max_score)),
+                    class_counts=loaded_counts,
+                    allow_rgb_masks=bool(getattr(args, "allow_rgb_masks", False)),
+                )
+            else:
+                calibrated_entries, calibration_report = temperature_calibrate_instance_segmentation(
+                    records,
+                    entries,
+                    temperature=float(args.temperature),
+                    min_score=(None if args.min_score is None else float(args.min_score)),
+                    max_score=(None if args.max_score is None else float(args.max_score)),
+                )
     else:
         entries, wrapped_meta = normalize_predictions_payload(raw_data)
         validation = validate_predictions_entries(entries, strict=False)
@@ -856,14 +867,39 @@ def _cmd_calibrate(args: argparse.Namespace) -> int:
                 class_counts=loaded_counts,
             )
         else:
-            calibrated_entries, calibration_report = norcal_calibrate_predictions(
-                records,
-                entries,
-                gamma=float(args.gamma),
-                min_score=(None if args.min_score is None else float(args.min_score)),
-                max_score=(None if args.max_score is None else float(args.max_score)),
-                class_counts=loaded_counts,
-            )
+            if method == "norcal":
+                calibrated_entries, calibration_report = norcal_calibrate_predictions(
+                    records,
+                    entries,
+                    gamma=float(args.gamma),
+                    min_score=(None if args.min_score is None else float(args.min_score)),
+                    max_score=(None if args.max_score is None else float(args.max_score)),
+                    class_counts=loaded_counts,
+                )
+            else:
+                temp_grid = None
+                if getattr(args, "temperature_grid", None):
+                    raw = str(args.temperature_grid)
+                    temp_grid = []
+                    for part in raw.split(","):
+                        part = part.strip()
+                        if not part:
+                            continue
+                        try:
+                            temp_grid.append(float(part))
+                        except Exception:
+                            continue
+                calibrated_entries, calibration_report = temperature_calibrate_predictions(
+                    records,
+                    entries,
+                    temperature=float(args.temperature),
+                    fit_temperature=bool(getattr(args, "fit_temperature", False)),
+                    temperature_grid=temp_grid,
+                    fit_iou=float(getattr(args, "fit_iou", 0.5)),
+                    max_detections=int(getattr(args, "fit_max_detections", 100)),
+                    min_score=(None if args.min_score is None else float(args.min_score)),
+                    max_score=(None if args.max_score is None else float(args.max_score)),
+                )
     calibration_report["task"] = task
     calibration_report["stats_source"] = stats_source
 
@@ -1340,7 +1376,7 @@ def main(argv: list[str] | None = None) -> int:
     eval_coco.add_argument("--output", default="reports/coco_eval.json", help="Output report path.")
 
     calibrate = sub.add_parser("calibrate", help="Apply post-hoc FRACAL calibration to bbox or instance-seg predictions JSON.")
-    calibrate.add_argument("--method", choices=("fracal", "la", "norcal"), default="fracal", help="Calibration method (default: fracal).")
+    calibrate.add_argument("--method", choices=("fracal", "la", "norcal", "temperature"), default="fracal", help="Calibration method (default: fracal).")
     calibrate.add_argument("--dataset", required=True, help="YOLO-format dataset root (images/ + labels/).")
     calibrate.add_argument("--split", default=None, help="Dataset split under images/ and labels/ (default: auto).")
     calibrate.add_argument("--task", choices=("auto", "bbox", "seg", "pose"), default="auto", help="Prediction task type (default: auto).")
@@ -1354,6 +1390,11 @@ def main(argv: list[str] | None = None) -> int:
     calibrate.add_argument("--strength", type=float, default=1.0, help="Blend ratio [0,1] between original and FRACAL scores (default: 1.0).")
     calibrate.add_argument("--tau", type=float, default=1.0, help="(method=la) logit adjustment coefficient tau (default: 1.0).")
     calibrate.add_argument("--gamma", type=float, default=1.0, help="(method=norcal) frequency exponent gamma (default: 1.0).")
+    calibrate.add_argument("--temperature", type=float, default=1.0, help="(method=temperature) global temperature T (>0, default: 1.0).")
+    calibrate.add_argument("--fit-temperature", action="store_true", help="(method=temperature, bbox/pose) fit T on validation subset by minimizing binary NLL.")
+    calibrate.add_argument("--temperature-grid", default="0.5,0.75,1.0,1.25,1.5,2.0", help="(method=temperature) candidate T values for --fit-temperature.")
+    calibrate.add_argument("--fit-iou", type=float, default=0.5, help="(method=temperature) IoU threshold for positive matching in T fitting.")
+    calibrate.add_argument("--fit-max-detections", type=int, default=100, help="(method=temperature) max detections/image used when fitting T.")
     calibrate.add_argument("--min-score", type=float, default=None, help="Optional post-clamp minimum score.")
     calibrate.add_argument("--max-score", type=float, default=None, help="Optional post-clamp maximum score.")
     calibrate.add_argument("--allow-rgb-masks", action="store_true", help="(task=seg) Treat RGB masks as valid by using channel-0 as foreground.")

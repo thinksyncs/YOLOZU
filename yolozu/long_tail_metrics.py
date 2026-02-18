@@ -219,6 +219,91 @@ def _norcal_apply_score(
     return _clip01(score_new)
 
 
+def _temperature_apply_score(
+    *,
+    score_orig: float,
+    temperature: float,
+    min_score: float | None,
+    max_score: float | None,
+) -> float:
+    if temperature <= 0.0:
+        raise ValueError("temperature must be > 0")
+    z = _score_to_logit(score_orig)
+    score_new = _logit_to_score(z / float(temperature))
+    if min_score is not None:
+        score_new = max(float(min_score), score_new)
+    if max_score is not None:
+        score_new = min(float(max_score), score_new)
+    return _clip01(score_new)
+
+
+def _temperature_binary_nll(score_targets: list[tuple[float, int]], *, temperature: float) -> float:
+    if temperature <= 0.0:
+        return float("inf")
+    eps = 1e-9
+    loss = 0.0
+    for score, target in score_targets:
+        p = _temperature_apply_score(score_orig=float(score), temperature=float(temperature), min_score=None, max_score=None)
+        p = min(1.0 - eps, max(eps, p))
+        y = 1 if int(target) > 0 else 0
+        loss += -(float(y) * math.log(p) + (1.0 - float(y)) * math.log(1.0 - p))
+    return float(loss / max(1, len(score_targets)))
+
+
+def _parse_temperature_grid(temperature_grid: Iterable[float] | None) -> list[float]:
+    out: list[float] = []
+    for value in list(temperature_grid or []):
+        try:
+            t = float(value)
+        except Exception:
+            continue
+        if t > 0.0:
+            out.append(t)
+    return sorted(set(out))
+
+
+def fit_temperature_from_score_targets(
+    score_targets: list[tuple[float, int]],
+    *,
+    default_temperature: float = 1.0,
+    temperature_grid: Iterable[float] | None = None,
+) -> tuple[float, dict[str, Any]]:
+    default_t = float(default_temperature)
+    if default_t <= 0.0:
+        raise ValueError("default_temperature must be > 0")
+
+    grid = _parse_temperature_grid(temperature_grid)
+    if not grid:
+        grid = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0]
+
+    if not score_targets:
+        return default_t, {
+            "selected_temperature": float(default_t),
+            "samples": 0,
+            "grid": [{"temperature": float(t), "nll": None} for t in grid],
+            "fitted": False,
+            "reason": "no_score_targets",
+        }
+
+    best_t = default_t
+    best_nll = _temperature_binary_nll(score_targets, temperature=best_t)
+    rows: list[dict[str, Any]] = []
+    for t in grid:
+        nll = _temperature_binary_nll(score_targets, temperature=float(t))
+        rows.append({"temperature": float(t), "nll": float(nll)})
+        if nll < best_nll:
+            best_nll = nll
+            best_t = float(t)
+
+    return best_t, {
+        "selected_temperature": float(best_t),
+        "samples": int(len(score_targets)),
+        "grid": rows,
+        "fitted": True,
+        "objective": "binary_nll",
+    }
+
+
 def build_frequency_bins(
     class_counts: dict[int, int],
     *,
@@ -622,6 +707,134 @@ def norcal_calibrate_instance_segmentation(
             "instances_changed": int(changed_instances),
         },
         "warnings": list(warnings),
+    }
+    return calibrated, report
+
+
+def temperature_calibrate_predictions(
+    records: list[dict[str, Any]],
+    predictions_entries: list[dict[str, Any]],
+    *,
+    temperature: float = 1.0,
+    fit_temperature: bool = False,
+    temperature_grid: Iterable[float] | None = None,
+    fit_iou: float = 0.5,
+    max_detections: int = 100,
+    min_score: float | None = None,
+    max_score: float | None = None,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    if float(temperature) <= 0.0:
+        raise ValueError("temperature must be > 0")
+
+    selected_temperature = float(temperature)
+    fit_report: dict[str, Any] | None = None
+    if bool(fit_temperature):
+        gt_by_image = _group_gt(records)
+        pred_by_image = _group_preds(predictions_entries)
+        score_targets = _collect_confidence_targets(
+            gt_by_image,
+            pred_by_image,
+            iou_thresh=float(fit_iou),
+            max_detections=int(max_detections),
+        )
+        selected_temperature, fit_report = fit_temperature_from_score_targets(
+            score_targets,
+            default_temperature=float(temperature),
+            temperature_grid=temperature_grid,
+        )
+
+    calibrated: list[dict[str, Any]] = []
+    total_dets = 0
+    changed_dets = 0
+    for entry in predictions_entries:
+        dets_out: list[dict[str, Any]] = []
+        for det in entry.get("detections", []) or []:
+            det_out = dict(det)
+            total_dets += 1
+            score_orig = _clip01(float(det.get("score", 0.0)))
+            score_new = _temperature_apply_score(
+                score_orig=score_orig,
+                temperature=float(selected_temperature),
+                min_score=min_score,
+                max_score=max_score,
+            )
+            if abs(score_new - score_orig) > 1e-12:
+                changed_dets += 1
+            det_out["score"] = float(score_new)
+            dets_out.append(det_out)
+        calibrated.append({"image": entry.get("image"), "detections": dets_out})
+
+    report = {
+        "method": "temperature",
+        "config": {
+            "temperature": float(selected_temperature),
+            "fit_temperature": bool(fit_temperature),
+            "fit_iou": float(fit_iou),
+            "max_detections": int(max_detections),
+            "min_score": (None if min_score is None else float(min_score)),
+            "max_score": (None if max_score is None else float(max_score)),
+        },
+        "summary": {
+            "detections_total": int(total_dets),
+            "detections_changed": int(changed_dets),
+        },
+        "fit": fit_report,
+    }
+    return calibrated, report
+
+
+def temperature_calibrate_instance_segmentation(
+    _records: list[dict[str, Any]],
+    predictions_entries: list[dict[str, Any]],
+    *,
+    temperature: float = 1.0,
+    min_score: float | None = None,
+    max_score: float | None = None,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    if float(temperature) <= 0.0:
+        raise ValueError("temperature must be > 0")
+
+    calibrated: list[dict[str, Any]] = []
+    total_instances = 0
+    changed_instances = 0
+    for entry in predictions_entries:
+        if not isinstance(entry, dict):
+            continue
+        out_entry = dict(entry)
+        insts_out: list[dict[str, Any]] = []
+        for inst in entry.get("instances", []) or []:
+            if not isinstance(inst, dict):
+                continue
+            inst_out = dict(inst)
+            total_instances += 1
+            score_orig = _clip01(float(inst.get("score", 1.0)))
+            score_new = _temperature_apply_score(
+                score_orig=score_orig,
+                temperature=float(temperature),
+                min_score=min_score,
+                max_score=max_score,
+            )
+            if abs(score_new - score_orig) > 1e-12:
+                changed_instances += 1
+            inst_out["score"] = float(score_new)
+            insts_out.append(inst_out)
+        out_entry["instances"] = insts_out
+        calibrated.append(out_entry)
+
+    report = {
+        "method": "temperature",
+        "task": "seg",
+        "config": {
+            "temperature": float(temperature),
+            "fit_temperature": False,
+            "min_score": (None if min_score is None else float(min_score)),
+            "max_score": (None if max_score is None else float(max_score)),
+        },
+        "summary": {
+            "instances_total": int(total_instances),
+            "instances_changed": int(changed_instances),
+        },
+        "warnings": ["fit_temperature is currently supported for bbox/pose path only"],
     }
     return calibrated, report
 
