@@ -50,6 +50,20 @@ class TestTrainMinimalRunDirDefaults(unittest.TestCase):
             args, _ = mod.apply_run_dir_defaults(args)
             self.assertEqual(Path(args.onnx_out), onnx_out)
 
+    def test_run_contract_sets_default_fracal_stats_out(self):
+        import tempfile
+
+        mod = _load_train_minimal_module()
+        with tempfile.TemporaryDirectory() as td:
+            cfg_path = Path(td) / "dummy.yaml"
+            cfg_path.write_text("{}\n", encoding="utf-8")
+            args = mod.parse_args(["--run-contract", "--run-id", "unit-test-123", "--config", str(cfg_path)])
+            args, contract = mod.apply_run_contract_defaults(args)
+            self.assertIsNotNone(contract)
+            assert contract is not None
+            expected = contract["reports_dir"] / "fracal_stats_bbox.json"
+            self.assertEqual(Path(args.fracal_stats_out), expected)
+
 
 if __name__ == "__main__":
     unittest.main()

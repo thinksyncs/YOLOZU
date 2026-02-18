@@ -33,6 +33,7 @@ from rtdetr_pose.sched_factory import EMA, build_scheduler
 
 from yolozu.metrics_report import append_jsonl, build_report, write_csv_row, write_json
 from yolozu.jitter import default_jitter_profile, sample_intrinsics_jitter, sample_extrinsics_jitter
+from yolozu.long_tail_metrics import build_fracal_stats
 from yolozu.run_record import build_run_record
 from yolozu.sdft import SdftConfig, compute_sdft_loss
 from yolozu.simple_map import evaluate_map
@@ -983,6 +984,22 @@ def build_parser() -> argparse.ArgumentParser:
         help="If set, write standard artifacts into this folder (run_record.json, metrics.jsonl/json/csv, checkpoint*.pt, model.onnx).",
     )
     parser.add_argument(
+        "--fracal-stats-out",
+        default=None,
+        help="Optional JSON path to write FRACAL class-frequency stats computed from training records.",
+    )
+    parser.add_argument(
+        "--fracal-stats-task",
+        choices=("bbox", "seg"),
+        default="bbox",
+        help="Task for FRACAL stats generation (default: bbox).",
+    )
+    parser.add_argument(
+        "--fracal-allow-rgb-masks",
+        action="store_true",
+        help="(fracal-stats-task=seg) Treat RGB masks as valid by using channel-0 as foreground.",
+    )
+    parser.add_argument(
         "--export-onnx",
         action=argparse.BooleanOptionalAction,
         default=True,
@@ -1063,6 +1080,10 @@ def apply_run_contract_defaults(args: argparse.Namespace) -> tuple[argparse.Name
     args.val_metrics_jsonl = _default_path(getattr(args, "val_metrics_jsonl", None), reports_dir / "val_metrics.jsonl")
     args.config_resolved_out = _default_path(getattr(args, "config_resolved_out", None), reports_dir / "config_resolved.yaml")
     args.run_meta_out = _default_path(getattr(args, "run_meta_out", None), reports_dir / "run_meta.json")
+    args.fracal_stats_out = _default_path(
+        getattr(args, "fracal_stats_out", None),
+        reports_dir / f"fracal_stats_{str(getattr(args, 'fracal_stats_task', 'bbox') or 'bbox').strip().lower()}.json",
+    )
     args.parity_json_out = _default_path(getattr(args, "parity_json_out", None), reports_dir / "onnx_parity.json")
     if getattr(args, "parity_policy", None) is None:
         args.parity_policy = "fail"
@@ -3398,6 +3419,28 @@ def main(argv: list[str] | None = None) -> int:
         print(
             "dataset_stats "
             + " ".join(f"{key}={value}" for key, value in sorted(stats.items()))
+        )
+
+    if is_main and getattr(args, "fracal_stats_out", None):
+        stats_path = Path(str(args.fracal_stats_out))
+        stats_path.parent.mkdir(parents=True, exist_ok=True)
+        fracal_stats = build_fracal_stats(
+            records,
+            task=str(getattr(args, "fracal_stats_task", "bbox") or "bbox"),
+            allow_rgb_masks=bool(getattr(args, "fracal_allow_rgb_masks", False)),
+        )
+        fracal_stats["source"] = {
+            "kind": "train_records",
+            "dataset_root": str(dataset_root),
+            "split": (None if args.records_json else str(getattr(args, "split", "") or "")),
+            "records_json": (str(args.records_json) if getattr(args, "records_json", None) else None),
+        }
+        stats_path.write_text(json.dumps(fracal_stats, indent=2, sort_keys=True), encoding="utf-8")
+        print(
+            "fracal_stats "
+            f"task={str(fracal_stats.get('task', 'bbox'))} classes={int(fracal_stats.get('summary', {}).get('classes', 0))} "
+            f"instances_total={int(fracal_stats.get('summary', {}).get('instances_total', 0))} "
+            f"out={stats_path}"
         )
 
     val_split = str(args.val_split) if args.val_split else None

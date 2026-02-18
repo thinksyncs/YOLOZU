@@ -712,7 +712,15 @@ def _cmd_calibrate(args: argparse.Namespace) -> int:
 
     from yolozu.dataset import build_manifest
     from yolozu.export import write_predictions_json
-    from yolozu.long_tail_metrics import fracal_calibrate_predictions
+    from yolozu.instance_segmentation_predictions import (
+        normalize_instance_segmentation_predictions_payload,
+        validate_instance_segmentation_predictions_entries,
+    )
+    from yolozu.long_tail_metrics import (
+        build_fracal_stats,
+        fracal_calibrate_instance_segmentation,
+        fracal_calibrate_predictions,
+    )
     from yolozu.predictions import normalize_predictions_payload, validate_predictions_entries
 
     method = str(getattr(args, "method", "fracal") or "fracal").strip().lower()
@@ -733,17 +741,76 @@ def _cmd_calibrate(args: argparse.Namespace) -> int:
         predictions_path = Path.cwd() / predictions_path
 
     raw_data = json.loads(predictions_path.read_text(encoding="utf-8"))
-    entries, wrapped_meta = normalize_predictions_payload(raw_data)
-    validation = validate_predictions_entries(entries, strict=False)
 
-    calibrated_entries, calibration_report = fracal_calibrate_predictions(
-        records,
-        entries,
-        alpha=float(args.alpha),
-        strength=float(args.strength),
-        min_score=(None if args.min_score is None else float(args.min_score)),
-        max_score=(None if args.max_score is None else float(args.max_score)),
-    )
+    task = str(getattr(args, "task", "auto") or "auto").strip().lower()
+    if task not in ("auto", "bbox", "seg"):
+        raise SystemExit("--task must be one of: auto, bbox, seg")
+
+    if task == "auto":
+        if isinstance(raw_data, list) and raw_data and isinstance(raw_data[0], dict) and "instances" in raw_data[0]:
+            task = "seg"
+        elif isinstance(raw_data, dict) and isinstance(raw_data.get("predictions"), list):
+            preds = raw_data.get("predictions") or []
+            first = preds[0] if preds else {}
+            if isinstance(first, dict) and "instances" in first:
+                task = "seg"
+            else:
+                task = "bbox"
+        else:
+            task = "bbox"
+
+    loaded_counts: dict[int, int] | None = None
+    stats_source = "computed"
+    stats_input_path = getattr(args, "stats_in", None)
+    if stats_input_path:
+        stats_path = Path(str(stats_input_path)).expanduser()
+        if not stats_path.is_absolute():
+            stats_path = Path.cwd() / stats_path
+        if not stats_path.exists():
+            raise SystemExit(f"stats file not found: {stats_path}")
+        stats_doc = json.loads(stats_path.read_text(encoding="utf-8"))
+        raw_counts = stats_doc.get("class_counts") if isinstance(stats_doc, dict) else None
+        if not isinstance(raw_counts, dict):
+            raise SystemExit("invalid stats file: expected object with class_counts")
+        loaded_counts = {}
+        for key, value in raw_counts.items():
+            try:
+                loaded_counts[int(key)] = int(value)
+            except Exception:
+                continue
+        stats_source = str(stats_path)
+
+    computed_stats = build_fracal_stats(records, task=task, allow_rgb_masks=bool(getattr(args, "allow_rgb_masks", False)))
+    if loaded_counts is None:
+        loaded_counts = {int(k): int(v) for k, v in (computed_stats.get("class_counts") or {}).items()}
+
+    if task == "seg":
+        entries, wrapped_meta = normalize_instance_segmentation_predictions_payload(raw_data)
+        validation = validate_instance_segmentation_predictions_entries(entries, where="predictions")
+        calibrated_entries, calibration_report = fracal_calibrate_instance_segmentation(
+            records,
+            entries,
+            alpha=float(args.alpha),
+            strength=float(args.strength),
+            min_score=(None if args.min_score is None else float(args.min_score)),
+            max_score=(None if args.max_score is None else float(args.max_score)),
+            class_counts=loaded_counts,
+            allow_rgb_masks=bool(getattr(args, "allow_rgb_masks", False)),
+        )
+    else:
+        entries, wrapped_meta = normalize_predictions_payload(raw_data)
+        validation = validate_predictions_entries(entries, strict=False)
+        calibrated_entries, calibration_report = fracal_calibrate_predictions(
+            records,
+            entries,
+            alpha=float(args.alpha),
+            strength=float(args.strength),
+            min_score=(None if args.min_score is None else float(args.min_score)),
+            max_score=(None if args.max_score is None else float(args.max_score)),
+            class_counts=loaded_counts,
+        )
+    calibration_report["task"] = task
+    calibration_report["stats_source"] = stats_source
 
     out_meta: dict[str, Any] = dict(wrapped_meta or {})
     out_meta["posthoc_calibration"] = {
@@ -758,7 +825,29 @@ def _cmd_calibrate(args: argparse.Namespace) -> int:
         "meta": out_meta,
     }
 
-    out_path = write_predictions_json(output=str(args.output), payload=payload, force=bool(args.force))
+    if task == "seg":
+        out_path = Path(str(args.output)).expanduser()
+        if not out_path.is_absolute():
+            out_path = Path.cwd() / out_path
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        if out_path.exists() and not bool(args.force):
+            raise SystemExit(f"output exists: {out_path} (use --force to overwrite)")
+        out_path.write_text(json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
+    else:
+        out_path = write_predictions_json(output=str(args.output), payload=payload, force=bool(args.force))
+
+    stats_out = getattr(args, "stats_out", None)
+    if stats_out:
+        stats_payload = dict(computed_stats)
+        stats_payload["task"] = task
+        stats_payload["used_class_counts"] = {str(k): int(v) for k, v in sorted((loaded_counts or {}).items())}
+        stats_out_path = Path(str(stats_out)).expanduser()
+        if not stats_out_path.is_absolute():
+            stats_out_path = Path.cwd() / stats_out_path
+        stats_out_path.parent.mkdir(parents=True, exist_ok=True)
+        if stats_out_path.exists() and not bool(args.force):
+            raise SystemExit(f"output exists: {stats_out_path} (use --force to overwrite)")
+        stats_out_path.write_text(json.dumps(stats_payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
 
     report_payload = {
         "report_schema_version": 1,
@@ -768,6 +857,8 @@ def _cmd_calibrate(args: argparse.Namespace) -> int:
         "predictions": str(predictions_path),
         "output": str(out_path),
         "method": "fracal",
+        "task": task,
+        "stats_source": stats_source,
         "warnings": list(validation.warnings),
         "calibration": calibration_report,
     }
@@ -1193,18 +1284,22 @@ def main(argv: list[str] | None = None) -> int:
     eval_coco.add_argument("--max-images", type=int, default=None, help="Optional cap for number of images.")
     eval_coco.add_argument("--output", default="reports/coco_eval.json", help="Output report path.")
 
-    calibrate = sub.add_parser("calibrate", help="Apply post-hoc detection calibration (FRACAL) to predictions JSON.")
+    calibrate = sub.add_parser("calibrate", help="Apply post-hoc FRACAL calibration to bbox or instance-seg predictions JSON.")
     calibrate.add_argument("--method", choices=("fracal",), default="fracal", help="Calibration method (default: fracal).")
     calibrate.add_argument("--dataset", required=True, help="YOLO-format dataset root (images/ + labels/).")
     calibrate.add_argument("--split", default=None, help="Dataset split under images/ and labels/ (default: auto).")
+    calibrate.add_argument("--task", choices=("auto", "bbox", "seg"), default="auto", help="Prediction task type (default: auto).")
     calibrate.add_argument("--predictions", required=True, help="Input predictions JSON path.")
     calibrate.add_argument("--output", default="reports/predictions_calibrated.json", help="Output calibrated predictions JSON path.")
     calibrate.add_argument("--output-report", default="reports/calibration_fracal_report.json", help="Output calibration report JSON path.")
+    calibrate.add_argument("--stats-in", default=None, help="Optional precomputed FRACAL stats JSON path (class_counts).")
+    calibrate.add_argument("--stats-out", default=None, help="Optional output path to write computed FRACAL stats JSON.")
     calibrate.add_argument("--max-images", type=int, default=None, help="Optional cap for calibration/eval subset size.")
     calibrate.add_argument("--alpha", type=float, default=0.5, help="FRACAL class-frequency exponent (default: 0.5).")
     calibrate.add_argument("--strength", type=float, default=1.0, help="Blend ratio [0,1] between original and FRACAL scores (default: 1.0).")
     calibrate.add_argument("--min-score", type=float, default=None, help="Optional post-clamp minimum score.")
     calibrate.add_argument("--max-score", type=float, default=None, help="Optional post-clamp maximum score.")
+    calibrate.add_argument("--allow-rgb-masks", action="store_true", help="(task=seg) Treat RGB masks as valid by using channel-0 as foreground.")
     calibrate.add_argument("--force", action="store_true", help="Overwrite outputs if they exist.")
 
     eval_lt = sub.add_parser("eval-long-tail", help="Evaluate long-tail detection metrics in one standardized report.")

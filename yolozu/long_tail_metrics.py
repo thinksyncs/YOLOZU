@@ -35,6 +35,118 @@ def class_frequency_counts(records: list[dict[str, Any]]) -> dict[int, int]:
     return counts
 
 
+def class_frequency_counts_instance_segmentation(
+    records: list[dict[str, Any]],
+    *,
+    allow_rgb_masks: bool = False,
+) -> tuple[dict[int, int], list[str]]:
+    from .instance_segmentation_eval import extract_gt_instances_from_record
+
+    counts: dict[int, int] = {}
+    warnings: list[str] = []
+    for record in records:
+        instances, wrn = extract_gt_instances_from_record(record, allow_rgb_masks=allow_rgb_masks)
+        if wrn:
+            warnings.extend([str(w) for w in wrn])
+        for instance in instances:
+            try:
+                class_id = int(instance.get("class_id", 0))
+            except Exception:
+                continue
+            counts[class_id] = int(counts.get(class_id, 0) + 1)
+    return counts, warnings
+
+
+def build_fracal_stats(
+    records: list[dict[str, Any]],
+    *,
+    task: str = "bbox",
+    allow_rgb_masks: bool = False,
+) -> dict[str, Any]:
+    task_norm = str(task or "bbox").strip().lower()
+    warnings: list[str] = []
+    if task_norm == "bbox":
+        counts = class_frequency_counts(records)
+    elif task_norm == "seg":
+        counts, warnings = class_frequency_counts_instance_segmentation(records, allow_rgb_masks=allow_rgb_masks)
+    else:
+        raise ValueError("task must be one of: bbox, seg")
+
+    return {
+        "schema_version": 1,
+        "method": "fracal",
+        "task": task_norm,
+        "class_counts": {str(k): int(v) for k, v in sorted(counts.items())},
+        "summary": {
+            "records_scanned": int(len(records)),
+            "classes": int(len(counts)),
+            "instances_total": int(sum(int(v) for v in counts.values())),
+        },
+        "warnings": list(warnings),
+    }
+
+
+def _coerce_class_counts(class_counts: dict[Any, Any] | None) -> dict[int, int]:
+    if not isinstance(class_counts, dict):
+        return {}
+    out: dict[int, int] = {}
+    for key, value in class_counts.items():
+        try:
+            class_id = int(key)
+            count = int(value)
+        except Exception:
+            continue
+        if count <= 0:
+            continue
+        out[class_id] = count
+    return out
+
+
+def _build_fracal_class_weights(class_counts: dict[int, int], *, alpha: float) -> dict[int, float]:
+    if alpha < 0:
+        raise ValueError("alpha must be >= 0")
+    counts = {int(k): int(v) for k, v in class_counts.items() if int(v) > 0}
+    if not counts:
+        return {}
+
+    max_count = max([int(v) for v in counts.values()] + [1])
+    eps = 1e-9
+    raw_weights: dict[int, float] = {}
+    for class_id, count in counts.items():
+        ratio = (float(max_count) + eps) / (float(count) + eps)
+        raw_weights[int(class_id)] = float(math.pow(ratio, float(alpha)))
+
+    geo_mean = 1.0
+    if raw_weights:
+        logs = [math.log(max(eps, float(v))) for v in raw_weights.values()]
+        geo_mean = math.exp(sum(logs) / float(len(logs)))
+
+    class_weights: dict[int, float] = {}
+    for class_id, raw in raw_weights.items():
+        class_weights[int(class_id)] = float(raw / max(eps, geo_mean))
+    return class_weights
+
+
+def _fracal_apply_score(
+    *,
+    score_orig: float,
+    class_id: int,
+    class_weights: dict[int, float],
+    strength: float,
+    min_score: float | None,
+    max_score: float | None,
+) -> float:
+    score_orig = _clip01(float(score_orig))
+    weight = float(class_weights.get(int(class_id), 1.0))
+    score_fractal = _fractal_score_transform(score_orig, weight)
+    score_new = (1.0 - float(strength)) * score_orig + float(strength) * score_fractal
+    if min_score is not None:
+        score_new = max(float(min_score), score_new)
+    if max_score is not None:
+        score_new = min(float(max_score), score_new)
+    return _clip01(score_new)
+
+
 def build_frequency_bins(
     class_counts: dict[int, int],
     *,
@@ -69,31 +181,13 @@ def fracal_calibrate_predictions(
     strength: float = 1.0,
     min_score: float | None = None,
     max_score: float | None = None,
+    class_counts: dict[int, int] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    if alpha < 0:
-        raise ValueError("alpha must be >= 0")
     if strength < 0 or strength > 1:
         raise ValueError("strength must be in [0, 1]")
 
-    counts = class_frequency_counts(records)
-    if not counts:
-        counts = {}
-
-    max_count = max([int(v) for v in counts.values()] + [1])
-    eps = 1e-9
-    raw_weights: dict[int, float] = {}
-    for class_id, count in counts.items():
-        ratio = (float(max_count) + eps) / (float(count) + eps)
-        raw_weights[int(class_id)] = float(math.pow(ratio, float(alpha)))
-
-    geo_mean = 1.0
-    if raw_weights:
-        logs = [math.log(max(eps, float(v))) for v in raw_weights.values()]
-        geo_mean = math.exp(sum(logs) / float(len(logs)))
-
-    class_weights: dict[int, float] = {}
-    for class_id, raw in raw_weights.items():
-        class_weights[int(class_id)] = float(raw / max(eps, geo_mean))
+    counts = _coerce_class_counts(class_counts) if class_counts is not None else class_frequency_counts(records)
+    class_weights = _build_fracal_class_weights(counts, alpha=float(alpha))
 
     calibrated: list[dict[str, Any]] = []
     total_dets = 0
@@ -103,16 +197,16 @@ def fracal_calibrate_predictions(
         for det in entry.get("detections", []) or []:
             det_out = dict(det)
             total_dets += 1
-            score_orig = _clip01(float(det.get("score", 0.0)))
             class_id = int(det.get("class_id", -1))
-            weight = float(class_weights.get(class_id, 1.0))
-            score_fractal = _fractal_score_transform(score_orig, weight)
-            score_new = (1.0 - float(strength)) * score_orig + float(strength) * score_fractal
-            if min_score is not None:
-                score_new = max(float(min_score), score_new)
-            if max_score is not None:
-                score_new = min(float(max_score), score_new)
-            score_new = _clip01(score_new)
+            score_orig = _clip01(float(det.get("score", 0.0)))
+            score_new = _fracal_apply_score(
+                score_orig=score_orig,
+                class_id=class_id,
+                class_weights=class_weights,
+                strength=float(strength),
+                min_score=min_score,
+                max_score=max_score,
+            )
             if abs(score_new - score_orig) > 1e-12:
                 changed_dets += 1
             det_out["score"] = float(score_new)
@@ -133,6 +227,79 @@ def fracal_calibrate_predictions(
             "detections_total": int(total_dets),
             "detections_changed": int(changed_dets),
         },
+    }
+    return calibrated, report
+
+
+def fracal_calibrate_instance_segmentation(
+    records: list[dict[str, Any]],
+    predictions_entries: list[dict[str, Any]],
+    *,
+    alpha: float = 0.5,
+    strength: float = 1.0,
+    min_score: float | None = None,
+    max_score: float | None = None,
+    class_counts: dict[int, int] | None = None,
+    allow_rgb_masks: bool = False,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    if strength < 0 or strength > 1:
+        raise ValueError("strength must be in [0, 1]")
+
+    warnings: list[str] = []
+    if class_counts is not None:
+        counts = _coerce_class_counts(class_counts)
+    else:
+        counts, warnings = class_frequency_counts_instance_segmentation(records, allow_rgb_masks=allow_rgb_masks)
+    class_weights = _build_fracal_class_weights(counts, alpha=float(alpha))
+
+    calibrated: list[dict[str, Any]] = []
+    total_instances = 0
+    changed_instances = 0
+
+    for entry in predictions_entries:
+        if not isinstance(entry, dict):
+            continue
+        out_entry = dict(entry)
+        insts_out: list[dict[str, Any]] = []
+        for inst in entry.get("instances", []) or []:
+            if not isinstance(inst, dict):
+                continue
+            inst_out = dict(inst)
+            total_instances += 1
+            class_id = int(inst.get("class_id", -1))
+            score_orig = _clip01(float(inst.get("score", 1.0)))
+            score_new = _fracal_apply_score(
+                score_orig=score_orig,
+                class_id=class_id,
+                class_weights=class_weights,
+                strength=float(strength),
+                min_score=min_score,
+                max_score=max_score,
+            )
+            if abs(score_new - score_orig) > 1e-12:
+                changed_instances += 1
+            inst_out["score"] = float(score_new)
+            insts_out.append(inst_out)
+        out_entry["instances"] = insts_out
+        calibrated.append(out_entry)
+
+    report = {
+        "method": "fracal",
+        "task": "seg",
+        "config": {
+            "alpha": float(alpha),
+            "strength": float(strength),
+            "min_score": (None if min_score is None else float(min_score)),
+            "max_score": (None if max_score is None else float(max_score)),
+            "allow_rgb_masks": bool(allow_rgb_masks),
+        },
+        "class_counts": {str(k): int(v) for k, v in sorted(counts.items())},
+        "class_weights": {str(k): float(v) for k, v in sorted(class_weights.items())},
+        "summary": {
+            "instances_total": int(total_instances),
+            "instances_changed": int(changed_instances),
+        },
+        "warnings": list(warnings),
     }
     return calibrated, report
 

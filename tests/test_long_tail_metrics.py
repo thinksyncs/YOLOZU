@@ -1,6 +1,19 @@
 import unittest
 
-from yolozu.long_tail_metrics import evaluate_long_tail_detection, fracal_calibrate_predictions
+from yolozu.long_tail_metrics import (
+    build_fracal_stats,
+    evaluate_long_tail_detection,
+    fracal_calibrate_instance_segmentation,
+    fracal_calibrate_predictions,
+)
+
+try:
+    import numpy as _np  # noqa: F401
+    from PIL import Image as _PILImage  # noqa: F401
+
+    _HAS_SEG_DEPS = True
+except Exception:
+    _HAS_SEG_DEPS = False
 
 
 def _mk_label(class_id: int, cx: float) -> dict:
@@ -64,6 +77,66 @@ class TestLongTailMetrics(unittest.TestCase):
         calib = report["metrics"]["calibration"]
         self.assertIn("ece", calib)
         self.assertIn("confidence_bias", calib)
+
+    def test_fracal_uses_precomputed_class_counts_for_bbox(self):
+        records, preds = self._fixture()
+        counts = {"0": 100, "1": 1, "2": 1}
+        calibrated, report = fracal_calibrate_predictions(records, preds, alpha=1.0, strength=1.0, class_counts=counts)
+
+        head_before = preds[0]["detections"][0]["score"]
+        head_after = calibrated[0]["detections"][0]["score"]
+        tail_before = preds[0]["detections"][1]["score"]
+        tail_after = calibrated[0]["detections"][1]["score"]
+
+        self.assertLess(head_after, head_before)
+        self.assertGreater(tail_after, tail_before)
+        self.assertEqual(report["class_counts"], {"0": 100, "1": 1, "2": 1})
+
+    @unittest.skipUnless(_HAS_SEG_DEPS, "instance-seg calibration requires numpy and Pillow")
+    def test_build_fracal_stats_for_seg_and_calibrate_instances(self):
+        records = [
+            {
+                "image": "img1.png",
+                "mask": [
+                    [[1, 1, 0], [1, 0, 0], [0, 0, 0]],
+                ],
+                "mask_classes": [0],
+            },
+            {
+                "image": "img2.png",
+                "mask": [
+                    [[1, 1, 1], [0, 0, 0], [0, 0, 0]],
+                ],
+                "mask_classes": [1],
+            },
+        ]
+        preds = [
+            {
+                "image": "img1.png",
+                "instances": [
+                    {"class_id": 0, "score": 0.9, "mask": [[1, 1, 0], [1, 0, 0], [0, 0, 0]]},
+                    {"class_id": 1, "score": 0.4, "mask": [[1, 1, 1], [0, 0, 0], [0, 0, 0]]},
+                ],
+            }
+        ]
+
+        stats = build_fracal_stats(records, task="seg")
+        self.assertEqual(stats.get("task"), "seg")
+        self.assertEqual(stats.get("class_counts"), {"0": 1, "1": 1})
+
+        calibrated, report = fracal_calibrate_instance_segmentation(
+            records,
+            preds,
+            alpha=0.6,
+            strength=1.0,
+            class_counts={"0": 10, "1": 1},
+        )
+        self.assertEqual(report.get("method"), "fracal")
+        self.assertEqual(report.get("class_counts"), {"0": 10, "1": 1})
+        self.assertIn("instances", calibrated[0])
+        self.assertEqual(len(calibrated[0]["instances"]), 2)
+        self.assertLess(calibrated[0]["instances"][0]["score"], preds[0]["instances"][0]["score"])
+        self.assertGreater(calibrated[0]["instances"][1]["score"], preds[0]["instances"][1]["score"])
 
 
 if __name__ == "__main__":
