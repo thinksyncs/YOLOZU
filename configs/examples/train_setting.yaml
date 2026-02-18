@@ -10,6 +10,60 @@ batch_size: 2
 max_steps: 30
 use_matcher: true
 image_size: 64
+
+# Solver / optimizer
+optimizer: adamw
+lr: 1.0e-4
+weight_decay: 0.01
+momentum: 0.9
+nesterov: false
+
+# Param groups (optional)
+use_param_groups: false
+backbone_lr_mult: 1.0
+head_lr_mult: 1.0
+backbone_wd_mult: 1.0
+head_wd_mult: 1.0
+wd_exclude_bias: true
+wd_exclude_norm: true
+
+# LR scheduler
+scheduler: none # one of: none, cosine, onecycle, multistep
+min_lr: 0.0
+scheduler_milestones: ""
+scheduler_gamma: 0.1
+lr_warmup_steps: 0
+lr_warmup_init: 0.0
+
+# LoRA / QLoRA (disabled by default)
+lora_r: 0
+lora_alpha: null
+lora_dropout: 0.0
+lora_target: head # one of: head, all_linear, all_conv1x1, all_linear_conv1x1
+lora_freeze_base: true
+lora_train_bias: none # one of: none, all
+torchao_quant: none # one of: none, int8wo, int4wo
+torchao_required: false
+qlora: false
+
+# Additional fine-grained defaults
+gradient_accumulation_steps: 1
+clip_grad_norm: 0.0
+use_ema: false
+ema_decay: 0.999
+ema_eval: false
+amp: none # one of: none, fp16, bf16
+task_aligner: none # one of: none, uncertainty
+
+# Matcher cost gates / staged training
+cost_z: 0.0
+cost_rot: 0.0
+cost_t: 0.0
+cost_z_start_step: 0
+cost_rot_start_step: 0
+cost_t_start_step: 0
+stage_off_steps: 0
+stage_k_steps: 0
 # Lightweight augmentation (optional; effective when real_images: true)
 # multiscale: true
 # scale_min: 0.8
@@ -23,7 +77,6 @@ image_size: 64
 # blur_prob: 0.0
 metrics_jsonl: reports/train_metrics.jsonl
 metrics_csv: reports/train_metrics.csv
-tensorboard_logdir: reports/tb
 export_onnx: true
 onnx_out: reports/rtdetr_pose.onnx
 # Gradient clipping (already implemented)

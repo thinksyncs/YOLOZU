@@ -68,7 +68,59 @@ Common options:
 - --checkpoint-out reports/rtdetr_pose_ckpt.pt
 - --metrics-jsonl reports/train_metrics.jsonl
 - --metrics-csv reports/train_metrics.csv
-- --tensorboard-logdir reports/tb
+
+### Config source-of-truth and key mapping
+
+`rtdetr_pose/tools/train_minimal.py` reads YAML/JSON via `--config`, then applies explicit CLI flags on top.
+
+- Priority: **CLI flags > config file > built-in defaults**
+- Config keys use argparse destination names (`--weight-decay` -> `weight_decay`)
+- Alias: `grad_accum` in config is accepted and mapped to `gradient_accumulation_steps`
+- In strict run-contract mode (`run_contract` or `run_id` or `config_version` present), unknown config keys fail fast
+
+### Optimizer / solver options (code-accurate)
+
+Supported optimizer choices (`--optimizer`):
+- `adamw` (default)
+- `sgd`
+
+Relevant parameters:
+
+| Key (CLI / config) | Type | Default | Choices / Notes |
+|---|---:|---:|---|
+| `--optimizer` / `optimizer` | str | `adamw` | `adamw`, `sgd` |
+| `--lr` / `lr` | float | `1e-4` | base LR |
+| `--weight-decay` / `weight_decay` | float | `0.01` | base WD |
+| `--momentum` / `momentum` | float | `0.9` | used by SGD |
+| `--nesterov` / `nesterov` | bool | `false` | SGD only |
+| `--use-param-groups` / `use_param_groups` | bool | `false` | split backbone/head groups |
+| `--backbone-lr-mult` / `backbone_lr_mult` | float | `1.0` | group LR multiplier |
+| `--head-lr-mult` / `head_lr_mult` | float | `1.0` | group LR multiplier |
+| `--backbone-wd-mult` / `backbone_wd_mult` | float | `1.0` | group WD multiplier |
+| `--head-wd-mult` / `head_wd_mult` | float | `1.0` | group WD multiplier |
+| `--wd-exclude-bias` / `wd_exclude_bias` | bool | `true` | set bias WD=0 |
+| `--wd-exclude-norm` / `wd_exclude_norm` | bool | `true` | set norm WD=0 |
+
+### LR scheduler options (code-accurate)
+
+Supported scheduler choices (`--scheduler`):
+- `none` (default)
+- `cosine`
+- `onecycle`
+- `multistep`
+
+Relevant parameters:
+
+| Key (CLI / config) | Type | Default | Choices / Notes |
+|---|---:|---:|---|
+| `--scheduler` / `scheduler` | str | `none` | `none`, `cosine`, `onecycle`, `multistep` |
+| `--min-lr` / `min_lr` | float | `0.0` | cosine `eta_min` |
+| `--scheduler-milestones` / `scheduler_milestones` | str/list | `""` | comma list for multistep |
+| `--scheduler-gamma` / `scheduler_gamma` | float | `0.1` | multistep decay |
+| `--lr-warmup-steps` / `lr_warmup_steps` | int | `0` | linear warmup steps |
+| `--lr-warmup-init` / `lr_warmup_init` | float | `0.0` | LR at warmup step 0 |
+
+Note: `linear` scheduler is **not** a supported value in current code.
 
 ### Production run contract (recommended)
 
@@ -148,13 +200,67 @@ python3 rtdetr_pose/tools/train_minimal.py \
   --scheduler multistep \
   --scheduler-milestones 1000,2000,3000 \
   --scheduler-gamma 0.1
-
-# Linear schedule (legacy)
-python3 rtdetr_pose/tools/train_minimal.py \
-  --dataset-root data/coco128 \
-  --scheduler linear \
-  --min-lr 1e-6
 ```
+
+### LoRA / QLoRA options (code-accurate)
+
+LoRA is enabled when `--lora-r > 0`.
+
+| Key (CLI / config) | Type | Default | Choices / Notes |
+|---|---:|---:|---|
+| `--lora-r` / `lora_r` | int | `0` | `>0` enables LoRA |
+| `--lora-alpha` / `lora_alpha` | float/null | `null` | null means `alpha=r` |
+| `--lora-dropout` / `lora_dropout` | float | `0.0` | LoRA input dropout |
+| `--lora-target` / `lora_target` | str | `head` | `head`, `all_linear`, `all_conv1x1`, `all_linear_conv1x1` |
+| `--lora-freeze-base` / `lora_freeze_base` | bool | `true` | train LoRA-only when true |
+| `--lora-train-bias` / `lora_train_bias` | str | `none` | `none`, `all` |
+
+TorchAO / QLoRA integration:
+
+| Key (CLI / config) | Type | Default | Choices / Notes |
+|---|---:|---:|---|
+| `--torchao-quant` / `torchao_quant` | str | `none` | `none`, `int8wo`, `int4wo` |
+| `--torchao-required` / `torchao_required` | bool | `false` | fail run if quant unavailable |
+| `--qlora` / `qlora` | bool | `false` | requires `lora_r>0`; forces `torchao_quant=int4wo` (if none) and `lora_freeze_base=true` |
+
+### Additional fine-grained training knobs (selected)
+
+| Key (CLI / config) | Type | Default | Notes |
+|---|---:|---:|---|
+| `--gradient-accumulation-steps` / `gradient_accumulation_steps` | int | `1` | alias in config: `grad_accum` |
+| `--clip-grad-norm` / `clip_grad_norm` | float | `0.0` | `>0` enables clipping |
+| `--use-ema` / `use_ema` | bool | `false` | EMA on train weights |
+| `--ema-decay` / `ema_decay` | float | `0.999` | EMA decay |
+| `--ema-eval` / `ema_eval` | bool | `false` | use EMA weights at eval/export |
+| `--amp` / `amp` | str | `none` | `none`, `fp16`, `bf16` (CUDA only) |
+| `--use-amp` / `use_amp` | bool | `false` | back-compat alias for `amp=fp16` |
+| `--task-aligner` / `task_aligner` | str | `none` | `none`, `uncertainty` |
+| `--cost-z` / `cost_z` | float | `0.0` | matcher depth cost |
+| `--cost-rot` / `cost_rot` | float | `0.0` | matcher rotation cost |
+| `--cost-t` / `cost_t` | float | `0.0` | matcher translation cost |
+| `--cost-z-start-step` / `cost_z_start_step` | int | `0` | staged matcher cost gate |
+| `--cost-rot-start-step` / `cost_rot_start_step` | int | `0` | staged matcher cost gate |
+| `--cost-t-start-step` / `cost_t_start_step` | int | `0` | staged matcher cost gate |
+| `--stage-off-steps` / `stage_off_steps` | int | `0` | offsets-only stage |
+| `--stage-k-steps` / `stage_k_steps` | int | `0` | k-head-only stage |
+
+Continual-learning regularizers in the same trainer:
+
+| Key (CLI / config) | Type | Default | Notes |
+|---|---:|---:|---|
+| `--self-distill-from` / `self_distill_from` | str/null | `null` | enable teacher distillation |
+| `--self-distill-weight` / `self_distill_weight` | float | `1.0` | distill global weight |
+| `--self-distill-temperature` / `self_distill_temperature` | float | `1.0` | logits temperature |
+| `--self-distill-kl` / `self_distill_kl` | str | `reverse` | `forward`, `reverse`, `sym` |
+| `--self-distill-keys` / `self_distill_keys` | str | `logits,bbox` | comma list |
+| `--derpp` / `derpp` | bool | `false` | DER++ replay distillation |
+| `--derpp-teacher-key` / `derpp_teacher_key` | str | `derpp_teacher_npz` | record key/path |
+| `--derpp-weight` / `derpp_weight` | float | `1.0` | DER++ global weight |
+| `--ewc` / `ewc` | bool | `false` | EWC regularizer |
+| `--ewc-lambda` / `ewc_lambda` | float | `1.0` | EWC penalty weight |
+| `--si` / `si` | bool | `false` | SI regularizer |
+| `--si-c` / `si_c` | float | `1.0` | SI penalty weight |
+| `--si-epsilon` / `si_epsilon` | float | `1e-3` | SI stabilization |
 
 ### Advanced training options
 
