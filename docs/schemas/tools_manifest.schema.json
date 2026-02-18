@@ -70,6 +70,7 @@
           "description": "Optional mapping from contract id to an output item name (in tool.outputs) that contains the primary artifact for that contract. Used by automation to locate outputs for post-run validation.",
           "additionalProperties": { "type": "string" }
         },
+        "effects": { "$ref": "#/$defs/effects" },
         "inputs": {
           "type": "array",
           "items": { "$ref": "#/$defs/io_item" }
@@ -138,6 +139,53 @@
         "flag": { "type": "string" },
         "description": { "type": "string" },
         "default": {}
+      },
+      "additionalProperties": true
+    },
+    "effects": {
+      "type": "object",
+      "description": "Declarative side-effect metadata used by safe automation runners (no heuristics).",
+      "properties": {
+        "writes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/write_effect" }
+        },
+        "fixed_writes": {
+          "type": "array",
+          "description": "Repo-relative paths that may be written even when no explicit flag is passed.",
+          "items": { "$ref": "#/$defs/fixed_write_effect" }
+        },
+        "allow_unknown_flags": {
+          "type": "boolean",
+          "description": "If true, registry runners may allow forwarding flags not declared in tool.inputs. Prefer false for stable agent usage.",
+          "default": false
+        }
+      },
+      "additionalProperties": true
+    },
+    "write_effect": {
+      "type": "object",
+      "required": ["flag", "kind", "scope"],
+      "properties": {
+        "flag": { "type": "string", "pattern": "^--[a-zA-Z0-9][a-zA-Z0-9\\-]*$" },
+        "kind": { "type": "string", "enum": ["file", "dir"] },
+        "scope": {
+          "type": "string",
+          "enum": ["path", "tree"],
+          "description": "path = write exactly this path; tree = write under this directory (recursive)."
+        },
+        "description": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "fixed_write_effect": {
+      "type": "object",
+      "required": ["path", "kind", "scope"],
+      "properties": {
+        "path": { "type": "string" },
+        "kind": { "type": "string", "enum": ["file", "dir"] },
+        "scope": { "type": "string", "enum": ["path", "tree"] },
+        "description": { "type": "string" }
       },
       "additionalProperties": true
     },

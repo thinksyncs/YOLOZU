@@ -60,6 +60,32 @@ def _find_flag_value(argv: list[str], flag: str) -> str | None:
     return None
 
 
+def _find_flag_value_any(argv: list[str], flag: str) -> str | None:
+    # Supports: --flag value  OR  --flag=value
+    v = _find_flag_value(argv, flag)
+    if v is not None:
+        return v
+    prefix = flag + "="
+    for tok in argv:
+        if tok.startswith(prefix):
+            return tok[len(prefix) :]
+    return None
+
+
+def _extract_forwarded_flags(argv: list[str]) -> set[str]:
+    flags: set[str] = set()
+    for tok in argv:
+        if tok == "--":
+            continue
+        if tok == "-h":
+            flags.add("-h")
+            continue
+        if tok.startswith("--"):
+            flag = tok.split("=", 1)[0]
+            flags.add(flag)
+    return flags
+
+
 def _is_repo_relative_path_like(value: str) -> bool:
     if not isinstance(value, str) or not value:
         return False
@@ -183,6 +209,38 @@ def _registry_run(args: argparse.Namespace) -> int:
     allowed_write_roots = list(getattr(args, "allow_write_root", None) or ["reports"])
     allow_unsafe_paths = bool(getattr(args, "allow_unsafe_paths", False))
     dry_run = bool(getattr(args, "dry_run", False))
+    allow_undeclared_effects = bool(getattr(args, "allow_undeclared_effects", False))
+    allow_unknown_flags_cli = bool(getattr(args, "allow_unknown_flags", False))
+
+    # Enforce stable flag surface (no hidden write flags).
+    declared_flags: set[str] = set()
+    for item in (tool.get("inputs") or []):
+        if isinstance(item, dict) and isinstance(item.get("flag"), str) and item.get("flag"):
+            declared_flags.add(str(item["flag"]))
+
+    effects = tool.get("effects")
+    if effects is None:
+        if not allow_undeclared_effects:
+            raise SystemExit(
+                "tool has no declarative effects metadata (tool.effects). "
+                "Add effects to tools/manifest.json or rerun with --allow-undeclared-effects."
+            )
+        effects = {}
+    if not isinstance(effects, dict):
+        raise SystemExit("invalid tool.effects (expected object)")
+
+    allow_unknown_flags_tool = bool(effects.get("allow_unknown_flags", False))
+    allow_unknown_flags = bool(allow_unknown_flags_tool or allow_unknown_flags_cli)
+
+    forwarded_flags = _extract_forwarded_flags(forward_args)
+    always_ok = {"-h", "--help"}
+    unknown = sorted(f for f in forwarded_flags if f not in always_ok and f not in declared_flags)
+    if unknown and not allow_unknown_flags:
+        raise SystemExit(
+            "unknown forwarded flags (not declared in tools/manifest.json inputs):\n"
+            + "\n".join(f"- {f}" for f in unknown)
+            + "\nUse --allow-unknown-flags to bypass (not recommended for agents)."
+        )
 
     # Construct base command
     runner = tool.get("runner")
@@ -200,37 +258,7 @@ def _registry_run(args: argparse.Namespace) -> int:
     cmd: list[str] = ["python3", str(entry_path)] if runner == "python3" else ["bash", str(entry_path)]
     cmd.extend(forward_args)
 
-    # Safety: block unsafe output paths by default (repo-relative, under allowlisted roots)
-    write_flags: set[str] = {"--output", "--out", "--run-dir", "--cache-dir", "--masks-dir", "--overlays-dir"}
-    for item in (tool.get("inputs") or []):
-        if not isinstance(item, dict):
-            continue
-        kind = item.get("kind")
-        flag = item.get("flag")
-        name = item.get("name")
-        if kind in {"file", "dir"} and isinstance(flag, str) and flag.startswith("--"):
-            # Heuristic: only some io flags are considered write targets.
-            if flag in write_flags or name in {"output", "out", "run_dir", "cache_dir", "masks_dir", "overlays_dir"}:
-                write_flags.add(flag)
-
-    candidate_paths: list[tuple[str, str]] = []
-    # 1) paths explicitly passed via known write flags
-    for flag in sorted(write_flags):
-        v = _find_flag_value(forward_args, flag)
-        if v:
-            candidate_paths.append((flag, v))
-
-    # 2) implicit default outputs declared in manifest
-    for out in (tool.get("outputs") or []):
-        if not isinstance(out, dict):
-            continue
-        if out.get("kind") not in {"file", "dir"}:
-            continue
-        d = out.get("default")
-        if isinstance(d, str) and d:
-            candidate_paths.append((f"default:{out.get('name')}", d))
-
-    # Apply checks
+    # Safety: enforce declared write effects (no heuristics).
     roots: list[Path] = []
     for r in allowed_write_roots:
         if not isinstance(r, str) or not r:
@@ -239,9 +267,12 @@ def _registry_run(args: argparse.Namespace) -> int:
             raise SystemExit(f"invalid --allow-write-root: {r}")
         roots.append(repo_root / r)
 
-    for src, value in candidate_paths:
+    def _check_write_path(src: str, value: str) -> None:
         if not isinstance(value, str) or not value:
-            continue
+            return
+        # Convention: allow '-' to mean stdout (no filesystem write).
+        if value.strip() == "-":
+            return
         if (value.startswith("/") or ".." in Path(value).parts) and not allow_unsafe_paths:
             raise SystemExit(f"unsafe path blocked ({src}): {value} (use --allow-unsafe-paths to override)")
 
@@ -254,6 +285,51 @@ def _registry_run(args: argparse.Namespace) -> int:
                     f"write path blocked ({src}): {value} is outside allowed roots: {roots_str} "
                     "(use --allow-write-root to add a root)"
                 )
+
+    # fixed writes
+    fixed = effects.get("fixed_writes")
+    if fixed is not None:
+        if not isinstance(fixed, list):
+            raise SystemExit("invalid tool.effects.fixed_writes (expected list)")
+        for j, fw in enumerate(fixed):
+            if not isinstance(fw, dict):
+                raise SystemExit(f"invalid tool.effects.fixed_writes[{j}] (expected object)")
+            path = fw.get("path")
+            if isinstance(path, str) and path:
+                _check_write_path(f"fixed_writes[{j}]", path)
+
+    # flag-based writes
+    writes = effects.get("writes")
+    if writes is not None:
+        if not isinstance(writes, list):
+            raise SystemExit("invalid tool.effects.writes (expected list)")
+        for j, w in enumerate(writes):
+            if not isinstance(w, dict):
+                raise SystemExit(f"invalid tool.effects.writes[{j}] (expected object)")
+            flag = w.get("flag")
+            if not isinstance(flag, str) or not flag.startswith("--"):
+                raise SystemExit(f"invalid tool.effects.writes[{j}].flag")
+
+            value = _find_flag_value_any(forward_args, flag)
+            if value is None:
+                # fallback to manifest-declared default value for this flag
+                default_value: str | None = None
+                for item in (tool.get("inputs") or []):
+                    if isinstance(item, dict) and item.get("flag") == flag:
+                        d = item.get("default")
+                        if isinstance(d, str) and d:
+                            default_value = d
+                        break
+                if default_value is None:
+                    # Tool may have an internal default; rely on fixed_writes for safety.
+                    continue
+                if "<" in default_value or ">" in default_value:
+                    raise SystemExit(
+                        f"write effect default contains placeholder; pass an explicit value for {flag}: {default_value}"
+                    )
+                value = default_value
+
+            _check_write_path(flag, value)
 
     if dry_run:
         print("DRY_RUN:")
@@ -289,8 +365,8 @@ def _registry_run(args: argparse.Namespace) -> int:
                         output_default = d
                     break
 
-        # Common convention: tools use --output for primary JSON artifact.
-        out_path = _find_flag_value(forward_args, "--output") or output_default
+        # Contract output path must be discoverable without heuristics.
+        out_path = _find_flag_value_any(forward_args, "--output") or output_default
         if not out_path:
             continue
 
@@ -1631,6 +1707,16 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         help="Allow writing under this repo-relative root (repeatable). Default: reports",
     )
     p_reg_run.add_argument("--allow-unsafe-paths", action="store_true", help="Allow absolute paths or '..' segments.")
+    p_reg_run.add_argument(
+        "--allow-unknown-flags",
+        action="store_true",
+        help="Allow forwarding flags not declared in tool.inputs (not recommended for agents).",
+    )
+    p_reg_run.add_argument(
+        "--allow-undeclared-effects",
+        action="store_true",
+        help="Allow running tools without tool.effects declarations (not recommended for agents).",
+    )
     p_reg_run.add_argument("forward_args", nargs=argparse.REMAINDER, help="Arguments forwarded to the tool entrypoint.")
     p_reg_run.set_defaults(_fn=_registry_run)
 

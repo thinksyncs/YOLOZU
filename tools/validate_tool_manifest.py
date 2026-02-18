@@ -11,6 +11,8 @@ repo_root = Path(__file__).resolve().parents[1]
 _ID_RE = re.compile(r"^[a-z0-9][a-z0-9_\-]*$")
 _RUNNERS = {"python3", "bash"}
 _IO_KINDS = {"file", "dir", "string", "number", "json", "stdout"}
+_EFFECT_KINDS = {"file", "dir"}
+_EFFECT_SCOPES = {"path", "tree"}
 
 
 def _resolve(path_str: str) -> Path:
@@ -125,6 +127,64 @@ def _validate_tool(tool: Any, *, index: int) -> list[str]:
                     continue
                 if not isinstance(v, str) or not v:
                     errors.append(f"{where}.contract_outputs.{k}: expected non-empty string (output name)")
+
+    declared_flags: set[str] = set()
+    inputs = tool.get("inputs")
+    if isinstance(inputs, list):
+        for item in inputs:
+            if isinstance(item, dict) and isinstance(item.get("flag"), str) and item.get("flag"):
+                declared_flags.add(str(item["flag"]))
+
+    effects = tool.get("effects")
+    if effects is not None:
+        if not isinstance(effects, dict):
+            errors.append(f"{where}.effects: expected object")
+        else:
+            allow_unknown = bool(effects.get("allow_unknown_flags", False))
+            writes = effects.get("writes")
+            if writes is not None:
+                if not isinstance(writes, list):
+                    errors.append(f"{where}.effects.writes: expected list")
+                else:
+                    for j, w in enumerate(writes):
+                        if not isinstance(w, dict):
+                            errors.append(f"{where}.effects.writes[{j}]: expected object")
+                            continue
+                        flag = w.get("flag")
+                        kind = w.get("kind")
+                        scope = w.get("scope")
+                        if not isinstance(flag, str) or not flag.startswith("--"):
+                            errors.append(f"{where}.effects.writes[{j}].flag: expected '--foo' string")
+                        elif (not allow_unknown) and declared_flags and flag not in declared_flags:
+                            errors.append(f"{where}.effects.writes[{j}].flag: not declared in tool.inputs: {flag}")
+                        if not isinstance(kind, str) or kind not in _EFFECT_KINDS:
+                            errors.append(f"{where}.effects.writes[{j}].kind: must be one of {sorted(_EFFECT_KINDS)}")
+                        if not isinstance(scope, str) or scope not in _EFFECT_SCOPES:
+                            errors.append(f"{where}.effects.writes[{j}].scope: must be one of {sorted(_EFFECT_SCOPES)}")
+
+            fixed = effects.get("fixed_writes")
+            if fixed is not None:
+                if not isinstance(fixed, list):
+                    errors.append(f"{where}.effects.fixed_writes: expected list")
+                else:
+                    for j, fw in enumerate(fixed):
+                        if not isinstance(fw, dict):
+                            errors.append(f"{where}.effects.fixed_writes[{j}]: expected object")
+                            continue
+                        path = fw.get("path")
+                        kind = fw.get("kind")
+                        scope = fw.get("scope")
+                        if not isinstance(path, str) or not path:
+                            errors.append(f"{where}.effects.fixed_writes[{j}].path: required string")
+                        else:
+                            if path.startswith("/"):
+                                errors.append(f"{where}.effects.fixed_writes[{j}].path: must be repo-relative")
+                            elif ".." in Path(path).parts:
+                                errors.append(f"{where}.effects.fixed_writes[{j}].path: must not contain '..'")
+                        if not isinstance(kind, str) or kind not in _EFFECT_KINDS:
+                            errors.append(f"{where}.effects.fixed_writes[{j}].kind: must be one of {sorted(_EFFECT_KINDS)}")
+                        if not isinstance(scope, str) or scope not in _EFFECT_SCOPES:
+                            errors.append(f"{where}.effects.fixed_writes[{j}].scope: must be one of {sorted(_EFFECT_SCOPES)}")
 
     for field in ("inputs", "outputs"):
         items = tool.get(field)

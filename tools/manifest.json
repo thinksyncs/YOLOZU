@@ -59,6 +59,17 @@
       "tags": ["dataset"],
       "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
       "requires": { "network": true },
+      "effects": {
+        "writes": [],
+        "fixed_writes": [
+          {
+            "path": "data/coco128",
+            "kind": "dir",
+            "scope": "tree",
+            "description": "Download + extract dataset to data/coco128."
+          }
+        ]
+      },
       "outputs": [
         { "name": "dataset_root", "kind": "dir", "description": "Created dataset root.", "default": "data/coco128" }
       ],
@@ -78,8 +89,21 @@
         { "name": "split", "kind": "string", "required": false, "flag": "--split", "default": null },
         { "name": "n", "kind": "number", "required": false, "flag": "--n", "default": 50 },
         { "name": "seed", "kind": "number", "required": false, "flag": "--seed", "default": 0 },
-        { "name": "out", "kind": "dir", "required": false, "flag": "--out", "default": "reports/subset_dataset" }
+        { "name": "out", "kind": "dir", "required": false, "flag": "--out", "default": "reports/subset_dataset" },
+        { "name": "copy", "kind": "string", "required": false, "flag": "--copy" },
+        { "name": "overwrite", "kind": "string", "required": false, "flag": "--overwrite" }
       ],
+      "effects": {
+        "writes": [
+          {
+            "flag": "--out",
+            "kind": "dir",
+            "scope": "tree",
+            "description": "Writes subset dataset tree under --out (images/ + labels/ + subset metadata)."
+          }
+        ],
+        "fixed_writes": []
+      },
       "outputs": [
         { "name": "dataset_root", "kind": "dir", "description": "Subset dataset root created at --out." },
         { "name": "subset_json", "kind": "file", "description": "Subset metadata (image list + sha).", "default": "<out>/subset.json" },
@@ -102,8 +126,20 @@
       "inputs": [
         { "name": "coco_root", "kind": "dir", "required": true, "flag": "--coco-root" },
         { "name": "out", "kind": "dir", "required": true, "flag": "--out" },
-        { "name": "split", "kind": "string", "required": false, "flag": "--split", "default": "val2017" }
+        { "name": "split", "kind": "string", "required": false, "flag": "--split", "default": "val2017" },
+        { "name": "include_crowd", "kind": "string", "required": false, "flag": "--include-crowd" }
       ],
+      "effects": {
+        "writes": [
+          {
+            "flag": "--out",
+            "kind": "dir",
+            "scope": "tree",
+            "description": "Writes YOLO-format dataset under --out (labels/ + dataset.json, optionally images/)."
+          }
+        ],
+        "fixed_writes": []
+      },
       "outputs": [
         { "name": "dataset_root", "kind": "dir", "description": "YOLO-format dataset root created at --out." },
         { "name": "dataset_descriptor", "kind": "file", "description": "Convenience dataset.json.", "default": "<out>/dataset.json" }
@@ -125,8 +161,21 @@
       "inputs": [
         { "name": "coco_root", "kind": "dir", "required": true, "flag": "--coco-root" },
         { "name": "out", "kind": "dir", "required": true, "flag": "--out" },
-        { "name": "split", "kind": "string", "required": false, "flag": "--split", "default": "val2017" }
+        { "name": "split", "kind": "string", "required": false, "flag": "--split", "default": "val2017" },
+        { "name": "include_crowd", "kind": "string", "required": false, "flag": "--include-crowd" },
+        { "name": "max_images", "kind": "number", "required": false, "flag": "--max-images" }
       ],
+      "effects": {
+        "writes": [
+          {
+            "flag": "--out",
+            "kind": "dir",
+            "scope": "tree",
+            "description": "Writes YOLO-format dataset under --out (labels/ + masks/ + dataset.json)."
+          }
+        ],
+        "fixed_writes": []
+      },
       "outputs": [
         { "name": "dataset_root", "kind": "dir", "description": "YOLO-format dataset root created at --out." },
         { "name": "dataset_descriptor", "kind": "file", "description": "Convenience dataset.json.", "default": "<out>/dataset.json" }
@@ -150,8 +199,27 @@
         { "name": "predictions", "kind": "file", "required": true, "flag": "--predictions" },
         { "name": "instances_json", "kind": "file", "required": true, "flag": "--instances-json" },
         { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/instance_seg_predictions.json" },
-        { "name": "masks_dir", "kind": "dir", "required": false, "flag": "--masks-dir", "default": "reports/instance_seg_masks" }
+        { "name": "masks_dir", "kind": "dir", "required": false, "flag": "--masks-dir", "default": "reports/instance_seg_masks" },
+        { "name": "min_score", "kind": "number", "required": false, "flag": "--min-score" },
+        { "name": "max_preds", "kind": "number", "required": false, "flag": "--max-preds" }
       ],
+      "effects": {
+        "writes": [
+          {
+            "flag": "--output",
+            "kind": "file",
+            "scope": "path",
+            "description": "Writes instance segmentation predictions JSON."
+          },
+          {
+            "flag": "--masks-dir",
+            "kind": "dir",
+            "scope": "tree",
+            "description": "Writes per-instance PNG masks under --masks-dir."
+          }
+        ],
+        "fixed_writes": []
+      },
       "outputs": [
         { "name": "predictions_json", "kind": "file", "default": "reports/instance_seg_predictions.json" },
         { "name": "masks_dir", "kind": "dir", "default": "reports/instance_seg_masks" }
@@ -173,8 +241,20 @@
       "inputs": [
         { "name": "cityscapes_root", "kind": "dir", "required": true, "flag": "--cityscapes-root" },
         { "name": "out", "kind": "dir", "required": true, "flag": "--out" },
-        { "name": "split", "kind": "string", "required": false, "flag": "--split", "default": "train" }
+        { "name": "split", "kind": "string", "required": false, "flag": "--split", "default": "train" },
+        { "name": "force", "kind": "string", "required": false, "flag": "--force" }
       ],
+      "effects": {
+        "writes": [
+          {
+            "flag": "--out",
+            "kind": "dir",
+            "scope": "tree",
+            "description": "Writes prepared segmentation dataset layout under --out (manifest + optional symlinks/copies)."
+          }
+        ],
+        "fixed_writes": []
+      },
       "outputs": [
         { "name": "dataset_root", "kind": "dir", "description": "Prepared output root created at --out." },
         { "name": "dataset_descriptor", "kind": "file", "description": "dataset.json manifest.", "default": "<out>/dataset.json" }
@@ -196,8 +276,21 @@
       "inputs": [
         { "name": "voc_root", "kind": "dir", "required": true, "flag": "--voc-root" },
         { "name": "out", "kind": "dir", "required": true, "flag": "--out" },
-        { "name": "split", "kind": "string", "required": false, "flag": "--split", "default": "train" }
+        { "name": "split", "kind": "string", "required": false, "flag": "--split", "default": "train" },
+        { "name": "force", "kind": "string", "required": false, "flag": "--force" },
+        { "name": "year", "kind": "string", "required": false, "flag": "--year" }
       ],
+      "effects": {
+        "writes": [
+          {
+            "flag": "--out",
+            "kind": "dir",
+            "scope": "tree",
+            "description": "Writes prepared segmentation dataset layout under --out (manifest + optional symlinks/copies)."
+          }
+        ],
+        "fixed_writes": []
+      },
       "outputs": [
         { "name": "dataset_root", "kind": "dir", "description": "Prepared output root created at --out." },
         { "name": "dataset_descriptor", "kind": "file", "description": "dataset.json manifest.", "default": "<out>/dataset.json" }
@@ -219,8 +312,20 @@
       "inputs": [
         { "name": "ade20k_root", "kind": "dir", "required": true, "flag": "--ade20k-root" },
         { "name": "out", "kind": "dir", "required": true, "flag": "--out" },
-        { "name": "split", "kind": "string", "required": false, "flag": "--split", "default": "train" }
+        { "name": "split", "kind": "string", "required": false, "flag": "--split", "default": "train" },
+        { "name": "force", "kind": "string", "required": false, "flag": "--force" }
       ],
+      "effects": {
+        "writes": [
+          {
+            "flag": "--out",
+            "kind": "dir",
+            "scope": "tree",
+            "description": "Writes prepared segmentation dataset layout under --out (manifest + optional symlinks/copies)."
+          }
+        ],
+        "fixed_writes": []
+      },
       "outputs": [
         { "name": "dataset_root", "kind": "dir", "description": "Prepared output root created at --out." },
         { "name": "dataset_descriptor", "kind": "file", "description": "dataset.json manifest.", "default": "<out>/dataset.json" }
@@ -239,6 +344,17 @@
       "summary": "Build a dataset manifest for data/coco128 (writes reports/manifest.json).",
       "tags": ["dataset"],
       "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "effects": {
+        "writes": [],
+        "fixed_writes": [
+          {
+            "path": "reports/manifest.json",
+            "kind": "file",
+            "scope": "path",
+            "description": "Writes a dataset manifest JSON."
+          }
+        ]
+      },
       "outputs": [
         { "name": "manifest_json", "kind": "file", "default": "reports/manifest.json" }
       ],
@@ -258,8 +374,58 @@
       "inputs": [
         { "name": "adapter", "kind": "string", "required": false, "flag": "--adapter", "default": "dummy" },
         { "name": "dataset", "kind": "dir", "required": false, "flag": "--dataset", "default": "data/coco128" },
-        { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/predictions.json" }
+        { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/predictions.json" },
+        { "name": "wrap", "kind": "string", "required": false, "flag": "--wrap" },
+        { "name": "config", "kind": "file", "required": false, "flag": "--config" },
+        { "name": "device", "kind": "string", "required": false, "flag": "--device" },
+        { "name": "image_size", "kind": "number", "required": false, "flag": "--image-size" },
+        { "name": "score_threshold", "kind": "number", "required": false, "flag": "--score-threshold" },
+        { "name": "max_detections", "kind": "number", "required": false, "flag": "--max-detections" },
+        { "name": "checkpoint", "kind": "file", "required": false, "flag": "--checkpoint" },
+        { "name": "max_images", "kind": "number", "required": false, "flag": "--max-images" },
+        { "name": "split", "kind": "string", "required": false, "flag": "--split" },
+        { "name": "tta", "kind": "string", "required": false, "flag": "--tta" },
+        { "name": "tta_seed", "kind": "number", "required": false, "flag": "--tta-seed" },
+        { "name": "tta_flip_prob", "kind": "number", "required": false, "flag": "--tta-flip-prob" },
+        { "name": "tta_norm_only", "kind": "string", "required": false, "flag": "--tta-norm-only" },
+        { "name": "tta_log_out", "kind": "file", "required": false, "flag": "--tta-log-out" },
+        { "name": "ttt", "kind": "string", "required": false, "flag": "--ttt" },
+        { "name": "ttt_preset", "kind": "string", "required": false, "flag": "--ttt-preset" },
+        { "name": "ttt_method", "kind": "string", "required": false, "flag": "--ttt-method" },
+        { "name": "ttt_steps", "kind": "number", "required": false, "flag": "--ttt-steps" },
+        { "name": "ttt_batch_size", "kind": "number", "required": false, "flag": "--ttt-batch-size" },
+        { "name": "ttt_lr", "kind": "number", "required": false, "flag": "--ttt-lr" },
+        { "name": "ttt_seed", "kind": "number", "required": false, "flag": "--ttt-seed" },
+        { "name": "ttt_log_out", "kind": "file", "required": false, "flag": "--ttt-log-out" },
+        { "name": "ttt_patch_size", "kind": "number", "required": false, "flag": "--ttt-patch-size" },
+        { "name": "ttt_mask_prob", "kind": "number", "required": false, "flag": "--ttt-mask-prob" },
+        { "name": "ttt_mask_value", "kind": "number", "required": false, "flag": "--ttt-mask-value" },
+        { "name": "ttt_max_batches", "kind": "number", "required": false, "flag": "--ttt-max-batches" },
+        { "name": "ttt_max_grad_norm", "kind": "number", "required": false, "flag": "--ttt-max-grad-norm" }
       ],
+      "effects": {
+        "writes": [
+          {
+            "flag": "--output",
+            "kind": "file",
+            "scope": "path",
+            "description": "Writes predictions JSON."
+          },
+          {
+            "flag": "--tta-log-out",
+            "kind": "file",
+            "scope": "path",
+            "description": "Optional TTA log JSON output."
+          },
+          {
+            "flag": "--ttt-log-out",
+            "kind": "file",
+            "scope": "path",
+            "description": "Optional TTT log JSON output."
+          }
+        ],
+        "fixed_writes": []
+      },
       "outputs": [{ "name": "predictions_json", "kind": "file", "default": "reports/predictions.json" }],
       "examples": [
         {
@@ -277,6 +443,27 @@
       "tags": ["cli", "predictions", "diagnostics", "report", "sweep", "long_tail", "import"],
       "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
       "contracts": { "produces": ["predictions_json"] },
+      "inputs": [
+        { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/predictions.json" },
+        { "name": "cache_dir", "kind": "dir", "required": false, "flag": "--cache-dir", "default": "runs/yolozu_runs" },
+        { "name": "tta_log_out", "kind": "file", "required": false, "flag": "--tta-log-out", "default": null },
+        { "name": "ttt_log_out", "kind": "file", "required": false, "flag": "--ttt-log-out", "default": null },
+        { "name": "run_dir", "kind": "dir", "required": false, "flag": "--run-dir", "default": null },
+        { "name": "overlays_dir", "kind": "dir", "required": false, "flag": "--overlays-dir", "default": "reports/overlays" },
+        { "name": "html", "kind": "file", "required": false, "flag": "--html", "default": "reports/predict_images.html" }
+      ],
+      "effects": {
+        "writes": [
+          { "flag": "--output", "kind": "file", "scope": "path", "description": "Writes JSON output (predictions / reports depending on subcommand)." },
+          { "flag": "--cache-dir", "kind": "dir", "scope": "tree", "description": "Writes fingerprinted cache artifacts under --cache-dir." },
+          { "flag": "--tta-log-out", "kind": "file", "scope": "path", "description": "Optional TTA log JSON output." },
+          { "flag": "--ttt-log-out", "kind": "file", "scope": "path", "description": "Optional TTT log JSON output." },
+          { "flag": "--run-dir", "kind": "dir", "scope": "tree", "description": "Optional run directory for continual runners." },
+          { "flag": "--overlays-dir", "kind": "dir", "scope": "tree", "description": "Optional overlay image directory." },
+          { "flag": "--html", "kind": "file", "scope": "path", "description": "Optional HTML report output." }
+        ],
+        "fixed_writes": []
+      },
       "examples": [
         { "description": "Doctor report.", "command": "python3 tools/yolozu.py doctor --output reports/doctor.json" },
         {
@@ -319,6 +506,7 @@
       "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
       "contracts": { "consumes": ["predictions_json"] },
       "inputs": [{ "name": "predictions", "kind": "file", "required": true, "description": "Predictions JSON path." }],
+      "effects": { "writes": [], "fixed_writes": [] },
       "outputs": [{ "name": "stdout", "kind": "stdout", "description": "OK/WARN lines." }],
       "examples": [
         { "description": "Strict schema validation.", "command": "python3 tools/validate_predictions.py reports/predictions.json --strict" }
@@ -333,6 +521,7 @@
       "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
       "contracts": { "consumes": ["segmentation_predictions_json"] },
       "inputs": [{ "name": "predictions", "kind": "file", "required": true, "description": "Segmentation predictions JSON path." }],
+      "effects": { "writes": [], "fixed_writes": [] },
       "outputs": [{ "name": "stdout", "kind": "stdout", "description": "OK/WARN lines." }],
       "examples": [
         {
@@ -350,6 +539,7 @@
       "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
       "contracts": { "consumes": ["instance_segmentation_predictions_json"] },
       "inputs": [{ "name": "predictions", "kind": "file", "required": true, "description": "Instance segmentation predictions JSON path." }],
+      "effects": { "writes": [], "fixed_writes": [] },
       "outputs": [{ "name": "stdout", "kind": "stdout", "description": "OK/WARN lines." }],
       "examples": [
         {
@@ -372,6 +562,17 @@
         { "name": "output", "kind": "file", "required": true, "flag": "--output" },
         { "name": "classes", "kind": "file", "required": false, "flag": "--classes" }
       ],
+      "effects": {
+        "writes": [
+          {
+            "flag": "--output",
+            "kind": "file",
+            "scope": "path",
+            "description": "Writes normalized predictions JSON."
+          }
+        ],
+        "fixed_writes": []
+      },
       "outputs": [{ "name": "predictions_json", "kind": "file", "description": "Normalized predictions JSON at --output." }],
       "examples": [
         {
@@ -395,8 +596,40 @@
       "inputs": [
         { "name": "dataset_json", "kind": "file", "required": true, "flag": "--dataset-json" },
         { "name": "predictions", "kind": "file", "required": true, "flag": "--predictions" },
-        { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/seg_eval.json" }
+        { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/seg_eval.json" },
+        { "name": "html", "kind": "file", "required": false, "flag": "--html" },
+        { "name": "overlays_dir", "kind": "dir", "required": false, "flag": "--overlays-dir" },
+        { "name": "overlay_alpha", "kind": "number", "required": false, "flag": "--overlay-alpha" },
+        { "name": "overlay_max_size", "kind": "number", "required": false, "flag": "--overlay-max-size" },
+        { "name": "max_overlays", "kind": "number", "required": false, "flag": "--max-overlays" },
+        { "name": "pred_root", "kind": "dir", "required": false, "flag": "--pred-root" },
+        { "name": "ignore_index", "kind": "number", "required": false, "flag": "--ignore-index" },
+        { "name": "num_classes", "kind": "number", "required": false, "flag": "--num-classes" },
+        { "name": "max_samples", "kind": "number", "required": false, "flag": "--max-samples" }
       ],
+      "effects": {
+        "writes": [
+          {
+            "flag": "--output",
+            "kind": "file",
+            "scope": "path",
+            "description": "Writes segmentation evaluation JSON report."
+          },
+          {
+            "flag": "--html",
+            "kind": "file",
+            "scope": "path",
+            "description": "Optional HTML report output."
+          },
+          {
+            "flag": "--overlays-dir",
+            "kind": "dir",
+            "scope": "tree",
+            "description": "Optional overlay image outputs."
+          }
+        ],
+        "fixed_writes": []
+      },
       "outputs": [{ "name": "seg_eval_json", "kind": "file", "default": "reports/seg_eval.json" }],
       "examples": [
         {
@@ -420,8 +653,18 @@
       "inputs": [
         { "name": "dataset", "kind": "dir", "required": true, "flag": "--dataset" },
         { "name": "predictions", "kind": "file", "required": true, "flag": "--predictions" },
-        { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/instance_seg_eval.json" }
+        { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/instance_seg_eval.json" },
+        { "name": "html", "kind": "file", "required": false, "flag": "--html", "default": null },
+        { "name": "overlays_dir", "kind": "dir", "required": false, "flag": "--overlays-dir", "default": null }
       ],
+      "effects": {
+        "writes": [
+          { "flag": "--output", "kind": "file", "scope": "path", "description": "Writes instance segmentation evaluation JSON report." },
+          { "flag": "--html", "kind": "file", "scope": "path", "description": "Optional HTML report output." },
+          { "flag": "--overlays-dir", "kind": "dir", "scope": "tree", "description": "Optional overlay image outputs." }
+        ],
+        "fixed_writes": []
+      },
       "outputs": [{ "name": "instance_seg_eval_json", "kind": "file", "default": "reports/instance_seg_eval.json" }],
       "examples": [
         {
@@ -441,8 +684,18 @@
       "inputs": [
         { "name": "dataset", "kind": "dir", "required": true, "flag": "--dataset" },
         { "name": "predictions", "kind": "file", "required": true, "flag": "--predictions" },
-        { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/keypoints_eval.json" }
+        { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/keypoints_eval.json" },
+        { "name": "html", "kind": "file", "required": false, "flag": "--html", "default": null },
+        { "name": "overlays_dir", "kind": "dir", "required": false, "flag": "--overlays-dir", "default": null }
       ],
+      "effects": {
+        "writes": [
+          { "flag": "--output", "kind": "file", "scope": "path", "description": "Writes keypoints evaluation JSON report." },
+          { "flag": "--html", "kind": "file", "scope": "path", "description": "Optional HTML report output." },
+          { "flag": "--overlays-dir", "kind": "dir", "scope": "tree", "description": "Optional overlay image outputs." }
+        ],
+        "fixed_writes": []
+      },
       "outputs": [{ "name": "keypoints_eval_json", "kind": "file", "default": "reports/keypoints_eval.json" }],
       "examples": [
         {
@@ -469,6 +722,12 @@
         { "name": "predictions", "kind": "file", "required": true, "flag": "--predictions" },
         { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/coco_eval.json" }
       ],
+      "effects": {
+        "writes": [
+          { "flag": "--output", "kind": "file", "scope": "path", "description": "Writes COCO evaluation JSON report." }
+        ],
+        "fixed_writes": []
+      },
       "outputs": [{ "name": "coco_eval_json", "kind": "file", "default": "reports/coco_eval.json" }],
       "examples": [
         {
@@ -490,6 +749,12 @@
         { "name": "predictions_glob", "kind": "string", "required": true, "flag": "--predictions-glob" },
         { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/eval_suite.json" }
       ],
+      "effects": {
+        "writes": [
+          { "flag": "--output", "kind": "file", "scope": "path", "description": "Writes eval suite JSON report." }
+        ],
+        "fixed_writes": []
+      },
       "outputs": [{ "name": "eval_suite_json", "kind": "file", "default": "reports/eval_suite.json" }],
       "examples": [
         {
@@ -507,6 +772,7 @@
       "tags": ["eval", "targets", "yolo26"],
       "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
       "inputs": [{ "name": "targets", "kind": "file", "required": false, "flag": "--targets", "default": "baselines/yolo26_targets.json" }],
+      "effects": { "writes": [], "fixed_writes": [] },
       "outputs": [{ "name": "stdout", "kind": "stdout", "description": "OK or error details." }],
       "examples": [
         { "description": "Validate targets JSON.", "command": "python3 tools/validate_map_targets.py --targets baselines/yolo26_targets.json" }
@@ -523,6 +789,7 @@
         { "name": "suite", "kind": "file", "required": false, "flag": "--suite", "default": "reports/eval_suite.json" },
         { "name": "targets", "kind": "file", "required": false, "flag": "--targets", "default": "baselines/yolo26_targets.json" }
       ],
+      "effects": { "writes": [], "fixed_writes": [] },
       "outputs": [{ "name": "stdout", "kind": "stdout", "description": "JSON report with ok/failures." }],
       "examples": [
         { "description": "Gate a suite run vs targets.", "command": "python3 tools/check_map_targets.py --suite reports/eval_suite.json --targets baselines/yolo26_targets.json --key map50_95" }
@@ -538,8 +805,19 @@
       "contracts": { "consumes": ["predictions_json"], "produces": ["predictions_json", "metrics_report_json"] },
       "inputs": [
         { "name": "dataset", "kind": "dir", "required": true, "flag": "--dataset" },
-        { "name": "predictions", "kind": "file", "required": true, "flag": "--predictions" }
+        { "name": "predictions", "kind": "file", "required": true, "flag": "--predictions" },
+        { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/predictions_calibrated.json" },
+        { "name": "output_report", "kind": "file", "required": false, "flag": "--output-report", "default": "reports/calibration_report.json" },
+        { "name": "output_artifact", "kind": "file", "required": false, "flag": "--output-artifact", "default": "reports/calibration_artifact.json" }
       ],
+      "effects": {
+        "writes": [
+          { "flag": "--output", "kind": "file", "scope": "path", "description": "Writes calibrated predictions JSON." },
+          { "flag": "--output-report", "kind": "file", "scope": "path", "description": "Writes calibration report JSON." },
+          { "flag": "--output-artifact", "kind": "file", "scope": "path", "description": "Writes calibration artifact JSON." }
+        ],
+        "fixed_writes": []
+      },
       "outputs": [
         { "name": "predictions_calibrated", "kind": "file", "default": "reports/predictions_calibrated.json" },
         { "name": "report_json", "kind": "file", "default": "reports/calibration_report.json" }
@@ -562,8 +840,17 @@
       "contracts": { "consumes": ["predictions_json"], "produces": ["predictions_json", "metrics_report_json"] },
       "inputs": [
         { "name": "student", "kind": "file", "required": true, "flag": "--student" },
-        { "name": "teacher", "kind": "file", "required": true, "flag": "--teacher" }
+        { "name": "teacher", "kind": "file", "required": true, "flag": "--teacher" },
+        { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/predictions_distilled.json" },
+        { "name": "output_report", "kind": "file", "required": false, "flag": "--output-report", "default": "reports/distill_report.json" }
       ],
+      "effects": {
+        "writes": [
+          { "flag": "--output", "kind": "file", "scope": "path", "description": "Writes distilled predictions JSON." },
+          { "flag": "--output-report", "kind": "file", "scope": "path", "description": "Writes distillation report JSON." }
+        ],
+        "fixed_writes": []
+      },
       "outputs": [
         { "name": "predictions_distilled", "kind": "file", "default": "reports/predictions_distilled.json" },
         { "name": "report_json", "kind": "file", "default": "reports/distill_report.json" }
@@ -584,6 +871,14 @@
       "tags": ["sweep", "hpo"],
       "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
       "inputs": [{ "name": "config", "kind": "file", "required": true, "flag": "--config" }],
+      "effects": {
+        "writes": [],
+        "fixed_writes": [
+          { "path": "reports/hpo_sweep.jsonl", "kind": "file", "scope": "path", "description": "Default results JSONL (config can override)." },
+          { "path": "reports/hpo_sweep.csv", "kind": "file", "scope": "path", "description": "Default results CSV (config can override)." },
+          { "path": "reports/hpo_sweep.md", "kind": "file", "scope": "path", "description": "Default results Markdown table (config can override)." }
+        ]
+      },
       "outputs": [
         { "name": "result_jsonl", "kind": "file", "default": "reports/hpo_sweep.jsonl" },
         { "name": "result_csv", "kind": "file", "default": "reports/hpo_sweep.csv" },
@@ -607,8 +902,17 @@
       "contracts": { "consumes": ["predictions_json"], "produces": ["metrics_report_json"] },
       "inputs": [
         { "name": "dataset", "kind": "dir", "required": true, "flag": "--dataset" },
-        { "name": "predictions", "kind": "file", "required": true, "flag": "--predictions" }
+        { "name": "predictions", "kind": "file", "required": true, "flag": "--predictions" },
+        { "name": "output_report", "kind": "file", "required": false, "flag": "--output-report", "default": "reports/gate_tuning_report.json" },
+        { "name": "output_predictions", "kind": "file", "required": false, "flag": "--output-predictions", "default": null }
       ],
+      "effects": {
+        "writes": [
+          { "flag": "--output-report", "kind": "file", "scope": "path", "description": "Writes gate tuning report JSON." },
+          { "flag": "--output-predictions", "kind": "file", "scope": "path", "description": "Optional tuned predictions JSON output." }
+        ],
+        "fixed_writes": []
+      },
       "outputs": [{ "name": "report_json", "kind": "file", "default": "reports/gate_tuning_report.json" }],
       "examples": [
         {
@@ -626,6 +930,7 @@
       "tags": ["predictions", "parity"],
       "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
       "contracts": { "consumes": ["predictions_json"] },
+      "effects": { "writes": [], "fixed_writes": [] },
       "inputs": [
         { "name": "reference", "kind": "file", "required": true, "flag": "--reference" },
         { "name": "candidate", "kind": "file", "required": true, "flag": "--candidate" }
@@ -647,6 +952,7 @@
       "tags": ["predictions", "parity", "keypoints", "pose"],
       "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
       "contracts": { "consumes": ["predictions_json"] },
+      "effects": { "writes": [], "fixed_writes": [] },
       "inputs": [
         { "name": "reference", "kind": "file", "required": true, "flag": "--reference" },
         { "name": "candidate", "kind": "file", "required": true, "flag": "--candidate" }
@@ -673,6 +979,12 @@
         { "name": "predictions", "kind": "file", "required": true, "flag": "--predictions" },
         { "name": "output", "kind": "file", "required": true, "flag": "--output" }
       ],
+      "effects": {
+        "writes": [
+          { "flag": "--output", "kind": "file", "scope": "path", "description": "Writes refined predictions JSON." }
+        ],
+        "fixed_writes": []
+      },
       "outputs": [{ "name": "predictions_json", "kind": "file", "description": "Refined predictions JSON written to --output." }],
       "examples": [
         {
@@ -696,6 +1008,16 @@
       },
       "requires": { "python_packages": ["onnxruntime", "numpy", "opencv-python"] },
       "contracts": { "produces": ["predictions_json"] },
+      "inputs": [
+        { "name": "onnx", "kind": "file", "required": false, "flag": "--onnx", "default": null },
+        { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/predictions_onnxrt.json" }
+      ],
+      "effects": {
+        "writes": [
+          { "flag": "--output", "kind": "file", "scope": "path", "description": "Writes predictions JSON." }
+        ],
+        "fixed_writes": []
+      },
       "examples": [
         {
           "description": "Export ONNXRuntime predictions (dry-run mode exists).",
@@ -718,6 +1040,20 @@
         "notes": "Typically requires Linux + NVIDIA + TensorRT (trtexec)."
       },
       "requires": { "system": ["trtexec"] },
+      "inputs": [
+        { "name": "onnx", "kind": "file", "required": true, "flag": "--onnx" },
+        { "name": "engine", "kind": "file", "required": false, "flag": "--engine", "default": "engines/model.plan" },
+        { "name": "timing_cache", "kind": "file", "required": false, "flag": "--timing-cache", "default": "engines/timing.cache" },
+        { "name": "meta_output", "kind": "file", "required": false, "flag": "--meta-output", "default": "reports/trt_engine_meta.json" }
+      ],
+      "effects": {
+        "writes": [
+          { "flag": "--engine", "kind": "file", "scope": "path", "description": "Writes TensorRT engine plan." },
+          { "flag": "--timing-cache", "kind": "file", "scope": "path", "description": "Writes timing cache." },
+          { "flag": "--meta-output", "kind": "file", "scope": "path", "description": "Writes build metadata JSON." }
+        ],
+        "fixed_writes": []
+      },
       "examples": [
         {
           "description": "Build FP16 engine (Linux/NVIDIA).",
@@ -740,6 +1076,19 @@
         "notes": "ONNX export can run on CPU; engine build requires Linux+NVIDIA+trtexec unless --skip-engine is set."
       },
       "requires": { "python_packages": ["torch", "onnx"], "system": ["trtexec (optional, for engine build)"] },
+      "inputs": [
+        { "name": "onnx", "kind": "file", "required": false, "flag": "--onnx", "default": "models/model.onnx" },
+        { "name": "engine", "kind": "file", "required": false, "flag": "--engine", "default": "engines/model_fp16.plan" },
+        { "name": "timing_cache", "kind": "file", "required": false, "flag": "--timing-cache", "default": "engines/timing.cache" }
+      ],
+      "effects": {
+        "writes": [
+          { "flag": "--onnx", "kind": "file", "scope": "path", "description": "Writes ONNX model." },
+          { "flag": "--engine", "kind": "file", "scope": "path", "description": "Writes TensorRT engine plan." },
+          { "flag": "--timing-cache", "kind": "file", "scope": "path", "description": "Writes timing cache." }
+        ],
+        "fixed_writes": []
+      },
       "examples": [
         {
           "description": "Export ONNX and build a FP16 engine (Linux/NVIDIA).",
@@ -766,6 +1115,12 @@
         { "name": "config", "kind": "file", "required": true, "flag": "--config" },
         { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/rtdetr_pose_backend_suite.json" }
       ],
+      "effects": {
+        "writes": [
+          { "flag": "--output", "kind": "file", "scope": "path", "description": "Writes backend suite JSON report." }
+        ],
+        "fixed_writes": []
+      },
       "outputs": [{ "name": "report_json", "kind": "file", "default": "reports/rtdetr_pose_backend_suite.json" }],
       "examples": [
         {
@@ -792,8 +1147,24 @@
       "inputs": [
         { "name": "config", "kind": "file", "required": false, "flag": "--config", "default": "rtdetr_pose/configs/base.json" },
         { "name": "checkpoint", "kind": "file", "required": false, "flag": "--checkpoint" },
-        { "name": "run_dir", "kind": "file", "required": false, "flag": "--run-dir" }
+        { "name": "run_dir", "kind": "dir", "required": false, "flag": "--run-dir" },
+        { "name": "onnx", "kind": "file", "required": false, "flag": "--onnx", "default": null },
+        { "name": "engine", "kind": "file", "required": false, "flag": "--engine", "default": null },
+        { "name": "timing_cache", "kind": "file", "required": false, "flag": "--timing-cache", "default": null },
+        { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": null }
       ],
+      "effects": {
+        "writes": [
+          { "flag": "--run-dir", "kind": "dir", "scope": "tree", "description": "Writes run artifacts under --run-dir." },
+          { "flag": "--onnx", "kind": "file", "scope": "path", "description": "Optional ONNX output path." },
+          { "flag": "--engine", "kind": "file", "scope": "path", "description": "Optional TensorRT engine output path." },
+          { "flag": "--timing-cache", "kind": "file", "scope": "path", "description": "Optional timing cache path." },
+          { "flag": "--output", "kind": "file", "scope": "path", "description": "Optional suite report output path." }
+        ],
+        "fixed_writes": [
+          { "path": "runs/rtdetr_pose_backend_suite", "kind": "dir", "scope": "tree", "description": "Default run root when --run-dir is not provided." }
+        ]
+      },
       "outputs": [{ "name": "suite_report", "kind": "file", "default": "runs/rtdetr_pose_backend_suite/<timestamp>/backend_suite.json" }],
       "examples": [
         {
@@ -812,6 +1183,16 @@
       "platform": { "cpu_ok": false, "gpu_required": true, "macos_ok": false, "linux_ok": true },
       "requires": { "python_packages": ["tensorrt", "numpy", "opencv-python"], "system": ["CUDA bindings (pycuda or cuda-python)"] },
       "contracts": { "produces": ["predictions_json"] },
+      "inputs": [
+        { "name": "engine", "kind": "file", "required": false, "flag": "--engine", "default": null },
+        { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/predictions_trt.json" }
+      ],
+      "effects": {
+        "writes": [
+          { "flag": "--output", "kind": "file", "scope": "path", "description": "Writes predictions JSON." }
+        ],
+        "fixed_writes": []
+      },
       "examples": [
         {
           "description": "Export TensorRT predictions (engine must exist).",
@@ -835,6 +1216,12 @@
         { "name": "warmup", "kind": "number", "required": false, "flag": "--warmup", "default": 20 },
         { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/latency_trt.json" }
       ],
+      "effects": {
+        "writes": [
+          { "flag": "--output", "kind": "file", "scope": "path", "description": "Writes metrics report JSON." }
+        ],
+        "fixed_writes": []
+      },
       "outputs": [{ "name": "report_json", "kind": "file", "default": "reports/latency_trt.json" }],
       "examples": [
         {
@@ -860,8 +1247,18 @@
       "contracts": { "produces": ["predictions_json", "eval_suite_report_json", "metrics_report_json"] },
       "inputs": [
         { "name": "dataset", "kind": "dir", "required": true, "flag": "--dataset" },
-        { "name": "onnx_template", "kind": "string", "required": true, "flag": "--onnx-template" }
+        { "name": "onnx_template", "kind": "string", "required": true, "flag": "--onnx-template" },
+        { "name": "run_dir", "kind": "dir", "required": false, "flag": "--run-dir", "default": null }
       ],
+      "effects": {
+        "writes": [
+          { "flag": "--run-dir", "kind": "dir", "scope": "tree", "description": "Optional run folder to copy key artifacts into." }
+        ],
+        "fixed_writes": [
+          { "path": "engines", "kind": "dir", "scope": "tree", "description": "Default engine outputs and timing cache." },
+          { "path": "reports", "kind": "dir", "scope": "tree", "description": "Default reports/artifacts (predictions, parity, eval suite, latency, generated configs)." }
+        ]
+      },
       "outputs": [{ "name": "run_dir", "kind": "dir", "description": "Run folder containing run.json and copied artifacts." }],
       "examples": [
         {
@@ -881,8 +1278,15 @@
       "contracts": { "produces": ["metrics_report_json"] },
       "inputs": [
         { "name": "config", "kind": "file", "required": false, "flag": "--config" },
-        { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/benchmark_latency.json" }
+        { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/benchmark_latency.json" },
+        { "name": "history", "kind": "file", "required": false, "flag": "--history", "default": null }
       ],
+      "effects": {
+        "writes": [
+          { "flag": "--output", "kind": "file", "scope": "path", "description": "Write the benchmark JSON report." },
+          { "flag": "--history", "kind": "file", "scope": "path", "description": "Optional JSONL history file to append benchmark reports to." }
+        ]
+      },
       "outputs": [
         { "name": "report_json", "kind": "file", "default": "reports/benchmark_latency.json" },
         { "name": "history_jsonl", "kind": "file", "description": "Optional JSONL history when --history is set." }
@@ -908,6 +1312,11 @@
         { "name": "predictions", "kind": "file", "required": true, "flag": "--predictions" },
         { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/benchmark_keypoints_eval.json" }
       ],
+      "effects": {
+        "writes": [
+          { "flag": "--output", "kind": "file", "scope": "path", "description": "Write the benchmark evaluation JSON report." }
+        ]
+      },
       "outputs": [{ "name": "report_json", "kind": "file", "default": "reports/benchmark_keypoints_eval.json" }],
       "examples": [
         {
@@ -923,6 +1332,17 @@
       "summary": "Run the scenario suite pipeline (adapter + constraints utilities) and write a report JSON.",
       "tags": ["scenarios", "pipeline"],
       "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "contracts": { "produces": ["metrics_report_json"] },
+      "inputs": [
+        { "name": "dataset", "kind": "dir", "required": false, "flag": "--dataset" },
+        { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/scenario_run.json" }
+      ],
+      "effects": {
+        "writes": [
+          { "flag": "--output", "kind": "file", "scope": "path", "description": "Write the scenario JSON report." }
+        ]
+      },
+      "outputs": [{ "name": "scenario_run_json", "kind": "file", "default": "reports/scenario_run.json" }],
       "examples": [
         { "description": "Run a basic dummy scenario pass.", "command": "python3 tools/run_scenarios.py --adapter dummy --dataset data/coco128 --max-images 50" }
       ]
@@ -934,6 +1354,7 @@
       "summary": "Enforce Apache-2.0-only constraints (denylist + no vendored GPL/AGPL license texts).",
       "tags": ["policy", "license"],
       "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "effects": { "writes": [], "fixed_writes": [] },
       "outputs": [{ "name": "stdout", "kind": "stdout", "description": "OK or failure reason." }],
       "examples": [{ "description": "Run policy checks.", "command": "python3 tools/check_license_policy.py" }],
       "docs": ["docs/license_policy.md"]
@@ -948,6 +1369,11 @@
       "inputs": [
         { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/dependency_licenses.json" }
       ],
+      "effects": {
+        "writes": [
+          { "flag": "--output", "kind": "file", "scope": "path", "description": "Write the dependency license JSON report." }
+        ]
+      },
       "outputs": [{ "name": "dependency_licenses_json", "kind": "file", "default": "reports/dependency_licenses.json" }],
       "examples": [
         {
@@ -978,6 +1404,14 @@
         { "name": "replay_fraction", "kind": "number", "required": false, "flag": "--replay-fraction" },
         { "name": "replay_per_task_cap", "kind": "number", "required": false, "flag": "--replay-per-task-cap" }
       ],
+      "effects": {
+        "writes": [
+          { "flag": "--run-dir", "kind": "dir", "scope": "tree", "description": "Optional explicit run directory." }
+        ],
+        "fixed_writes": [
+          { "path": "runs/continual", "kind": "dir", "scope": "tree", "description": "Default run root when --run-dir is not set." }
+        ]
+      },
       "outputs": [{ "name": "run_json", "kind": "file", "description": "continual_run.json under the run dir." }],
       "examples": [
         {
@@ -1002,6 +1436,15 @@
         { "name": "output", "kind": "file", "required": false, "flag": "--output" },
         { "name": "html", "kind": "file", "required": false, "flag": "--html" }
       ],
+      "effects": {
+        "writes": [
+          { "flag": "--output", "kind": "file", "scope": "path", "description": "Optional explicit JSON output path." },
+          { "flag": "--html", "kind": "file", "scope": "path", "description": "Optional explicit HTML output path." }
+        ],
+        "fixed_writes": [
+          { "path": "runs/continual", "kind": "dir", "scope": "tree", "description": "Default outputs are written next to the run dir when using standard runs/continual locations." }
+        ]
+      },
       "outputs": [
         { "name": "eval_json", "kind": "file", "description": "<run_dir>/continual_eval.json by default." },
         { "name": "eval_html", "kind": "file", "description": "<run_dir>/continual_eval.html by default." }
