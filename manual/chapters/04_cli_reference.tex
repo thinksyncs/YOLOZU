@@ -43,12 +43,20 @@ Internally, \cmd{yolozu train} forwards \cmd{--config <file>} to
 \toprule
 \textbf{Case} & \textbf{YAML file} & \textbf{Command pattern} \\
 \midrule
-Train (default) & \path{configs/examples/train\_setting.yaml} & \cmd{yolozu train configs/examples/train\_setting.yaml} \\
-Train (contract) & \path{configs/examples/train\_contract.yaml} & \cmd{yolozu train configs/examples/train\_contract.yaml --run-id exp01} \\
-Resume & same as train contract & \cmd{yolozu train configs/examples/train\_contract.yaml --run-id exp01 --resume} \\
-Test (scenario) & \path{configs/examples/test\_setting.yaml} & \cmd{yolozu test configs/examples/test\_setting.yaml --adapter precomputed --predictions reports/predictions.json} \\
+Train (default) & \path{configs/examples/train\_setting.yaml} & \cmd{yolozu train <train\_setting.yaml>} \\
+Train (contract) & \path{configs/examples/train\_contract.yaml} & \cmd{yolozu train <train\_contract.yaml> --run-id <id>} \\
+Resume & same as train contract & \cmd{yolozu train <train\_contract.yaml> --run-id <id> --resume} \\
+Test (scenario) & \path{configs/examples/test\_setting.yaml} & \cmd{yolozu test <test\_setting.yaml> [test\_args...]} \\
 \bottomrule
 \end{longtable}
+
+Concrete examples:
+\begin{lstlisting}[language=bash]
+yolozu train configs/examples/train_setting.yaml
+yolozu train configs/examples/train_contract.yaml --run-id exp01
+yolozu train configs/examples/train_contract.yaml --run-id exp01 --resume
+yolozu test configs/examples/test_setting.yaml --adapter precomputed --predictions reports/predictions.json
+\end{lstlisting}
 
 \subsection{Test YAML and override rule}
 The default test YAML is intentionally minimal (adapter/dataset/split/max\_images), and runtime-specific

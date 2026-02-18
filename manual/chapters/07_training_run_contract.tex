@@ -41,12 +41,20 @@ The same project can be operated with YAML files for both training and test scen
 \toprule
 \textbf{Workflow} & \textbf{Primary config} & \textbf{Reference command} \\
 \midrule
-Train (scaffold) & \path{configs/examples/train\_setting.yaml} & \cmd{yolozu train configs/examples/train\_setting.yaml} \\
-Train (contract) & \path{configs/examples/train\_contract.yaml} & \cmd{yolozu train configs/examples/train\_contract.yaml --run-id exp01} \\
-Resume (full state) & same as contract & \cmd{yolozu train configs/examples/train\_contract.yaml --run-id exp01 --resume} \\
-Test (scenario runner) & \path{configs/examples/test\_setting.yaml} & \cmd{yolozu test configs/examples/test\_setting.yaml --adapter precomputed --predictions reports/predictions.json} \\
+Train (scaffold) & \path{configs/examples/train\_setting.yaml} & \cmd{yolozu train <train\_setting.yaml>} \\
+Train (contract) & \path{configs/examples/train\_contract.yaml} & \cmd{yolozu train <train\_contract.yaml> --run-id <id>} \\
+Resume (full state) & same as contract & \cmd{yolozu train <train\_contract.yaml> --run-id <id> --resume} \\
+Test (scenario runner) & \path{configs/examples/test\_setting.yaml} & \cmd{yolozu test <test\_setting.yaml> [test\_args...]} \\
 \bottomrule
 \end{longtable}
+
+Example commands:
+\begin{lstlisting}[language=bash]
+yolozu train configs/examples/train_setting.yaml
+yolozu train configs/examples/train_contract.yaml --run-id exp01
+yolozu train configs/examples/train_contract.yaml --run-id exp01 --resume
+yolozu test configs/examples/test_setting.yaml --adapter precomputed --predictions reports/predictions.json
+\end{lstlisting}
 
 \noindent For \cmd{yolozu test}, YAML keys are translated to \cmd{--key value} arguments
 (booleans become flags), then extra CLI args override as needed.
@@ -156,15 +164,19 @@ yolozu train configs/examples/train_contract.yaml --run-id exp01 --resume
 Backbone-related settings are not primarily controlled by solver flags; they come from
 the model config file referenced by \texttt{model\_config} in the training YAML.
 
-\begin{longtable}{@{}p{0.30\textwidth}p{0.18\textwidth}p{0.46\textwidth}@{}}
+\begin{longtable}{@{}p{0.28\textwidth}p{0.24\textwidth}p{0.42\textwidth}@{}}
 \toprule
 \textbf{Where} & \textbf{Key} & \textbf{Role} \\
 \midrule
 train YAML & \texttt{model\_config} & points to model JSON (example: \path{rtdetr_pose/configs/base.json}) \\
 model JSON (\texttt{model.*}) & \texttt{backbone\_name} & backbone family (default: \texttt{cspresnet}) \\
-model JSON (\texttt{model.*}) & \texttt{stem\_channels}, \texttt{backbone\_channels}, \texttt{stage\_blocks} & width/depth structure \\
-model JSON (\texttt{model.*}) & \texttt{backbone\_activation}, \texttt{backbone\_kwargs} & activation and optional backbone args \\
-solver YAML/CLI & \texttt{backbone\_lr\_mult}, \texttt{backbone\_wd\_mult} & optimization scaling for backbone params \\
+model JSON (\texttt{model.*}) & \texttt{stem\_channels} & stem width \\
+model JSON (\texttt{model.*}) & \texttt{backbone\_channels} & per-stage channels \\
+model JSON (\texttt{model.*}) & \texttt{stage\_blocks} & per-stage block depth \\
+model JSON (\texttt{model.*}) & \texttt{backbone\_activation} & backbone activation preset \\
+model JSON (\texttt{model.*}) & \texttt{backbone\_kwargs} & optional backbone-specific kwargs \\
+solver YAML/CLI & \texttt{backbone\_lr\_mult} & LR multiplier for backbone params \\
+solver YAML/CLI & \texttt{backbone\_wd\_mult} & WD multiplier for backbone params \\
 \bottomrule
 \end{longtable}
 
