@@ -177,3 +177,24 @@ The goal is compatibility for:
 3) resolved artifacts to make “it worked as-is” visible
 
 Non-goal (initially): perfectly reproducing framework-specific training behavior (aug hooks, schedulers, etc.).
+
+## Adapter starters and parity onboarding
+
+For inference adapters and parity-ready output templates, use:
+
+- `docs/adapter_templates.md`
+- `examples/adapter_starters/`
+
+Run adapter parity suite across framework outputs:
+
+```bash
+python3 tools/adapter_parity_suite.py \
+  --adapter-predictions rtdetr=/path/to/reference.json \
+  --adapter-predictions mmdet=/path/to/mmdet.json \
+  --adapter-predictions detectron2=/path/to/detectron2.json \
+  --adapter-predictions ultralytics=/path/to/ultralytics.json \
+  --adapter-predictions opencv_dnn=/path/to/opencv_dnn.json \
+  --adapter-predictions custom_cpp=/path/to/custom_cpp.json \
+  --reference-adapter rtdetr \
+  --output reports/adapter_parity_suite.json
+```

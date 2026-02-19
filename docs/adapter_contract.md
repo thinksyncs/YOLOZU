@@ -119,3 +119,7 @@ See [docs/ttt_integration_plan.md](ttt_integration_plan.md) for more details.
 
 ## Versioning
 Adapters should be compatible with predictions schema `v1`.
+
+Starter files and onboarding checklist:
+- `docs/adapter_templates.md`
+- `examples/adapter_starters/`

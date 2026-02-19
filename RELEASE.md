@@ -8,6 +8,7 @@
 - Added config path for swaps: `model.backbone.name|norm|args` and `model.projector.d_model` (legacy fields remain compatible).
 - Added smoke/shape/ONNX tests and corresponding docs updates (`docs/backbones.md`, training docs, manual updates).
 - Hardened `run_meta` provenance contract: required git SHA/dependency lock/preprocess/runtime/command fields, validator tool, and CI gate checks.
+- Added adapter suite expansion assets: framework starter templates (MMDet/Detectron2/Ultralytics/RT-DETR/OpenCV-dnn/custom C++), adapter parity suite tool, and onboarding docs.
 
 YOLOZU is configured for **PyPI Trusted Publishing** (OIDC) via GitHub Actions.
 This avoids long-lived PyPI API tokens.

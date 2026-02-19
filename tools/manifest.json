@@ -1236,6 +1236,43 @@
       "docs": ["docs/onnx_export_parity.md"]
     },
     {
+      "id": "adapter_parity_suite",
+      "entrypoint": "tools/adapter_parity_suite.py",
+      "runner": "python3",
+      "summary": "Run parity checks for multiple adapter outputs against a reference adapter predictions file.",
+      "tags": ["adapter", "parity", "validation"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "contracts": { "consumes": ["predictions_json"] },
+      "inputs": [
+        { "name": "adapter_predictions", "kind": "string", "required": true, "flag": "--adapter-predictions", "description": "Repeatable adapter=predictions.json mapping." },
+        { "name": "reference_adapter", "kind": "string", "required": false, "flag": "--reference-adapter" },
+        { "name": "image_size", "kind": "string", "required": false, "flag": "--image-size" },
+        { "name": "iou_thresh", "kind": "number", "required": false, "flag": "--iou-thresh" },
+        { "name": "score_atol", "kind": "number", "required": false, "flag": "--score-atol" },
+        { "name": "bbox_atol", "kind": "number", "required": false, "flag": "--bbox-atol" },
+        { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/adapter_parity_suite.json" }
+      ],
+      "effects": {
+        "writes": [
+          {
+            "flag": "--output",
+            "kind": "file",
+            "scope": "path",
+            "description": "Writes adapter parity suite JSON report."
+          }
+        ],
+        "fixed_writes": []
+      },
+      "outputs": [{ "name": "adapter_parity_suite_json", "kind": "file", "description": "Adapter parity report JSON.", "default": "reports/adapter_parity_suite.json" }],
+      "examples": [
+        {
+          "description": "Compare framework adapter outputs against RT-DETR reference predictions.",
+          "command": "python3 tools/adapter_parity_suite.py --adapter-predictions rtdetr=reports/pred_rtdetr.json --adapter-predictions mmdet=reports/pred_mmdet.json --adapter-predictions detectron2=reports/pred_detectron2.json --adapter-predictions ultralytics=reports/pred_ultralytics.json --adapter-predictions opencv_dnn=reports/pred_opencv_dnn.json --adapter-predictions custom_cpp=reports/pred_custom_cpp.json --reference-adapter rtdetr --output reports/adapter_parity_suite.json"
+        }
+      ],
+      "docs": ["docs/adapter_templates.md", "docs/adapter_contract.md"]
+    },
+    {
       "id": "refine_predictions_hessian",
       "entrypoint": "tools/refine_predictions_hessian.py",
       "runner": "python3",

@@ -71,6 +71,7 @@ Read next:
 - [Predictions JSON schema (v1)](predictions_schema.md)
 - [Schema governance (version lifecycle + migration)](schema_governance.md)
 - [Adapter contract (v1)](adapter_contract.md)
+- [Adapter templates + onboarding](adapter_templates.md)
 
 ### 4) Protocols & Bench (YOLO26 protocol + sweeps)
 
