@@ -68,7 +68,7 @@ def _validate_contracts(contracts: Any) -> tuple[dict[str, dict[str, Any]], list
     return out, errors
 
 
-def _validate_tool(tool: Any, *, index: int) -> list[str]:
+def _validate_tool(tool: Any, *, index: int, require_declarative: bool = False) -> list[str]:
     errors: list[str] = []
     where = f"tools[{index}]"
     if not isinstance(tool, dict):
@@ -99,6 +99,12 @@ def _validate_tool(tool: Any, *, index: int) -> list[str]:
     summary = tool.get("summary")
     if not isinstance(summary, str) or not summary.strip():
         errors.append(f"{where}.summary: required string")
+
+    if require_declarative:
+        required_top = ("platform", "inputs", "effects", "outputs", "examples")
+        for field in required_top:
+            if field not in tool:
+                errors.append(f"{where}.{field}: required in declarative mode")
 
     docs = tool.get("docs")
     if docs is not None:
@@ -140,6 +146,10 @@ def _validate_tool(tool: Any, *, index: int) -> list[str]:
         if not isinstance(effects, dict):
             errors.append(f"{where}.effects: expected object")
         else:
+            if require_declarative and "writes" not in effects:
+                errors.append(f"{where}.effects.writes: required in declarative mode")
+            if require_declarative and "fixed_writes" not in effects:
+                errors.append(f"{where}.effects.fixed_writes: required in declarative mode")
             allow_unknown = bool(effects.get("allow_unknown_flags", False))
             writes = effects.get("writes")
             if writes is not None:
@@ -189,6 +199,8 @@ def _validate_tool(tool: Any, *, index: int) -> list[str]:
     for field in ("inputs", "outputs"):
         items = tool.get(field)
         if items is None:
+            if require_declarative:
+                errors.append(f"{where}.{field}: required in declarative mode")
             continue
         if not isinstance(items, list):
             errors.append(f"{where}.{field}: must be a list")
@@ -212,6 +224,8 @@ def _validate_tool(tool: Any, *, index: int) -> list[str]:
         if not isinstance(examples, list):
             errors.append(f"{where}.examples: must be a list")
         else:
+            if require_declarative and len(examples) == 0:
+                errors.append(f"{where}.examples: must contain at least one item in declarative mode")
             for j, ex in enumerate(examples):
                 if not isinstance(ex, dict):
                     errors.append(f"{where}.examples[{j}]: expected object")
@@ -219,11 +233,22 @@ def _validate_tool(tool: Any, *, index: int) -> list[str]:
                 cmd = ex.get("command")
                 if not isinstance(cmd, str) or not cmd.strip():
                     errors.append(f"{where}.examples[{j}].command: required string")
+    elif require_declarative:
+        errors.append(f"{where}.examples: required in declarative mode")
 
-    return errors
+    if require_declarative:
+        platform_obj = tool.get("platform")
+        if isinstance(platform_obj, dict):
+            for key in ("cpu_ok", "gpu_required", "macos_ok", "linux_ok"):
+                if key not in platform_obj:
+                    errors.append(f"{where}.platform.{key}: required in declarative mode")
+                elif not isinstance(platform_obj.get(key), bool):
+                    errors.append(f"{where}.platform.{key}: must be bool in declarative mode")
+
+    return list(dict.fromkeys(errors))
 
 
-def validate_manifest(obj: Any) -> list[str]:
+def validate_manifest(obj: Any, *, require_declarative: bool = False) -> list[str]:
     errors: list[str] = []
     if not isinstance(obj, dict):
         return ["manifest: expected object"]
@@ -242,7 +267,7 @@ def validate_manifest(obj: Any) -> list[str]:
 
     seen: set[str] = set()
     for i, tool in enumerate(tools):
-        errors.extend(_validate_tool(tool, index=i))
+        errors.extend(_validate_tool(tool, index=i, require_declarative=require_declarative))
 
         # Validate tool.contract_outputs cross-references (if present)
         if isinstance(tool, dict) and isinstance(tool.get("contract_outputs"), dict):
@@ -288,6 +313,11 @@ def validate_manifest(obj: Any) -> list[str]:
 def _parse_args(argv: list[str]) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Validate tools/manifest.json structure and references.")
     p.add_argument("--manifest", default="tools/manifest.json", help="Manifest path (default: tools/manifest.json).")
+    p.add_argument(
+        "--require-declarative",
+        action="store_true",
+        help="Require declarative fields (platform/inputs/effects/outputs/examples) for each tool.",
+    )
     return p.parse_args(argv)
 
 
@@ -304,7 +334,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: failed to parse JSON: {manifest_path}: {exc}", file=sys.stderr)
         return 2
 
-    errors = validate_manifest(obj)
+    errors = validate_manifest(obj, require_declarative=bool(args.require_declarative))
     if errors:
         print("error: invalid tool manifest:", file=sys.stderr)
         for e in errors:

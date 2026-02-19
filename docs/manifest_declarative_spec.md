@@ -92,6 +92,12 @@ Phase 2 (enforcement expansion):
 - Add regression tests for failure-path coverage
 - Add CI gate to block non-compliant manifest updates
 
+Current validator supports strict declarative checks with:
+
+```bash
+python3 tools/validate_tool_manifest.py --manifest tools/manifest.json --require-declarative
+```
+
 ## Authoring checklist
 
 For any new or modified tool entry:
