@@ -73,6 +73,7 @@ Read next:
 - [RFC workflow + golden compatibility assets](rfc_workflow.md)
 - [Contract-first benchmark publication loop](benchmark_publication.md)
 - [Declarative tool manifest spec](manifest_declarative_spec.md)
+- [Manifest authoring workflow](manifest_authoring_workflow.md)
 - [CoTTA design spec (YOLOZU phase 1)](cotta_design_spec.md)
 - [CoTTA drift validation protocol](cotta_validation.md)
 - [EATA design spec (YOLOZU phase 1)](eata_design_spec.md)
