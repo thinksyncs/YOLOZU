@@ -44,6 +44,7 @@ For most day-to-day flows, start with:
 - Tool manifest: `tools/manifest.json`
 - Manifest schema: `docs/schemas/tools_manifest.schema.json`
 - Validator: `python3 tools/validate_tool_manifest.py`
+- Declarative requirements: `docs/manifest_declarative_spec.md`
 
 ## Policy helpers
 

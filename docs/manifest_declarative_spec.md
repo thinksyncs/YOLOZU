@@ -1,0 +1,104 @@
+# Declarative tool manifest spec (phase 1)
+
+This document freezes **required keys** and **rule boundaries** for `tools/manifest.json` in the YOLOZU declarative-manifest rollout.
+
+## Scope
+
+- Target file: `tools/manifest.json`
+- Target entries: every item in `tools[]`
+- Goal: make each tool entry self-descriptive for inputs, side effects, outputs, contracts, and runnable examples.
+
+## Required fields for every tool entry
+
+Each `tools[]` item MUST include:
+
+- `id` (stable, lowercase identifier)
+- `entrypoint` (repo-relative script path)
+- `runner` (`python3` or `bash`)
+- `summary` (human-readable purpose)
+- `platform` object with `cpu_ok`, `gpu_required`, `macos_ok`, `linux_ok`
+- `inputs` array (can be empty, but field must exist)
+- `effects` object with `writes` and `fixed_writes` arrays
+- `outputs` array (can be empty, but field must exist)
+- `examples` with at least one runnable command
+
+## Input declaration rules
+
+For each `inputs[]` item:
+
+- `name`: non-empty string
+- `kind`: one of `file`, `dir`, `string`, `number`, `json`, `stdout`
+- `required`: boolean
+- `flag`: `--kebab-case` CLI flag when user-provided through CLI
+- `default`: present when optional input has deterministic fallback behavior
+
+Boundary:
+
+- Internal-only values (derived from config/runtime) may omit `flag`, but must remain documented in `description`.
+
+## Effects declaration rules
+
+Every tool MUST declare side effects in `effects`:
+
+- `effects.writes[]` for path(s) driven by input flags
+  - required keys: `flag`, `kind`, `scope`, `description`
+  - `kind`: `file` or `dir`
+  - `scope`: `path` or `tree`
+- `effects.fixed_writes[]` for deterministic writes not controlled by an output flag
+  - required keys: `path`, `kind`, `scope`, `description`
+
+Boundary:
+
+- No undeclared write paths are allowed except explicitly approved cases using `effects.allow_unknown_flags=true`.
+
+## Output declaration rules
+
+For each `outputs[]` item:
+
+- `name`: stable output identifier
+- `kind`: one of `file`, `dir`, `string`, `number`, `json`, `stdout`
+- `description`: what is produced
+- `default`: required for deterministic default output paths
+
+Boundary:
+
+- If a tool writes multiple artifacts, each publishable artifact must appear in `outputs[]`.
+
+## Contracts and docs
+
+When applicable:
+
+- `contracts.consumes[]` / `contracts.produces[]` must reference ids in top-level `contracts`.
+- `docs[]` should point to repo-relative documentation files describing protocol/usage.
+- `contract_outputs` should map produced contract ids to matching `outputs[].name`.
+
+## Identifier and path constraints
+
+- `id` matches `^[a-z0-9][a-z0-9_\-]*$`
+- All manifest paths are repo-relative
+- Paths must not include `..`
+- Referenced files in `entrypoint`, `docs[]`, `contracts.*.schema` must exist
+
+## Validation boundaries (phase split)
+
+Phase 1 (this spec freeze):
+
+- Document required fields and constraints
+- Use `python3 tools/validate_tool_manifest.py` as baseline structure validation
+
+Phase 2 (enforcement expansion):
+
+- Strengthen validator to require presence of `inputs`, `effects`, `outputs`, `platform`, and at least one example for all tools
+- Add regression tests for failure-path coverage
+- Add CI gate to block non-compliant manifest updates
+
+## Authoring checklist
+
+For any new or modified tool entry:
+
+1. Declare all CLI inputs in `inputs[]`.
+2. Declare all write side effects in `effects.writes[]` / `effects.fixed_writes[]`.
+3. Declare publishable artifacts in `outputs[]`.
+4. Add at least one runnable command in `examples[]`.
+5. Add `contracts`/`contract_outputs` mappings where contracts exist.
+6. Run `python3 tools/validate_tool_manifest.py --manifest tools/manifest.json`.
