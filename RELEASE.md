@@ -12,6 +12,7 @@
 - Added backend parity matrix automation (`tools/backend_parity_matrix.py`) to generate JSON+HTML parity reports across Torch/ONNXRuntime/TensorRT/OpenCV-dnn/custom C++ with reproducible fixed-input fingerprinting under `runs/.../reports`.
 - Extended `yolozu doctor` diagnostics with runtime capability matrix (CUDA/Torch/ONNXRuntime/TensorRT/OpenCV), drift explanation hints, and remediation links for parity/debug workflows.
 - Added RFC workflow + golden compatibility assets (`baselines/golden/v1/*`) and a hash-pinned compatibility gate (`tools/check_golden_compatibility.py`) to prevent silent schema/protocol drift.
+- Added contract-first benchmark publication loop with `tools/publish_benchmark_table.py` and `docs/benchmark_publication.md` to generate official JSON/Markdown benchmark tables traceable to source run ids under fixed protocol.
 
 YOLOZU is configured for **PyPI Trusted Publishing** (OIDC) via GitHub Actions.
 This avoids long-lived PyPI API tokens.

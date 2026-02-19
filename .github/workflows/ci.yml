@@ -296,6 +296,56 @@ jobs:
             python tools/run_scenario_suite.py --output reports/scenario_suite_ci.json
           fi
 
+      - name: Benchmark publication smoke
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          reports = Path("reports")
+          reports.mkdir(parents=True, exist_ok=True)
+
+          a = {
+              "schema_version": 1,
+              "timestamp": "2026-01-01T00:00:00Z",
+              "metrics": {
+                  "buckets": [
+                      {"name": "yolo26n", "metrics": {"fps": 40.0, "latency_ms": {"mean": 25.0}}},
+                      {"name": "yolo26s", "metrics": {"fps": 30.0, "latency_ms": {"mean": 33.0}}},
+                  ]
+              },
+              "meta": {"run_id": "ci_bench_a", "git_head": "deadbeef"},
+          }
+          b = {
+              "schema_version": 1,
+              "timestamp": "2026-01-01T00:01:00Z",
+              "metrics": {"summary": {"fps_mean": 20.0, "latency_ms_mean": 50.0}},
+              "meta": {"run_id": "ci_bench_b", "git_head": "deadbeef"},
+          }
+          (reports / "benchmark_latency_ci_a.json").write_text(json.dumps(a), encoding="utf-8")
+          (reports / "benchmark_latency_ci_b.json").write_text(json.dumps(b), encoding="utf-8")
+          PY
+
+          python tools/publish_benchmark_table.py \
+            --report reports/benchmark_latency_ci_a.json \
+            --report reports/benchmark_latency_ci_b.json \
+            --output-json reports/benchmark_table_ci.json \
+            --output-md reports/benchmark_table_ci.md \
+            --source-command "python3 tools/benchmark_latency.py --config configs/benchmark_latency_example.json"
+
+          test -f reports/benchmark_table_ci.json
+          test -f reports/benchmark_table_ci.md
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          payload = json.loads(Path("reports/benchmark_table_ci.json").read_text(encoding="utf-8"))
+          rows = payload.get("rows") or []
+          run_ids = {str(r.get("run_id")) for r in rows}
+          assert "ci_bench_a" in run_ids and "ci_bench_b" in run_ids
+          assert payload.get("protocol", {}).get("id") == "yolo26"
+          print("benchmark publication smoke passed")
+          PY
+
       - name: Training contract smoke (dry-run + ONNX export/parity)
         run: |
           python - <<'PY'

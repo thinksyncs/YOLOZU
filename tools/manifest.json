@@ -1937,6 +1937,43 @@
       "docs": ["docs/benchmark_latency.md"]
     },
     {
+      "id": "publish_benchmark_table",
+      "entrypoint": "tools/publish_benchmark_table.py",
+      "runner": "python3",
+      "summary": "Generate official benchmark publication table (JSON+Markdown) from benchmark reports with run-id traceability.",
+      "tags": ["benchmark", "publication", "protocol", "report"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "contracts": { "consumes": ["metrics_report_json"] },
+      "inputs": [
+        { "name": "report", "kind": "file", "required": true, "flag": "--report", "description": "Repeatable benchmark report JSON input." },
+        { "name": "output_json", "kind": "file", "required": false, "flag": "--output-json", "default": "reports/benchmark_table.json" },
+        { "name": "output_md", "kind": "file", "required": false, "flag": "--output-md", "default": "reports/benchmark_table.md" },
+        { "name": "title", "kind": "string", "required": false, "flag": "--title" },
+        { "name": "cadence", "kind": "string", "required": false, "flag": "--cadence", "default": "weekly" },
+        { "name": "protocol_id", "kind": "string", "required": false, "flag": "--protocol-id", "default": "yolo26" },
+        { "name": "source_command", "kind": "string", "required": false, "flag": "--source-command" },
+        { "name": "publication_run_id", "kind": "string", "required": false, "flag": "--publication-run-id" }
+      ],
+      "effects": {
+        "writes": [
+          { "flag": "--output-json", "kind": "file", "scope": "path", "description": "Writes benchmark table JSON artifact." },
+          { "flag": "--output-md", "kind": "file", "scope": "path", "description": "Writes benchmark table Markdown artifact." }
+        ],
+        "fixed_writes": []
+      },
+      "outputs": [
+        { "name": "benchmark_table_json", "kind": "file", "default": "reports/benchmark_table.json" },
+        { "name": "benchmark_table_md", "kind": "file", "default": "reports/benchmark_table.md" }
+      ],
+      "examples": [
+        {
+          "description": "Publish official benchmark table from one or more benchmark reports.",
+          "command": "python3 tools/publish_benchmark_table.py --report reports/benchmark_latency.json --output-json reports/benchmark_table.json --output-md reports/benchmark_table.md --source-command \"python3 tools/benchmark_latency.py --config configs/benchmark_latency_example.json\""
+        }
+      ],
+      "docs": ["docs/benchmark_publication.md", "docs/yolo26_eval_protocol.md"]
+    },
+    {
       "id": "benchmark_keypoints_eval",
       "entrypoint": "tools/benchmark_keypoints_eval.py",
       "runner": "python3",
