@@ -1,5 +1,13 @@
 \chapter{Training and the Run Contract}
 
+\ChapterMeta{
+Explain the training stack focus (RT-DETR pose scaffold) and the run contract: stable artifact layout, strict config resolution, and standardized resume.
+}{
+Enables reproducibility, parity checks, and consistent comparisons across machines/branches by making run outputs predictable.
+}{
+Requires using run-contract mode (e.g., \cmd{--run-id} / \cmd{--run-contract}) and respecting strict config keys; training dependencies apply.
+}
+
 \section{RT-DETR pose training stack}
 The repository includes an RT-DETR-based training pipeline under \path{rtdetr_pose/}.
 The important property is not the exact model, but the \textbf{run contract}: stable artifact paths

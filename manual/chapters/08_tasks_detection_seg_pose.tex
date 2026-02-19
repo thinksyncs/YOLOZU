@@ -1,5 +1,13 @@
 \chapter{Tasks: Detection, Segmentation, Keypoints}
 
+\ChapterMeta{
+Define the supported task families and their expected prediction shapes (bbox, instance/semantic segmentation, keypoints/pose).
+}{
+Prevents schema mismatches and ensures the right evaluator is used for each task, improving metric correctness and debuggability.
+}{
+Task-specific fields are required (e.g., PNG masks for instance seg, keypoints arrays for pose); validate artifacts early with the provided tools.
+}
+
 \section{Bounding-box detection}
 BBox detection is the baseline task: per-image detections with class IDs, boxes, and scores.
 Evaluation is typically COCO-style mAP or protocol-pinned metrics.

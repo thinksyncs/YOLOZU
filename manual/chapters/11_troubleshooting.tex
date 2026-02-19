@@ -1,5 +1,13 @@
 \chapter{Troubleshooting}
 
+\ChapterMeta{
+Provide a fast debugging playbook: validate artifacts first, then check common integration failure modes.
+}{
+Shortens iteration time by catching schema/path/class-mapping issues before interpreting metrics.
+}{
+Run validators on the exact artifacts you evaluate; pay attention to \cmd{--pred-root} and class ordering consistency across exporter and evaluator.
+}
+
 \section{Validate early}
 If evaluation results look wrong, validate the artifacts first.
 

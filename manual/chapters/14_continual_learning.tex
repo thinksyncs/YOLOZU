@@ -1,5 +1,13 @@
 \chapter{Continual Learning (Anti-forgetting)}
 
+\ChapterMeta{
+Cover continual fine-tuning across tasks/domains and the evaluation of forgetting using recorded run artifacts.
+}{
+Helps mitigate catastrophic forgetting and makes per-task metrics comparable over a training sequence.
+}{
+Requires continual configs and run artifacts (e.g., \cmd{continual\_run.json}); optional replay/LoRA settings change compute and forgetting behavior.
+}
+
 \section{What YOLOZU means by ``continual''}
 Continual learning (CL) here means fine-tuning across a sequence of tasks/domains while mitigating catastrophic forgetting.
 In this repository, the reference implementation targets the in-repo \path{rtdetr_pose} scaffold.

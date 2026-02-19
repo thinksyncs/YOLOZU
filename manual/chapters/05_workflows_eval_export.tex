@@ -1,11 +1,19 @@
 \chapter{Workflows: Evaluate and Export}
 
+\ChapterMeta{
+Provide canonical workflows to (A) evaluate existing artifacts, (B) export predictions from a backend, and (C) run convenient folder inference.
+}{
+Standardizes how \path{predictions.json} and reports are produced so results are comparable and automatable.
+}{
+You need a dataset root and one or more predictions artifacts; backend-specific steps may require extra dependencies (Torch/ONNX Runtime/TensorRT).
+}
+
 \section{Workflow A: Evaluate existing predictions.json}
 If you already have \path{predictions.json} from any inference backend:
 \begin{lstlisting}[language=bash]
 python3 tools/eval_suite.py \
   --dataset /path/to/yolo-dataset \
-  --predictions /path/to/predictions.json
+  --predictions-glob '/path/to/predictions.json'
 \end{lstlisting}
 
 This is the most common integration path for external inference systems.

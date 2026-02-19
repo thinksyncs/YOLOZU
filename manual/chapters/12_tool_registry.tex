@@ -1,5 +1,13 @@
 \chapter{Tool Registry and Automation (Research Use)}
 
+\ChapterMeta{
+Explain the machine-readable tool registry (manifest + schemas) and how it supports safe discovery/execution for humans and agents.
+}{
+Enables reproducible automation and CI-style workflows by pinning tool I/O contracts and validating the registry surface.
+}{
+Assumes tools are invoked via the declared entrypoints and validated with \cmd{python3 tools/validate_tool_manifest.py}; path-resolution rules matter for automation.
+}
+
 \section{Why a tool registry matters}
 Research workflows tend to accumulate scripts. \yolozu{} treats \path{tools/} as a stable,
 scriptable interface layer, and adds a machine-readable registry:

@@ -54,6 +54,20 @@
 \newcommand{\yolozu}{\textsc{YOLOZU}}
 \newcommand{\cmd}[1]{\texttt{\detokenize{#1}}}
 
+% Chapter intro summary box (Function / Effects / Conditions)
+\newcommand{\ChapterMeta}[3]{%
+  \begin{center}
+    \fbox{\begin{minipage}{0.95\textwidth}
+      \textbf{Function (\u6a5f\u80fd):} #1\par
+      \medskip
+      \textbf{Effects (\u52b9\u679c):} #2\par
+      \medskip
+      \textbf{Conditions (\u6761\u4ef6):} #3\par
+    \end{minipage}}
+  \end{center}
+  \vspace{0.5em}
+}
+
 \title{\yolozu{} Manual (Detailed)}
 \author{YOLOZU contributors}
 \date{\today}
@@ -94,5 +108,12 @@ practical commands needed to use the repository effectively.
 \include{chapters/16_depth_6dof_symmetry}
 \include{chapters/17_realtime_batch_inference}
 \include{chapters/11_troubleshooting}
+
+\clearpage
+\chapter*{References}
+\addcontentsline{toc}{chapter}{References}
+\nocite{*}
+\bibliographystyle{plain}
+\bibliography{references}
 
 \end{document}

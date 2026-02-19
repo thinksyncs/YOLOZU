@@ -1,5 +1,13 @@
 \chapter{Parity, Benchmarks, and Protocols}
 
+\ChapterMeta{
+Cover parity checking (backend drift detection), protocol-pinned evaluation settings, and benchmark/sweep harnesses for regression surfaces.
+}{
+Makes comparisons stable and actionable by detecting silent numeric drift and tracking performance/metrics trends over time.
+}{
+Requires at least two comparable prediction artifacts for parity; protocol runs require pinned settings files and consistent preprocessing/output formats.
+}
+
 \section{Backend parity}
 When exporting predictions from different backends (torch vs onnxrt vs trt), you want to detect
 silent drift.

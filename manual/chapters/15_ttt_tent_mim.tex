@@ -1,5 +1,13 @@
 \chapter{Test-Time Training (TTT): Tent and MIM}
 
+\ChapterMeta{
+Explain controlled test-time adaptation (Tent/MIM), presets, guard rails, and reset policies for fair comparisons.
+}{
+Can improve robustness under domain shift by adapting weights in memory, while keeping cost bounded and results reproducible.
+}{
+Meaningful only with clear domain shift; comparisons require fixed image sets, bounded \cmd{--ttt-max-batches}, and careful seed/reset policy control.
+}
+
 \section{Scope and support}
 \yolozu{} supports controlled test-time training (TTT) for the \path{rtdetr_pose} adapter via
 \path{tools/export_predictions.py} or the unified wrapper \path{tools/yolozu.py}.

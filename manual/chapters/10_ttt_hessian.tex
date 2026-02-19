@@ -1,5 +1,13 @@
 \chapter{Hessian-based Refinement (Practical)}
 
+\ChapterMeta{
+Introduce per-detection numerical refinement using a Hessian/Gauss--Newton style solver after inference.
+}{
+Can reduce errors on difficult samples in offline analysis and controlled studies by applying iterative local corrections.
+}{
+Best suited for offline/batch workflows where extra compute is acceptable; requires predictions + dataset context and uses convergence/damping knobs.
+}
+
 \section{Scope and relation to TTT}
 This chapter focuses on per-detection numerical refinement after inference.
 TTT/Tent/MIM adaptation policy is covered in Chapter~15 to avoid duplicated guidance.

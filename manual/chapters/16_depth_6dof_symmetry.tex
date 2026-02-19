@@ -1,5 +1,13 @@
 \chapter{Depth + 6DoF Pose + Symmetry Handling}
 
+\ChapterMeta{
+Document geometry conventions (units/intrinsics/frames), pose/translation recovery, and symmetry/commonsense constraint utilities.
+}{
+Improves correctness and robustness of depth/pose pipelines by making assumptions explicit and by providing reusable postprocess gates.
+}{
+Requires consistent intrinsics after resize/letterbox and consistent units; some metrics/utilities require sidecar metadata (e.g., CAD points) and schema-valid pose fields.
+}
+
 \section{Units, intrinsics, and coordinate conventions}
 Depth/pose workflows are extremely sensitive to units and to intrinsics consistency.
 

@@ -1,5 +1,13 @@
 \chapter{Score Calibration and Long-tail Adjustments}
 
+\ChapterMeta{
+Describe post-hoc calibration and long-tail adjustments that transform confidence scores while preserving geometry.
+}{
+Can improve thresholding behavior and long-tail metrics without retraining, while keeping the transform reproducible via stats artifacts.
+}{
+Requires a dataset + predictions artifact; method-specific knobs apply, and outputs should typically be written as separate calibrated artifacts.
+}
+
 \section{When calibration helps}
 If your model is accurate but systematically miscalibrated (scores are too high/low), or if
 long-tail classes are under-confident, post-hoc calibration can improve thresholding behavior and
