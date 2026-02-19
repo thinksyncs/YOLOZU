@@ -9,16 +9,13 @@ from typing import Any
 
 try:
     import torch
-    from torch import nn
 except ImportError:  # pragma: no cover
-    from types import SimpleNamespace
-
     torch = None
-    nn = SimpleNamespace(Module=object)
 
 from .config import LossConfig, ModelConfig
 from .losses import Losses
-from .model import CSPResNet, ConvNormAct, RTDETRPose
+from .model import RTDETRPose
+from .models.backbones import build_backbone as build_registered_backbone
 
 
 def _normalize_activation_name(name: str) -> str:
@@ -70,86 +67,62 @@ def _resolve_activation_pair(cfg: ModelConfig) -> tuple[str, str]:
     return back, head
 
 
-class TinyCNNBackbone(nn.Module):
-    """Small backbone alternative for quick CPU experiments.
-
-    Contract: forward(x) -> list[Tensor] with 3 feature maps whose channel counts
-    match stage_channels.
-    """
-
-    def __init__(
-        self,
-        *,
-        in_channels: int = 3,
-        stem_channels: int = 32,
-        stage_channels: tuple[int, int, int],
-        activation: str = "silu",
-    ):
-        super().__init__()
-        c3, c4, c5 = stage_channels
-        self.stem = nn.Sequential(
-            ConvNormAct(in_channels, stem_channels, kernel_size=3, stride=2, padding=1, activation=activation),
-            ConvNormAct(stem_channels, stem_channels, kernel_size=3, padding=1, activation=activation),
-        )
-        self.stage3 = nn.Sequential(
-            ConvNormAct(stem_channels, c3, kernel_size=3, stride=2, padding=1, activation=activation),
-            ConvNormAct(c3, c3, kernel_size=3, padding=1, activation=activation),
-        )
-        self.stage4 = nn.Sequential(
-            ConvNormAct(c3, c4, kernel_size=3, stride=2, padding=1, activation=activation),
-            ConvNormAct(c4, c4, kernel_size=3, padding=1, activation=activation),
-        )
-        self.stage5 = nn.Sequential(
-            ConvNormAct(c4, c5, kernel_size=3, stride=2, padding=1, activation=activation),
-            ConvNormAct(c5, c5, kernel_size=3, padding=1, activation=activation),
-        )
-
-    def forward(self, x):
-        x = self.stem(x)
-        f3 = self.stage3(x)
-        f4 = self.stage4(f3)
-        f5 = self.stage5(f4)
-        return [f3, f4, f5]
-
-
 def build_backbone(cfg: ModelConfig) -> tuple[Any, tuple[int, int, int]]:
-    if torch is None or nn is None:  # pragma: no cover
+    if torch is None:  # pragma: no cover
         raise RuntimeError("torch is required for build_backbone")
 
-    name = str(getattr(cfg, "backbone_name", "cspresnet") or "cspresnet").lower()
-    channels = tuple(int(x) for x in (getattr(cfg, "backbone_channels", None) or [64, 128, 256]))
-    if len(channels) != 3:
-        raise ValueError("model.backbone_channels must have length 3")
-    stage_channels = (int(channels[0]), int(channels[1]), int(channels[2]))
+    nested_backbone = getattr(cfg, "backbone", None)
+    nested_backbone = nested_backbone if isinstance(nested_backbone, dict) else {}
+
+    name = str(
+        nested_backbone.get("name", getattr(cfg, "backbone_name", "cspresnet"))
+        or "cspresnet"
+    ).lower()
 
     kwargs = getattr(cfg, "backbone_kwargs", None)
-    kwargs = kwargs if isinstance(kwargs, dict) else {}
+    kwargs = dict(kwargs) if isinstance(kwargs, dict) else {}
+    nested_args = nested_backbone.get("args", None)
+    if isinstance(nested_args, dict):
+        kwargs.update(nested_args)
+
+    norm = str(
+        nested_backbone.get("norm", getattr(cfg, "backbone_norm", "bn"))
+        or "bn"
+    ).lower()
+
     activation_backbone, _ = _resolve_activation_pair(cfg)
 
-    if name in ("cspresnet", "csp_resnet"):
-        stage_blocks = tuple(int(x) for x in (getattr(cfg, "stage_blocks", None) or [1, 2, 2]))
-        if len(stage_blocks) != 3:
-            raise ValueError("model.stage_blocks must have length 3")
-        use_sppf = bool(kwargs.get("use_sppf", True))
-        backbone = CSPResNet(
-            stem_channels=int(getattr(cfg, "stem_channels", 32)),
-            stage_channels=stage_channels,
-            stage_blocks=stage_blocks,
-            use_sppf=use_sppf,
-            activation=activation_backbone,
-        )
-        return backbone, stage_channels
+    if name in ("cspresnet", "csp_resnet", "tiny_cnn", "tinycnn", "simple_cnn", "simplecnn"):
+        if "stage_channels" not in kwargs:
+            channels = tuple(int(x) for x in (getattr(cfg, "backbone_channels", None) or [64, 128, 256]))
+            if len(channels) != 3:
+                raise ValueError("model.backbone_channels must have length 3")
+            kwargs["stage_channels"] = (int(channels[0]), int(channels[1]), int(channels[2]))
+        if "stage_blocks" not in kwargs:
+            kwargs["stage_blocks"] = tuple(int(x) for x in (getattr(cfg, "stage_blocks", None) or [1, 2, 2]))
+        if "stem_channels" not in kwargs:
+            kwargs["stem_channels"] = int(getattr(cfg, "stem_channels", 32))
+        if "use_sppf" not in kwargs:
+            kwargs["use_sppf"] = bool(getattr(cfg, "use_sppf", True))
 
-    if name in ("tiny_cnn", "tinycnn", "simple_cnn", "simplecnn"):
-        backbone = TinyCNNBackbone(
-            in_channels=3,
-            stem_channels=int(getattr(cfg, "stem_channels", 32)),
-            stage_channels=stage_channels,
-            activation=activation_backbone,
-        )
-        return backbone, stage_channels
+    if name in ("cspdarknet_s",):
+        kwargs.pop("stage_channels", None)
+        kwargs.pop("stage_blocks", None)
+        kwargs.pop("stem_channels", None)
 
-    raise ValueError(f"unknown backbone_name: {name}")
+    if name in ("resnet50", "convnext_tiny"):
+        kwargs.pop("stage_channels", None)
+        kwargs.pop("stage_blocks", None)
+        kwargs.pop("stem_channels", None)
+        kwargs.pop("use_sppf", None)
+    kwargs.setdefault("activation", activation_backbone)
+    kwargs.setdefault("norm", norm)
+
+    backbone = build_registered_backbone(name, **kwargs)
+    out_channels = tuple(int(c) for c in getattr(backbone, "out_channels", ()))
+    if len(out_channels) != 3:
+        raise ValueError(f"backbone {name} must define out_channels for [P3,P4,P5]")
+    return backbone, out_channels
 
 
 def build_model(cfg: ModelConfig) -> RTDETRPose:
@@ -158,6 +131,10 @@ def build_model(cfg: ModelConfig) -> RTDETRPose:
 
     backbone, stage_channels = build_backbone(cfg)
     activation_backbone, activation_head = _resolve_activation_pair(cfg)
+    projector_cfg = getattr(cfg, "projector", None)
+    projector_cfg = projector_cfg if isinstance(projector_cfg, dict) else {}
+    d_model = int(projector_cfg.get("d_model", getattr(cfg, "hidden_dim", 256)) or 256)
+
     return RTDETRPose(
         # Keep cfg.num_classes as the number of foreground classes and reserve the
         # last logit as "no-object" / background (RT-DETR-style).
@@ -165,7 +142,7 @@ def build_model(cfg: ModelConfig) -> RTDETRPose:
         num_keypoints=int(getattr(cfg, "num_keypoints", 0) or 0),
         enable_mim=bool(getattr(cfg, "enable_mim", False)),
         mim_geom_channels=int(getattr(cfg, "mim_geom_channels", 2) or 2),
-        hidden_dim=int(getattr(cfg, "hidden_dim", 256)),
+        hidden_dim=d_model,
         num_queries=int(getattr(cfg, "num_queries", 300)),
         use_uncertainty=bool(getattr(cfg, "use_uncertainty", False)),
         stem_channels=int(getattr(cfg, "stem_channels", 32)),

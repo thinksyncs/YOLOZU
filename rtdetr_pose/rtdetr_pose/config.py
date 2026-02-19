@@ -36,6 +36,9 @@ class ModelConfig:
     backbone_activation: str = "silu"
     head_activation: str = "silu"
     backbone_kwargs: dict[str, Any] = field(default_factory=dict)
+    backbone_norm: str = "bn"
+    backbone: dict[str, Any] = field(default_factory=dict)
+    projector: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

@@ -58,6 +58,28 @@ Notes:
 3) Run the minimal trainer:
 - python3 rtdetr_pose/tools/train_minimal.py --dataset-root data/coco128 --config rtdetr_pose/configs/base.json --max-steps 50 --use-matcher
 
+### Backbone swap (P3/P4/P5 contract)
+
+Backbone is now configurable via `model.backbone.*` and projected to transformer `d_model` via `model.projector.d_model`.
+
+Example config fragment:
+
+```yaml
+model:
+  backbone:
+    name: cspdarknet_s
+    norm: bn
+    args:
+      width_mult: 0.5
+      depth_mult: 0.5
+  projector:
+    d_model: 256
+```
+
+Other supported names: `resnet50`, `convnext_tiny`, `cspresnet`, `tiny_cnn`.
+
+Contract details and extension guide: [backbones.md](backbones.md)
+
 Common options:
 - --device cuda:0
 - --batch-size 4

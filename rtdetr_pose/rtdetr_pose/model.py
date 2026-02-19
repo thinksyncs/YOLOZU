@@ -25,6 +25,8 @@ try:
 except ImportError:
     entropy_loss = _entropy_loss_fallback
 
+from .backbone_projector import BackboneProjector
+
 
 def _normalize_activation_name(name: str) -> str:
     value = str(name or "silu").strip().lower().replace("-", "_")
@@ -235,12 +237,17 @@ class HybridEncoder(nn.Module):
         activation="silu",
     ):
         super().__init__()
-        self.fpn = FPNPAN(in_channels=in_channels, out_channels=hidden_dim, activation=activation)
+        self.projector = BackboneProjector(in_channels=in_channels, d_model=hidden_dim)
+        self.fpn = FPNPAN(
+            in_channels=(hidden_dim, hidden_dim, hidden_dim),
+            out_channels=hidden_dim,
+            activation=activation,
+        )
         self.num_layers = num_layers
         self.use_level_embed = bool(use_level_embed)
         self.level_embed = None
         if self.use_level_embed:
-            self.level_embed = nn.Parameter(torch.zeros(len(in_channels), hidden_dim))
+            self.level_embed = nn.Parameter(torch.zeros(3, hidden_dim))
         dim_feedforward = dim_feedforward or hidden_dim * 4
         if num_layers > 0:
             layer = nn.TransformerEncoderLayer(
@@ -255,6 +262,7 @@ class HybridEncoder(nn.Module):
             self.encoder = None
 
     def forward(self, features, pos_embed):
+        features = self.projector(features)
         features = self.fpn(features)
         memories = []
         pos_list = []
