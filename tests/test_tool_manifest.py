@@ -4,8 +4,34 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import json
+
 
 class TestToolManifest(unittest.TestCase):
+    def _run_validator(self, manifest_obj: dict, *, require_declarative: bool = False) -> subprocess.CompletedProcess[str]:
+        repo_root = Path(__file__).resolve().parents[1]
+        script = repo_root / "tools" / "validate_tool_manifest.py"
+
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as fp:
+            json.dump(manifest_obj, fp)
+            tmp_path = fp.name
+
+        args = [sys.executable, str(script), "--manifest", tmp_path]
+        if require_declarative:
+            args.append("--require-declarative")
+
+        try:
+            return subprocess.run(
+                args,
+                cwd=str(repo_root),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+                text=True,
+            )
+        finally:
+            Path(tmp_path).unlink(missing_ok=True)
+
     def test_validate_tool_manifest(self):
         repo_root = Path(__file__).resolve().parents[1]
         script = repo_root / "tools" / "validate_tool_manifest.py"
@@ -46,24 +72,9 @@ class TestToolManifest(unittest.TestCase):
             ],
         }
 
-        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as fp:
-            import json
-
-            json.dump(bad_manifest, fp)
-            tmp_path = fp.name
-        try:
-            proc = subprocess.run(
-                [sys.executable, str(script), "--manifest", tmp_path, "--require-declarative"],
-                cwd=str(repo_root),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                check=False,
-                text=True,
-            )
-            self.assertNotEqual(proc.returncode, 0)
-            self.assertIn("required in declarative mode", proc.stderr)
-        finally:
-            Path(tmp_path).unlink(missing_ok=True)
+        proc = self._run_validator(bad_manifest, require_declarative=True)
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("required in declarative mode", proc.stderr)
 
     def test_validate_tool_manifest_declarative_mode_accepts_compliant(self):
         repo_root = Path(__file__).resolve().parents[1]
@@ -91,23 +102,104 @@ class TestToolManifest(unittest.TestCase):
             ],
         }
 
-        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as fp:
-            import json
+        proc = self._run_validator(ok_manifest, require_declarative=True)
+        self.assertEqual(proc.returncode, 0, msg=f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}")
 
-            json.dump(ok_manifest, fp)
-            tmp_path = fp.name
-        try:
-            proc = subprocess.run(
-                [sys.executable, str(script), "--manifest", tmp_path, "--require-declarative"],
-                cwd=str(repo_root),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                check=False,
-                text=True,
-            )
-            self.assertEqual(proc.returncode, 0, msg=f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}")
-        finally:
-            Path(tmp_path).unlink(missing_ok=True)
+    def test_validate_tool_manifest_fails_duplicate_tool_id(self):
+        manifest = {
+            "manifest_version": 1,
+            "tools": [
+                {
+                    "id": "dup_id",
+                    "entrypoint": "tools/validate_tool_manifest.py",
+                    "runner": "python3",
+                    "summary": "a",
+                },
+                {
+                    "id": "dup_id",
+                    "entrypoint": "tools/validate_tool_manifest.py",
+                    "runner": "python3",
+                    "summary": "b",
+                },
+            ],
+        }
+        proc = self._run_validator(manifest)
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("duplicate id", proc.stderr)
+
+    def test_validate_tool_manifest_fails_effect_flag_not_declared(self):
+        manifest = {
+            "manifest_version": 1,
+            "tools": [
+                {
+                    "id": "flag_mismatch",
+                    "entrypoint": "tools/validate_tool_manifest.py",
+                    "runner": "python3",
+                    "summary": "x",
+                    "inputs": [{"name": "output", "kind": "file", "required": False, "flag": "--output"}],
+                    "effects": {
+                        "writes": [
+                            {
+                                "flag": "--other-output",
+                                "kind": "file",
+                                "scope": "path",
+                                "description": "mismatch",
+                            }
+                        ],
+                        "fixed_writes": [],
+                    },
+                }
+            ],
+        }
+        proc = self._run_validator(manifest)
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("not declared in tool.inputs", proc.stderr)
+
+    def test_validate_tool_manifest_fails_unknown_contract_reference(self):
+        manifest = {
+            "manifest_version": 1,
+            "contracts": {
+                "known_contract": {"summary": "k"},
+            },
+            "tools": [
+                {
+                    "id": "unknown_contract_ref",
+                    "entrypoint": "tools/validate_tool_manifest.py",
+                    "runner": "python3",
+                    "summary": "x",
+                    "contracts": {"produces": ["missing_contract"]},
+                }
+            ],
+        }
+        proc = self._run_validator(manifest)
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("unknown contract id", proc.stderr)
+
+    def test_validate_tool_manifest_fails_non_bool_platform_in_declarative_mode(self):
+        manifest = {
+            "manifest_version": 1,
+            "tools": [
+                {
+                    "id": "bad_platform_bool",
+                    "entrypoint": "tools/validate_tool_manifest.py",
+                    "runner": "python3",
+                    "summary": "x",
+                    "platform": {
+                        "cpu_ok": "yes",
+                        "gpu_required": False,
+                        "macos_ok": True,
+                        "linux_ok": True,
+                    },
+                    "inputs": [],
+                    "effects": {"writes": [], "fixed_writes": []},
+                    "outputs": [],
+                    "examples": [{"description": "x", "command": "python3 tools/validate_tool_manifest.py --help"}],
+                }
+            ],
+        }
+        proc = self._run_validator(manifest, require_declarative=True)
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("platform.cpu_ok: must be bool", proc.stderr)
 
 
 if __name__ == "__main__":
