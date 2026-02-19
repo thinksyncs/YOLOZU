@@ -1034,8 +1034,8 @@
       "id": "distill_predictions",
       "entrypoint": "tools/distill_predictions.py",
       "runner": "python3",
-      "summary": "Blend teacher predictions into student predictions and write a distillation report.",
-      "tags": ["predictions", "distillation"],
+      "summary": "Offline prediction distillation: blend teacher predictions into a student predictions JSON and write a report (not a training-time anti-forgetting method).",
+      "tags": ["predictions", "distillation", "offline"],
       "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
       "contracts": { "consumes": ["predictions_json"], "produces": ["predictions_json", "metrics_report_json"] },
       "inputs": [
@@ -1888,8 +1888,8 @@
       "id": "rtdetr_pose_train_continual",
       "entrypoint": "rtdetr_pose/tools/train_continual.py",
       "runner": "python3",
-      "summary": "Continual fine-tuning runner for rtdetr_pose (replay + self-distill, optional LoRA).",
-      "tags": ["rtdetr_pose", "continual", "train", "replay", "distill", "lora"],
+      "summary": "Continual fine-tuning runner for rtdetr_pose that wires replay + checkpoint-based self-distillation (passes --self-distill-from <prev_ckpt> to train_minimal), with optional LoRA/EWC/SI.",
+      "tags": ["rtdetr_pose", "continual", "train", "replay", "self_distill", "distill", "lora", "ewc", "si"],
       "platform": {
         "cpu_ok": true,
         "gpu_required": false,
@@ -1918,6 +1918,10 @@
         {
           "description": "Domain-incremental continual fine-tuning (example config).",
           "command": "python3 rtdetr_pose/tools/train_continual.py --config configs/continual/rtdetr_pose_domain_inc_example.yaml"
+        },
+        {
+          "description": "Memoryless mode (disable replay; still uses previous-checkpoint self-distillation when distill.enabled).",
+          "command": "python3 rtdetr_pose/tools/train_continual.py --config configs/continual/rtdetr_pose_domain_inc_example.yaml --replay-size 0"
         }
       ],
       "docs": ["docs/continual_learning.md", "rtdetr_pose/README.md"]
@@ -1927,7 +1931,7 @@
       "entrypoint": "tools/eval_continual.py",
       "runner": "python3",
       "summary": "Evaluate a continual learning run (simple mAP proxy or pose metrics + forgetting) and write JSON+HTML.",
-      "tags": ["continual", "eval", "report"],
+      "tags": ["continual", "eval", "report", "forgetting"],
       "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
       "requires": { "python_packages": ["torch", "Pillow"] },
       "inputs": [
@@ -1963,6 +1967,10 @@
         {
           "description": "Evaluate and summarize forgetting.",
           "command": "python3 tools/eval_continual.py --run-json runs/continual/<run>/continual_run.json --device cpu --max-images 50"
+        },
+        {
+          "description": "Pose-mode evaluation (requires pose sidecar metadata in labels).",
+          "command": "python3 tools/eval_continual.py --run-json runs/continual/<run>/continual_run.json --device cpu --max-images 50 --metric pose --metric-key pose_success"
         }
       ],
       "docs": ["docs/continual_learning.md"]

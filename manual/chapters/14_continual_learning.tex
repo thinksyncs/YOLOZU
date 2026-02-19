@@ -30,6 +30,10 @@ python3 rtdetr_pose/tools/train_continual.py \
 
 To run \textbf{memoryless} (no replay), set replay size to 0 in the config.
 
+\paragraph{Note on "distillation" terminology}
+This chapter's \emph{distillation} refers to \textbf{checkpoint-based self-distillation during training} (e.g., \cmd{--self-distill-from}) as an anti-forgetting mechanism.
+The separate tool \path{tools/distill_predictions.py} performs \textbf{offline prediction blending} (rewriting a predictions JSON) and does not by itself mitigate catastrophic forgetting.
+
 \subsection{Evaluate}
 Evaluate forgetting and per-task metrics from the recorded run JSON:
 \begin{lstlisting}[language=bash]

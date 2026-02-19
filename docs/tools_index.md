@@ -24,6 +24,21 @@ For most day-to-day flows, start with:
 - Keypoints parity (backend output diffs): `python3 tools/check_keypoints_parity.py --reference reports/pred_ref.json --candidate reports/pred_cand.json --iou-thresh 0.99 --kp-atol 1e-4`
 - Keypoints eval benchmark: `python3 tools/benchmark_keypoints_eval.py --dataset /path/to/yolo --predictions reports/predictions.json --max-images 50 --warmup 1 --iterations 5 --output reports/benchmark_keypoints_eval.json`
 
+## Continual learning (anti-forgetting)
+
+- Train (runner that wires replay + checkpoint-based self-distillation):
+  - `python3 rtdetr_pose/tools/train_continual.py --config configs/continual/rtdetr_pose_domain_inc_example.yaml`
+  - Internally passes `--self-distill-from <prev_ckpt>` (plus optional replay / EWC / SI) into `rtdetr_pose/tools/train_minimal.py`.
+- Evaluate forgetting / per-task summaries:
+  - `python3 tools/eval_continual.py --run-json runs/continual/<run>/continual_run.json --device cpu --max-images 50`
+  - Docs: `docs/continual_learning.md`
+
+## Distillation helpers
+
+- Prediction distillation (offline artifact blending; not continual-learning):
+  - `python3 tools/distill_predictions.py --student reports/predictions_student.json --teacher reports/predictions_teacher.json --output reports/predictions_distilled.json`
+  - Docs: `docs/distillation.md`
+
 ## Machine-readable tool registry
 
 - Tool manifest: `tools/manifest.json`

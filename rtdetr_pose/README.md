@@ -18,7 +18,8 @@ This folder contains a minimal PyTorch/TensorRT-oriented scaffolding for the RT-
   - `yolozu train configs/examples/train_contract.yaml --run-id exp01` (see `docs/run_contract.md`, requires `yolozu[train]`)
 - Continual FT (SDFT-inspired): add a frozen teacher checkpoint via `--self-distill-from <ckpt>` (defaults: keys=logits,bbox; logits uses reverse-KL).
 - Continual learning runner (multi-task sequential FT + replay buffer):
-  - `python3 tools/train_continual.py --config ../configs/continual/rtdetr_pose_domain_inc_example.yaml`
+  - From this folder (`rtdetr_pose/`): `python3 tools/train_continual.py --config ../configs/continual/rtdetr_pose_domain_inc_example.yaml`
+  - From repo root: `python3 rtdetr_pose/tools/train_continual.py --config configs/continual/rtdetr_pose_domain_inc_example.yaml`
 - Optional LoRA (parameter-efficient FT / CL):
   - `python3 tools/train_minimal.py --lora-r 8 --lora-freeze-base --lora-target head ...`
 
