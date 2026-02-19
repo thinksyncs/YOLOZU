@@ -66,6 +66,14 @@ yolozu train configs/examples/train_contract.yaml --run-id exp01 --resume
 yolozu test configs/examples/test_setting.yaml --adapter precomputed --predictions reports/predictions.json
 \end{lstlisting}
 
+Backbone swaps are controlled by model config JSON (not by changing adapter commands directly):
+\begin{lstlisting}[language=bash]
+yolozu train configs/examples/train_setting.yaml \
+  --model-config rtdetr_pose/configs/base.json
+\end{lstlisting}
+
+For backbone contract and supported names, see \path{docs/backbones.md}.
+
 \subsection{Test YAML and override rule}
 The default test YAML is intentionally minimal (adapter/dataset/split/max\_images), and runtime-specific
 options are typically passed as CLI overrides:

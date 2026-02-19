@@ -185,9 +185,20 @@ yolozu train configs/examples/train_contract.yaml --run-id exp01 --resume
 Backbone-related settings are not primarily controlled by solver flags; they come from
 the model config file referenced by \texttt{model\_config} in the training YAML.
 
+Detailed backbone contract notes and examples are maintained in
+\path{docs/backbones.md}.
+
 Backbone output contract is fixed to three feature maps:
 \texttt{[P3, P4, P5]} with strides \texttt{[8,16,32]}.
 Each level is projected to transformer \texttt{d\_model} by independent 1x1 convs.
+
+Supported backbone names in current code include:
+\texttt{cspresnet}, \texttt{tiny\_cnn}, \texttt{cspdarknet\_s},
+\texttt{resnet50}, and \texttt{convnext\_tiny}.
+
+Legacy compatibility fields (for example \texttt{backbone\_name},
+\texttt{backbone\_channels}) are still accepted, but the preferred form is
+\texttt{model.backbone.*} plus \texttt{model.projector.d\_model}.
 
 \begin{longtable}{@{}p{0.28\textwidth}p{0.24\textwidth}p{0.42\textwidth}@{}}
 \toprule
@@ -202,6 +213,14 @@ solver YAML/CLI & \texttt{backbone\_lr\_mult} & LR multiplier for backbone param
 solver YAML/CLI & \texttt{backbone\_wd\_mult} & WD multiplier for backbone params \\
 \bottomrule
 \end{longtable}
+
+Normalization guidance:
+\begin{itemize}
+  \item \texttt{bn}: default for standard single-node training.
+  \item \texttt{syncbn}: useful in multi-GPU runs with small per-rank batch.
+  \item \texttt{frozenbn}: stable when batch statistics should not drift.
+  \item \texttt{gn}: batch-size-independent fallback.
+\end{itemize}
 
 Recommended procedure:
 \begin{enumerate}
