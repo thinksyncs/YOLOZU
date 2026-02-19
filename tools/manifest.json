@@ -64,6 +64,7 @@
       "tags": ["dataset"],
       "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
       "requires": { "network": true },
+      "inputs": [],
       "effects": {
         "writes": [],
         "fixed_writes": [
@@ -361,6 +362,7 @@
       "summary": "Build a dataset manifest for data/coco128 (writes reports/manifest.json).",
       "tags": ["dataset"],
       "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "inputs": [],
       "effects": {
         "writes": [],
         "fixed_writes": [
@@ -617,6 +619,12 @@
         ],
         "fixed_writes": []
       },
+      "outputs": [
+        { "name": "output_json", "kind": "file", "description": "Primary output artifact controlled by --output (subcommand-dependent)." },
+        { "name": "cache_dir", "kind": "dir", "description": "Cache artifacts directory when --cache-dir is used." },
+        { "name": "html", "kind": "file", "description": "Optional HTML output when --html is used." },
+        { "name": "overlays_dir", "kind": "dir", "description": "Optional overlay directory when --overlays-dir is used." }
+      ],
       "examples": [
         { "description": "Doctor report.", "command": "python3 tools/yolozu.py doctor --output reports/doctor.json" },
         {
@@ -1466,6 +1474,13 @@
         ],
         "fixed_writes": []
       },
+      "outputs": [
+        { "name": "predictions_json", "kind": "file", "default": "reports/predictions_onnxrt.json" },
+        { "name": "boxes_output", "kind": "file", "description": "Optional raw boxes output when --boxes-output is set." },
+        { "name": "class_output", "kind": "file", "description": "Optional raw class output when --class-output is set." },
+        { "name": "scores_output", "kind": "file", "description": "Optional raw scores output when --scores-output is set." },
+        { "name": "raw_output", "kind": "file", "description": "Optional raw tensor output when --raw-output is set." }
+      ],
       "examples": [
         {
           "description": "Export ONNXRuntime predictions (dry-run mode exists).",
@@ -1519,6 +1534,11 @@
         ],
         "fixed_writes": []
       },
+      "outputs": [
+        { "name": "engine_plan", "kind": "file", "default": "engines/model.plan" },
+        { "name": "timing_cache", "kind": "file", "default": "engines/timing.cache" },
+        { "name": "meta_output", "kind": "file", "default": "reports/trt_engine_meta.json" }
+      ],
       "examples": [
         {
           "description": "Build FP16 engine (Linux/NVIDIA).",
@@ -1575,6 +1595,11 @@
         ],
         "fixed_writes": []
       },
+      "outputs": [
+        { "name": "onnx_model", "kind": "file", "default": "models/model.onnx" },
+        { "name": "engine_plan", "kind": "file", "default": "engines/model_fp16.plan" },
+        { "name": "timing_cache", "kind": "file", "default": "engines/timing.cache" }
+      ],
       "examples": [
         {
           "description": "Export ONNX and build a FP16 engine (Linux/NVIDIA).",
@@ -1754,6 +1779,13 @@
         ],
         "fixed_writes": []
       },
+      "outputs": [
+        { "name": "predictions_json", "kind": "file", "default": "reports/predictions_trt.json" },
+        { "name": "boxes_output", "kind": "file", "description": "Optional raw boxes output when --boxes-output is set." },
+        { "name": "class_output", "kind": "file", "description": "Optional raw class output when --class-output is set." },
+        { "name": "scores_output", "kind": "file", "description": "Optional raw scores output when --scores-output is set." },
+        { "name": "raw_output", "kind": "file", "description": "Optional raw tensor output when --raw-output is set." }
+      ],
       "examples": [
         {
           "description": "Export TensorRT predictions (engine must exist).",
@@ -1922,7 +1954,8 @@
         "writes": [
           { "flag": "--output", "kind": "file", "scope": "path", "description": "Write the benchmark JSON report." },
           { "flag": "--history", "kind": "file", "scope": "path", "description": "Optional JSONL history file to append benchmark reports to." }
-        ]
+        ],
+        "fixed_writes": []
       },
       "outputs": [
         { "name": "report_json", "kind": "file", "default": "reports/benchmark_latency.json" },
@@ -2035,7 +2068,8 @@
       "effects": {
         "writes": [
           { "flag": "--output", "kind": "file", "scope": "path", "description": "Write the benchmark evaluation JSON report." }
-        ]
+        ],
+        "fixed_writes": []
       },
       "outputs": [{ "name": "report_json", "kind": "file", "default": "reports/benchmark_keypoints_eval.json" }],
       "examples": [
@@ -2143,7 +2177,8 @@
       "effects": {
         "writes": [
           { "flag": "--output", "kind": "file", "scope": "path", "description": "Write the scenario JSON report." }
-        ]
+        ],
+        "fixed_writes": []
       },
       "outputs": [{ "name": "scenario_run_json", "kind": "file", "default": "reports/scenario_run.json" }],
       "examples": [
@@ -2157,6 +2192,7 @@
       "summary": "Enforce Apache-2.0-only constraints (denylist + no vendored GPL/AGPL license texts).",
       "tags": ["policy", "license"],
       "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "inputs": [],
       "effects": { "writes": [], "fixed_writes": [] },
       "outputs": [{ "name": "stdout", "kind": "stdout", "description": "OK or failure reason." }],
       "examples": [{ "description": "Run policy checks.", "command": "python3 tools/check_license_policy.py" }],
@@ -2178,7 +2214,8 @@
       "effects": {
         "writes": [
           { "flag": "--output", "kind": "file", "scope": "path", "description": "Write the dependency license JSON report." }
-        ]
+        ],
+        "fixed_writes": []
       },
       "outputs": [{ "name": "dependency_licenses_json", "kind": "file", "default": "reports/dependency_licenses.json" }],
       "examples": [
