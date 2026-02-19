@@ -91,7 +91,8 @@
         { "name": "seed", "kind": "number", "required": false, "flag": "--seed", "default": 0 },
         { "name": "out", "kind": "dir", "required": false, "flag": "--out", "default": "reports/subset_dataset" },
         { "name": "copy", "kind": "string", "required": false, "flag": "--copy" },
-        { "name": "overwrite", "kind": "string", "required": false, "flag": "--overwrite" }
+        { "name": "overwrite", "kind": "string", "required": false, "flag": "--overwrite" },
+        { "name": "strategy", "kind": "string", "required": false, "flag": "--strategy" }
       ],
       "effects": {
         "writes": [
@@ -127,7 +128,9 @@
         { "name": "coco_root", "kind": "dir", "required": true, "flag": "--coco-root" },
         { "name": "out", "kind": "dir", "required": true, "flag": "--out" },
         { "name": "split", "kind": "string", "required": false, "flag": "--split", "default": "val2017" },
-        { "name": "include_crowd", "kind": "string", "required": false, "flag": "--include-crowd" }
+        { "name": "include_crowd", "kind": "string", "required": false, "flag": "--include-crowd" },
+        { "name": "instances_json", "kind": "file", "required": false, "flag": "--instances-json" },
+        { "name": "copy_images", "kind": "string", "required": false, "flag": "--copy-images" }
       ],
       "effects": {
         "writes": [
@@ -163,6 +166,9 @@
         { "name": "out", "kind": "dir", "required": true, "flag": "--out" },
         { "name": "split", "kind": "string", "required": false, "flag": "--split", "default": "val2017" },
         { "name": "include_crowd", "kind": "string", "required": false, "flag": "--include-crowd" },
+        { "name": "instances_json", "kind": "file", "required": false, "flag": "--instances-json" },
+        { "name": "copy_images", "kind": "string", "required": false, "flag": "--copy-images" },
+        { "name": "max_instances_per_image", "kind": "number", "required": false, "flag": "--max-instances-per-image" },
         { "name": "max_images", "kind": "number", "required": false, "flag": "--max-images" }
       ],
       "effects": {
@@ -242,6 +248,8 @@
         { "name": "cityscapes_root", "kind": "dir", "required": true, "flag": "--cityscapes-root" },
         { "name": "out", "kind": "dir", "required": true, "flag": "--out" },
         { "name": "split", "kind": "string", "required": false, "flag": "--split", "default": "train" },
+        { "name": "label_type", "kind": "string", "required": false, "flag": "--label-type" },
+        { "name": "mode", "kind": "string", "required": false, "flag": "--mode" },
         { "name": "force", "kind": "string", "required": false, "flag": "--force" }
       ],
       "effects": {
@@ -277,6 +285,8 @@
         { "name": "voc_root", "kind": "dir", "required": true, "flag": "--voc-root" },
         { "name": "out", "kind": "dir", "required": true, "flag": "--out" },
         { "name": "split", "kind": "string", "required": false, "flag": "--split", "default": "train" },
+        { "name": "mode", "kind": "string", "required": false, "flag": "--mode" },
+        { "name": "masks_dirname", "kind": "string", "required": false, "flag": "--masks-dirname" },
         { "name": "force", "kind": "string", "required": false, "flag": "--force" },
         { "name": "year", "kind": "string", "required": false, "flag": "--year" }
       ],
@@ -313,6 +323,8 @@
         { "name": "ade20k_root", "kind": "dir", "required": true, "flag": "--ade20k-root" },
         { "name": "out", "kind": "dir", "required": true, "flag": "--out" },
         { "name": "split", "kind": "string", "required": false, "flag": "--split", "default": "train" },
+        { "name": "ignore_index", "kind": "number", "required": false, "flag": "--ignore-index" },
+        { "name": "mode", "kind": "string", "required": false, "flag": "--mode" },
         { "name": "force", "kind": "string", "required": false, "flag": "--force" }
       ],
       "effects": {
@@ -382,6 +394,13 @@
         { "name": "score_threshold", "kind": "number", "required": false, "flag": "--score-threshold" },
         { "name": "max_detections", "kind": "number", "required": false, "flag": "--max-detections" },
         { "name": "checkpoint", "kind": "file", "required": false, "flag": "--checkpoint" },
+        { "name": "lora_r", "kind": "number", "required": false, "flag": "--lora-r" },
+        { "name": "lora_alpha", "kind": "number", "required": false, "flag": "--lora-alpha" },
+        { "name": "lora_dropout", "kind": "number", "required": false, "flag": "--lora-dropout" },
+        { "name": "lora_target", "kind": "string", "required": false, "flag": "--lora-target" },
+        { "name": "lora_freeze_base", "kind": "string", "required": false, "flag": "--lora-freeze-base" },
+        { "name": "no_lora_freeze_base", "kind": "string", "required": false, "flag": "--no-lora-freeze-base" },
+        { "name": "lora_train_bias", "kind": "string", "required": false, "flag": "--lora-train-bias" },
         { "name": "max_images", "kind": "number", "required": false, "flag": "--max-images" },
         { "name": "split", "kind": "string", "required": false, "flag": "--split" },
         { "name": "tta", "kind": "string", "required": false, "flag": "--tta" },
@@ -392,10 +411,22 @@
         { "name": "ttt", "kind": "string", "required": false, "flag": "--ttt" },
         { "name": "ttt_preset", "kind": "string", "required": false, "flag": "--ttt-preset" },
         { "name": "ttt_method", "kind": "string", "required": false, "flag": "--ttt-method" },
+        { "name": "ttt_reset", "kind": "string", "required": false, "flag": "--ttt-reset" },
         { "name": "ttt_steps", "kind": "number", "required": false, "flag": "--ttt-steps" },
         { "name": "ttt_batch_size", "kind": "number", "required": false, "flag": "--ttt-batch-size" },
         { "name": "ttt_lr", "kind": "number", "required": false, "flag": "--ttt-lr" },
+        { "name": "ttt_stop_on_non_finite", "kind": "string", "required": false, "flag": "--ttt-stop-on-non-finite" },
+        { "name": "no_ttt_stop_on_non_finite", "kind": "string", "required": false, "flag": "--no-ttt-stop-on-non-finite" },
+        { "name": "ttt_rollback_on_stop", "kind": "string", "required": false, "flag": "--ttt-rollback-on-stop" },
+        { "name": "no_ttt_rollback_on_stop", "kind": "string", "required": false, "flag": "--no-ttt-rollback-on-stop" },
         { "name": "ttt_seed", "kind": "number", "required": false, "flag": "--ttt-seed" },
+        { "name": "ttt_max_update_norm", "kind": "number", "required": false, "flag": "--ttt-max-update-norm" },
+        { "name": "ttt_max_total_update_norm", "kind": "number", "required": false, "flag": "--ttt-max-total-update-norm" },
+        { "name": "ttt_max_loss_ratio", "kind": "number", "required": false, "flag": "--ttt-max-loss-ratio" },
+        { "name": "ttt_max_loss_increase", "kind": "number", "required": false, "flag": "--ttt-max-loss-increase" },
+        { "name": "ttt_update_filter", "kind": "string", "required": false, "flag": "--ttt-update-filter" },
+        { "name": "ttt_include", "kind": "string", "required": false, "flag": "--ttt-include" },
+        { "name": "ttt_exclude", "kind": "string", "required": false, "flag": "--ttt-exclude" },
         { "name": "ttt_log_out", "kind": "file", "required": false, "flag": "--ttt-log-out" },
         { "name": "ttt_patch_size", "kind": "number", "required": false, "flag": "--ttt-patch-size" },
         { "name": "ttt_mask_prob", "kind": "number", "required": false, "flag": "--ttt-mask-prob" },
@@ -450,7 +481,124 @@
         { "name": "ttt_log_out", "kind": "file", "required": false, "flag": "--ttt-log-out", "default": null },
         { "name": "run_dir", "kind": "dir", "required": false, "flag": "--run-dir", "default": null },
         { "name": "overlays_dir", "kind": "dir", "required": false, "flag": "--overlays-dir", "default": "reports/overlays" },
-        { "name": "html", "kind": "file", "required": false, "flag": "--html", "default": "reports/predict_images.html" }
+        { "name": "html", "kind": "file", "required": false, "flag": "--html", "default": "reports/predict_images.html" },
+        { "name": "allow_rgb_masks", "kind": "string", "required": false, "flag": "--allow-rgb-masks" },
+        { "name": "alpha", "kind": "number", "required": false, "flag": "--alpha" },
+        { "name": "backend", "kind": "string", "required": false, "flag": "--backend" },
+        { "name": "boxes_scale", "kind": "string", "required": false, "flag": "--boxes-scale" },
+        { "name": "cache", "kind": "string", "required": false, "flag": "--cache" },
+        { "name": "calibration_bins", "kind": "number", "required": false, "flag": "--calibration-bins" },
+        { "name": "calibration_iou", "kind": "number", "required": false, "flag": "--calibration-iou" },
+        { "name": "checkpoint", "kind": "file", "required": false, "flag": "--checkpoint" },
+        { "name": "class_balanced_beta", "kind": "number", "required": false, "flag": "--class-balanced-beta" },
+        { "name": "classes", "kind": "file", "required": false, "flag": "--classes" },
+        { "name": "combined_output", "kind": "string", "required": false, "flag": "--combined-output" },
+        { "name": "config", "kind": "file", "required": false, "flag": "--config" },
+        { "name": "dataset", "kind": "dir", "required": false, "flag": "--dataset" },
+        { "name": "device", "kind": "string", "required": false, "flag": "--device" },
+        { "name": "diag_iou", "kind": "number", "required": false, "flag": "--diag-iou" },
+        { "name": "dry_run", "kind": "string", "required": false, "flag": "--dry-run" },
+        { "name": "fit_iou", "kind": "number", "required": false, "flag": "--fit-iou" },
+        { "name": "fit_max_detections", "kind": "number", "required": false, "flag": "--fit-max-detections" },
+        { "name": "fit_temperature", "kind": "number", "required": false, "flag": "--fit-temperature" },
+        { "name": "focal_gamma", "kind": "number", "required": false, "flag": "--focal-gamma" },
+        { "name": "force", "kind": "string", "required": false, "flag": "--force" },
+        { "name": "gamma", "kind": "number", "required": false, "flag": "--gamma" },
+        { "name": "glob", "kind": "string", "required": false, "flag": "--glob" },
+        { "name": "head_fraction", "kind": "number", "required": false, "flag": "--head-fraction" },
+        { "name": "help", "kind": "string", "required": false, "flag": "--help" },
+        { "name": "image_size", "kind": "number", "required": false, "flag": "--image-size" },
+        { "name": "input_dir", "kind": "dir", "required": false, "flag": "--input-dir" },
+        { "name": "input_name", "kind": "string", "required": false, "flag": "--input-name" },
+        { "name": "iou_threshold", "kind": "number", "required": false, "flag": "--iou-threshold" },
+        { "name": "keep_per_image", "kind": "string", "required": false, "flag": "--keep-per-image" },
+        { "name": "kp_line", "kind": "number", "required": false, "flag": "--kp-line" },
+        { "name": "kp_radius", "kind": "number", "required": false, "flag": "--kp-radius" },
+        { "name": "ldam_margin", "kind": "number", "required": false, "flag": "--ldam-margin" },
+        { "name": "logit_adjustment_tau", "kind": "number", "required": false, "flag": "--logit-adjustment-tau" },
+        { "name": "lora_alpha", "kind": "number", "required": false, "flag": "--lora-alpha" },
+        { "name": "lora_dropout", "kind": "number", "required": false, "flag": "--lora-dropout" },
+        { "name": "lora_freeze_base", "kind": "string", "required": false, "flag": "--lora-freeze-base" },
+        { "name": "lora_r", "kind": "number", "required": false, "flag": "--lora-r" },
+        { "name": "lora_target", "kind": "string", "required": false, "flag": "--lora-target" },
+        { "name": "lora_train_bias", "kind": "string", "required": false, "flag": "--lora-train-bias" },
+        { "name": "lort_tau", "kind": "number", "required": false, "flag": "--lort-tau" },
+        { "name": "loss_plugin", "kind": "string", "required": false, "flag": "--loss-plugin" },
+        { "name": "max_detections", "kind": "number", "required": false, "flag": "--max-detections" },
+        { "name": "max_images", "kind": "number", "required": false, "flag": "--max-images" },
+        { "name": "max_overlays", "kind": "number", "required": false, "flag": "--max-overlays" },
+        { "name": "max_runs", "kind": "number", "required": false, "flag": "--max-runs" },
+        { "name": "max_score", "kind": "number", "required": false, "flag": "--max-score" },
+        { "name": "medium_fraction", "kind": "number", "required": false, "flag": "--medium-fraction" },
+        { "name": "method", "kind": "string", "required": false, "flag": "--method" },
+        { "name": "metric", "kind": "string", "required": false, "flag": "--metric" },
+        { "name": "metric_key", "kind": "string", "required": false, "flag": "--metric-key" },
+        { "name": "min_score", "kind": "number", "required": false, "flag": "--min-score" },
+        { "name": "model", "kind": "string", "required": false, "flag": "--model" },
+        { "name": "no_lora_freeze_base", "kind": "string", "required": false, "flag": "--no-lora-freeze-base" },
+        { "name": "no_ttt_rollback_on_stop", "kind": "string", "required": false, "flag": "--no-ttt-rollback-on-stop" },
+        { "name": "no_ttt_stop_on_non_finite", "kind": "string", "required": false, "flag": "--no-ttt-stop-on-non-finite" },
+        { "name": "notes", "kind": "string", "required": false, "flag": "--notes" },
+        { "name": "oks", "kind": "string", "required": false, "flag": "--oks" },
+        { "name": "oks_max_dets", "kind": "number", "required": false, "flag": "--oks-max-dets" },
+        { "name": "oks_sigmas", "kind": "string", "required": false, "flag": "--oks-sigmas" },
+        { "name": "oks_sigmas_file", "kind": "file", "required": false, "flag": "--oks-sigmas-file" },
+        { "name": "output_report", "kind": "file", "required": false, "flag": "--output-report" },
+        { "name": "overlay_alpha", "kind": "number", "required": false, "flag": "--overlay-alpha" },
+        { "name": "overlay_max_size", "kind": "number", "required": false, "flag": "--overlay-max-size" },
+        { "name": "overlay_sort", "kind": "string", "required": false, "flag": "--overlay-sort" },
+        { "name": "pck_threshold", "kind": "number", "required": false, "flag": "--pck-threshold" },
+        { "name": "per_image_limit", "kind": "number", "required": false, "flag": "--per-image-limit" },
+        { "name": "pred_root", "kind": "dir", "required": false, "flag": "--pred-root" },
+        { "name": "predictions", "kind": "file", "required": false, "flag": "--predictions" },
+        { "name": "rebalance_sampler", "kind": "string", "required": false, "flag": "--rebalance-sampler" },
+        { "name": "replay_fraction", "kind": "number", "required": false, "flag": "--replay-fraction" },
+        { "name": "replay_per_task_cap", "kind": "number", "required": false, "flag": "--replay-per-task-cap" },
+        { "name": "replay_size", "kind": "number", "required": false, "flag": "--replay-size" },
+        { "name": "resume", "kind": "string", "required": false, "flag": "--resume" },
+        { "name": "run_json", "kind": "file", "required": false, "flag": "--run-json" },
+        { "name": "score_threshold", "kind": "number", "required": false, "flag": "--score-threshold" },
+        { "name": "seed", "kind": "number", "required": false, "flag": "--seed" },
+        { "name": "split", "kind": "string", "required": false, "flag": "--split" },
+        { "name": "stage1_epochs", "kind": "number", "required": false, "flag": "--stage1-epochs" },
+        { "name": "stage2_epochs", "kind": "number", "required": false, "flag": "--stage2-epochs" },
+        { "name": "stats_in", "kind": "file", "required": false, "flag": "--stats-in" },
+        { "name": "stats_out", "kind": "file", "required": false, "flag": "--stats-out" },
+        { "name": "strength", "kind": "number", "required": false, "flag": "--strength" },
+        { "name": "success_rot_deg", "kind": "number", "required": false, "flag": "--success-rot-deg" },
+        { "name": "success_trans", "kind": "number", "required": false, "flag": "--success-trans" },
+        { "name": "task", "kind": "string", "required": false, "flag": "--task" },
+        { "name": "tau", "kind": "number", "required": false, "flag": "--tau" },
+        { "name": "temperature", "kind": "number", "required": false, "flag": "--temperature" },
+        { "name": "temperature_grid", "kind": "string", "required": false, "flag": "--temperature-grid" },
+        { "name": "title", "kind": "string", "required": false, "flag": "--title" },
+        { "name": "topk", "kind": "number", "required": false, "flag": "--topk" },
+        { "name": "tta", "kind": "string", "required": false, "flag": "--tta" },
+        { "name": "tta_flip_prob", "kind": "number", "required": false, "flag": "--tta-flip-prob" },
+        { "name": "tta_norm_only", "kind": "string", "required": false, "flag": "--tta-norm-only" },
+        { "name": "tta_seed", "kind": "number", "required": false, "flag": "--tta-seed" },
+        { "name": "ttt", "kind": "string", "required": false, "flag": "--ttt" },
+        { "name": "ttt_batch_size", "kind": "number", "required": false, "flag": "--ttt-batch-size" },
+        { "name": "ttt_exclude", "kind": "string", "required": false, "flag": "--ttt-exclude" },
+        { "name": "ttt_include", "kind": "string", "required": false, "flag": "--ttt-include" },
+        { "name": "ttt_lr", "kind": "number", "required": false, "flag": "--ttt-lr" },
+        { "name": "ttt_mask_prob", "kind": "number", "required": false, "flag": "--ttt-mask-prob" },
+        { "name": "ttt_mask_value", "kind": "number", "required": false, "flag": "--ttt-mask-value" },
+        { "name": "ttt_max_batches", "kind": "number", "required": false, "flag": "--ttt-max-batches" },
+        { "name": "ttt_max_grad_norm", "kind": "number", "required": false, "flag": "--ttt-max-grad-norm" },
+        { "name": "ttt_max_loss_increase", "kind": "number", "required": false, "flag": "--ttt-max-loss-increase" },
+        { "name": "ttt_max_loss_ratio", "kind": "number", "required": false, "flag": "--ttt-max-loss-ratio" },
+        { "name": "ttt_max_total_update_norm", "kind": "number", "required": false, "flag": "--ttt-max-total-update-norm" },
+        { "name": "ttt_max_update_norm", "kind": "number", "required": false, "flag": "--ttt-max-update-norm" },
+        { "name": "ttt_method", "kind": "string", "required": false, "flag": "--ttt-method" },
+        { "name": "ttt_patch_size", "kind": "number", "required": false, "flag": "--ttt-patch-size" },
+        { "name": "ttt_preset", "kind": "string", "required": false, "flag": "--ttt-preset" },
+        { "name": "ttt_reset", "kind": "string", "required": false, "flag": "--ttt-reset" },
+        { "name": "ttt_rollback_on_stop", "kind": "string", "required": false, "flag": "--ttt-rollback-on-stop" },
+        { "name": "ttt_seed", "kind": "number", "required": false, "flag": "--ttt-seed" },
+        { "name": "ttt_steps", "kind": "number", "required": false, "flag": "--ttt-steps" },
+        { "name": "ttt_stop_on_non_finite", "kind": "string", "required": false, "flag": "--ttt-stop-on-non-finite" },
+        { "name": "ttt_update_filter", "kind": "string", "required": false, "flag": "--ttt-update-filter" }
       ],
       "effects": {
         "writes": [
@@ -462,8 +610,7 @@
           { "flag": "--overlays-dir", "kind": "dir", "scope": "tree", "description": "Optional overlay image directory." },
           { "flag": "--html", "kind": "file", "scope": "path", "description": "Optional HTML report output." }
         ],
-        "fixed_writes": [],
-        "allow_unknown_flags": true
+        "fixed_writes": []
       },
       "examples": [
         { "description": "Doctor report.", "command": "python3 tools/yolozu.py doctor --output reports/doctor.json" },
@@ -506,7 +653,10 @@
       "tags": ["predictions", "validation"],
       "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
       "contracts": { "consumes": ["predictions_json"] },
-      "inputs": [{ "name": "predictions", "kind": "file", "required": true, "description": "Predictions JSON path." }],
+      "inputs": [
+        { "name": "predictions", "kind": "file", "required": true, "description": "Predictions JSON path." },
+        { "name": "strict", "kind": "string", "required": false, "flag": "--strict" }
+      ],
       "effects": { "writes": [], "fixed_writes": [] },
       "outputs": [{ "name": "stdout", "kind": "stdout", "description": "OK/WARN lines." }],
       "examples": [
@@ -561,7 +711,9 @@
       "inputs": [
         { "name": "input", "kind": "file", "required": true, "flag": "--input" },
         { "name": "output", "kind": "file", "required": true, "flag": "--output" },
-        { "name": "classes", "kind": "file", "required": false, "flag": "--classes" }
+        { "name": "classes", "kind": "file", "required": false, "flag": "--classes" },
+        { "name": "assume_class_id_is_category_id", "kind": "string", "required": false, "flag": "--assume-class-id-is-category-id" },
+        { "name": "wrap", "kind": "string", "required": false, "flag": "--wrap" }
       ],
       "effects": {
         "writes": [
@@ -606,7 +758,11 @@
         { "name": "pred_root", "kind": "dir", "required": false, "flag": "--pred-root" },
         { "name": "ignore_index", "kind": "number", "required": false, "flag": "--ignore-index" },
         { "name": "num_classes", "kind": "number", "required": false, "flag": "--num-classes" },
-        { "name": "max_samples", "kind": "number", "required": false, "flag": "--max-samples" }
+        { "name": "max_samples", "kind": "number", "required": false, "flag": "--max-samples" },
+        { "name": "allow_gt_out_of_range", "kind": "string", "required": false, "flag": "--allow-gt-out-of-range" },
+        { "name": "allow_rgb_masks", "kind": "string", "required": false, "flag": "--allow-rgb-masks" },
+        { "name": "miou_ignore_background", "kind": "string", "required": false, "flag": "--miou-ignore-background" },
+        { "name": "skip_missing_pred", "kind": "string", "required": false, "flag": "--skip-missing-pred" }
       ],
       "effects": {
         "writes": [
@@ -656,7 +812,20 @@
         { "name": "predictions", "kind": "file", "required": true, "flag": "--predictions" },
         { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/instance_seg_eval.json" },
         { "name": "html", "kind": "file", "required": false, "flag": "--html", "default": null },
-        { "name": "overlays_dir", "kind": "dir", "required": false, "flag": "--overlays-dir", "default": null }
+        { "name": "overlays_dir", "kind": "dir", "required": false, "flag": "--overlays-dir", "default": null },
+        { "name": "split", "kind": "string", "required": false, "flag": "--split" },
+        { "name": "title", "kind": "string", "required": false, "flag": "--title" },
+        { "name": "pred_root", "kind": "dir", "required": false, "flag": "--pred-root" },
+        { "name": "classes", "kind": "file", "required": false, "flag": "--classes" },
+        { "name": "allow_rgb_masks", "kind": "string", "required": false, "flag": "--allow-rgb-masks" },
+        { "name": "diag_iou", "kind": "number", "required": false, "flag": "--diag-iou" },
+        { "name": "max_images", "kind": "number", "required": false, "flag": "--max-images" },
+        { "name": "min_score", "kind": "number", "required": false, "flag": "--min-score" },
+        { "name": "per_image_limit", "kind": "number", "required": false, "flag": "--per-image-limit" },
+        { "name": "max_overlays", "kind": "number", "required": false, "flag": "--max-overlays" },
+        { "name": "overlay_alpha", "kind": "number", "required": false, "flag": "--overlay-alpha" },
+        { "name": "overlay_max_size", "kind": "number", "required": false, "flag": "--overlay-max-size" },
+        { "name": "overlay_sort", "kind": "string", "required": false, "flag": "--overlay-sort" }
       ],
       "effects": {
         "writes": [
@@ -687,7 +856,23 @@
         { "name": "predictions", "kind": "file", "required": true, "flag": "--predictions" },
         { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/keypoints_eval.json" },
         { "name": "html", "kind": "file", "required": false, "flag": "--html", "default": null },
-        { "name": "overlays_dir", "kind": "dir", "required": false, "flag": "--overlays-dir", "default": null }
+        { "name": "overlays_dir", "kind": "dir", "required": false, "flag": "--overlays-dir", "default": null },
+        { "name": "split", "kind": "string", "required": false, "flag": "--split" },
+        { "name": "title", "kind": "string", "required": false, "flag": "--title" },
+        { "name": "max_images", "kind": "number", "required": false, "flag": "--max-images" },
+        { "name": "min_score", "kind": "number", "required": false, "flag": "--min-score" },
+        { "name": "per_image_limit", "kind": "number", "required": false, "flag": "--per-image-limit" },
+        { "name": "pck_threshold", "kind": "number", "required": false, "flag": "--pck-threshold" },
+        { "name": "iou_threshold", "kind": "number", "required": false, "flag": "--iou-threshold" },
+        { "name": "oks", "kind": "string", "required": false, "flag": "--oks" },
+        { "name": "oks_max_dets", "kind": "number", "required": false, "flag": "--oks-max-dets" },
+        { "name": "oks_sigmas", "kind": "string", "required": false, "flag": "--oks-sigmas" },
+        { "name": "oks_sigmas_file", "kind": "file", "required": false, "flag": "--oks-sigmas-file" },
+        { "name": "kp_line", "kind": "number", "required": false, "flag": "--kp-line" },
+        { "name": "kp_radius", "kind": "number", "required": false, "flag": "--kp-radius" },
+        { "name": "max_overlays", "kind": "number", "required": false, "flag": "--max-overlays" },
+        { "name": "overlay_max_size", "kind": "number", "required": false, "flag": "--overlay-max-size" },
+        { "name": "overlay_sort", "kind": "string", "required": false, "flag": "--overlay-sort" }
       ],
       "effects": {
         "writes": [
@@ -721,7 +906,12 @@
       "inputs": [
         { "name": "dataset", "kind": "dir", "required": true, "flag": "--dataset" },
         { "name": "predictions", "kind": "file", "required": true, "flag": "--predictions" },
-        { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/coco_eval.json" }
+        { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/coco_eval.json" },
+        { "name": "protocol", "kind": "string", "required": false, "flag": "--protocol" },
+        { "name": "split", "kind": "string", "required": false, "flag": "--split" },
+        { "name": "max_images", "kind": "number", "required": false, "flag": "--max-images" },
+        { "name": "bbox_format", "kind": "string", "required": false, "flag": "--bbox-format" },
+        { "name": "dry_run", "kind": "string", "required": false, "flag": "--dry-run" }
       ],
       "effects": {
         "writes": [
@@ -748,7 +938,14 @@
       "contract_outputs": { "eval_suite_report_json": "eval_suite_json" },
       "inputs": [
         { "name": "predictions_glob", "kind": "string", "required": true, "flag": "--predictions-glob" },
-        { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/eval_suite.json" }
+        { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/eval_suite.json" },
+        { "name": "protocol", "kind": "string", "required": false, "flag": "--protocol" },
+        { "name": "dataset", "kind": "dir", "required": false, "flag": "--dataset" },
+        { "name": "split", "kind": "string", "required": false, "flag": "--split" },
+        { "name": "max_images", "kind": "number", "required": false, "flag": "--max-images" },
+        { "name": "bbox_format", "kind": "string", "required": false, "flag": "--bbox-format" },
+        { "name": "strict", "kind": "string", "required": false, "flag": "--strict" },
+        { "name": "dry_run", "kind": "string", "required": false, "flag": "--dry-run" }
       ],
       "effects": {
         "writes": [
@@ -788,7 +985,9 @@
       "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
       "inputs": [
         { "name": "suite", "kind": "file", "required": false, "flag": "--suite", "default": "reports/eval_suite.json" },
-        { "name": "targets", "kind": "file", "required": false, "flag": "--targets", "default": "baselines/yolo26_targets.json" }
+        { "name": "targets", "kind": "file", "required": false, "flag": "--targets", "default": "baselines/yolo26_targets.json" },
+        { "name": "key", "kind": "string", "required": false, "flag": "--key" },
+        { "name": "min_delta", "kind": "number", "required": false, "flag": "--min-delta" }
       ],
       "effects": { "writes": [], "fixed_writes": [] },
       "outputs": [{ "name": "stdout", "kind": "stdout", "description": "JSON report with ok/failures." }],
@@ -842,6 +1041,13 @@
       "inputs": [
         { "name": "student", "kind": "file", "required": true, "flag": "--student" },
         { "name": "teacher", "kind": "file", "required": true, "flag": "--teacher" },
+        { "name": "config", "kind": "file", "required": false, "flag": "--config" },
+        { "name": "dataset", "kind": "dir", "required": false, "flag": "--dataset" },
+        { "name": "split", "kind": "string", "required": false, "flag": "--split" },
+        { "name": "alpha", "kind": "number", "required": false, "flag": "--alpha" },
+        { "name": "iou_threshold", "kind": "number", "required": false, "flag": "--iou-threshold" },
+        { "name": "add_missing", "kind": "string", "required": false, "flag": "--add-missing" },
+        { "name": "add_score_scale", "kind": "number", "required": false, "flag": "--add-score-scale" },
         { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/predictions_distilled.json" },
         { "name": "output_report", "kind": "file", "required": false, "flag": "--output-report", "default": "reports/distill_report.json" }
       ],
@@ -871,7 +1077,12 @@
       "summary": "Run a configurable parameter sweep (grid or list) and emit JSONL/CSV/MD results.",
       "tags": ["sweep", "hpo"],
       "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
-      "inputs": [{ "name": "config", "kind": "file", "required": true, "flag": "--config" }],
+      "inputs": [
+        { "name": "config", "kind": "file", "required": true, "flag": "--config" },
+        { "name": "dry_run", "kind": "string", "required": false, "flag": "--dry-run" },
+        { "name": "max_runs", "kind": "number", "required": false, "flag": "--max-runs" },
+        { "name": "resume", "kind": "string", "required": false, "flag": "--resume" }
+      ],
       "effects": {
         "writes": [],
         "fixed_writes": [
@@ -902,10 +1113,30 @@
       "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
       "contracts": { "consumes": ["predictions_json"], "produces": ["metrics_report_json"] },
       "inputs": [
+        { "name": "config", "kind": "file", "required": false, "flag": "--config" },
         { "name": "dataset", "kind": "dir", "required": true, "flag": "--dataset" },
+        { "name": "split", "kind": "string", "required": false, "flag": "--split" },
+        { "name": "max_images", "kind": "number", "required": false, "flag": "--max-images" },
         { "name": "predictions", "kind": "file", "required": true, "flag": "--predictions" },
         { "name": "output_report", "kind": "file", "required": false, "flag": "--output-report", "default": "reports/gate_tuning_report.json" },
-        { "name": "output_predictions", "kind": "file", "required": false, "flag": "--output-predictions", "default": null }
+        { "name": "output_predictions", "kind": "file", "required": false, "flag": "--output-predictions", "default": null },
+        { "name": "metric", "kind": "string", "required": false, "flag": "--metric" },
+        { "name": "det_score_key", "kind": "string", "required": false, "flag": "--det-score-key" },
+        { "name": "template_score_key", "kind": "string", "required": false, "flag": "--template-score-key" },
+        { "name": "sigma_z_key", "kind": "string", "required": false, "flag": "--sigma-z-key" },
+        { "name": "sigma_rot_key", "kind": "string", "required": false, "flag": "--sigma-rot-key" },
+        { "name": "preserve_det_score_key", "kind": "string", "required": false, "flag": "--preserve-det-score-key" },
+        { "name": "grid_det", "kind": "string", "required": false, "flag": "--grid-det" },
+        { "name": "grid_tmp", "kind": "string", "required": false, "flag": "--grid-tmp" },
+        { "name": "grid_unc", "kind": "string", "required": false, "flag": "--grid-unc" },
+        { "name": "grid_tau", "kind": "string", "required": false, "flag": "--grid-tau" },
+        { "name": "template_gate", "kind": "string", "required": false, "flag": "--template-gate" },
+        { "name": "no_template_gate", "kind": "string", "required": false, "flag": "--no-template-gate" },
+        { "name": "tau", "kind": "number", "required": false, "flag": "--tau" },
+        { "name": "min_score", "kind": "number", "required": false, "flag": "--min-score" },
+        { "name": "topk_per_image", "kind": "number", "required": false, "flag": "--topk-per-image" },
+        { "name": "wrap_output", "kind": "string", "required": false, "flag": "--wrap-output" },
+        { "name": "no_wrap_output", "kind": "string", "required": false, "flag": "--no-wrap-output" }
       ],
       "effects": {
         "writes": [
@@ -934,7 +1165,13 @@
       "effects": { "writes": [], "fixed_writes": [] },
       "inputs": [
         { "name": "reference", "kind": "file", "required": true, "flag": "--reference" },
-        { "name": "candidate", "kind": "file", "required": true, "flag": "--candidate" }
+        { "name": "candidate", "kind": "file", "required": true, "flag": "--candidate" },
+        { "name": "bbox_format", "kind": "string", "required": false, "flag": "--bbox-format" },
+        { "name": "image_size", "kind": "string", "required": false, "flag": "--image-size" },
+        { "name": "max_images", "kind": "number", "required": false, "flag": "--max-images" },
+        { "name": "iou_thresh", "kind": "number", "required": false, "flag": "--iou-thresh" },
+        { "name": "score_atol", "kind": "number", "required": false, "flag": "--score-atol" },
+        { "name": "bbox_atol", "kind": "number", "required": false, "flag": "--bbox-atol" }
       ],
       "outputs": [{ "name": "stdout", "kind": "stdout", "description": "Mismatch report (JSON/text) and exit status." }],
       "examples": [
@@ -956,7 +1193,12 @@
       "effects": { "writes": [], "fixed_writes": [] },
       "inputs": [
         { "name": "reference", "kind": "file", "required": true, "flag": "--reference" },
-        { "name": "candidate", "kind": "file", "required": true, "flag": "--candidate" }
+        { "name": "candidate", "kind": "file", "required": true, "flag": "--candidate" },
+        { "name": "max_images", "kind": "number", "required": false, "flag": "--max-images" },
+        { "name": "iou_thresh", "kind": "number", "required": false, "flag": "--iou-thresh" },
+        { "name": "score_atol", "kind": "number", "required": false, "flag": "--score-atol" },
+        { "name": "bbox_atol", "kind": "number", "required": false, "flag": "--bbox-atol" },
+        { "name": "kp_atol", "kind": "number", "required": false, "flag": "--kp-atol" }
       ],
       "outputs": [{ "name": "stdout", "kind": "stdout", "description": "Mismatch report (JSON/text) and exit status." }],
       "examples": [
@@ -978,7 +1220,27 @@
       "contracts": { "consumes": ["predictions_json"], "produces": ["predictions_json"] },
       "inputs": [
         { "name": "predictions", "kind": "file", "required": true, "flag": "--predictions" },
-        { "name": "output", "kind": "file", "required": true, "flag": "--output" }
+        { "name": "output", "kind": "file", "required": true, "flag": "--output" },
+        { "name": "wrap", "kind": "string", "required": false, "flag": "--wrap" },
+        { "name": "refine_offsets", "kind": "string", "required": false, "flag": "--refine-offsets" },
+        { "name": "dataset", "kind": "dir", "required": false, "flag": "--dataset" },
+        { "name": "split", "kind": "string", "required": false, "flag": "--split" },
+        { "name": "device", "kind": "string", "required": false, "flag": "--device" },
+        { "name": "steps", "kind": "number", "required": false, "flag": "--steps" },
+        { "name": "damping", "kind": "number", "required": false, "flag": "--damping" },
+        { "name": "fd_eps", "kind": "number", "required": false, "flag": "--fd-eps" },
+        { "name": "line_search", "kind": "number", "required": false, "flag": "--line-search" },
+        { "name": "line_search_decay", "kind": "number", "required": false, "flag": "--line-search-decay" },
+        { "name": "w_reg", "kind": "number", "required": false, "flag": "--w-reg" },
+        { "name": "w_depth", "kind": "number", "required": false, "flag": "--w-depth" },
+        { "name": "w_mask", "kind": "number", "required": false, "flag": "--w-mask" },
+        { "name": "max_step_px", "kind": "number", "required": false, "flag": "--max-step-px" },
+        { "name": "max_total_update_px", "kind": "number", "required": false, "flag": "--max-total-update-px" },
+        { "name": "tol_delta", "kind": "number", "required": false, "flag": "--tol-delta" },
+        { "name": "tol_loss", "kind": "number", "required": false, "flag": "--tol-loss" },
+        { "name": "log_output", "kind": "file", "required": false, "flag": "--log-output" },
+        { "name": "log_steps", "kind": "string", "required": false, "flag": "--log-steps" },
+        { "name": "dry_run", "kind": "string", "required": false, "flag": "--dry-run" }
       ],
       "effects": {
         "writes": [
@@ -1011,11 +1273,36 @@
       "contracts": { "produces": ["predictions_json"] },
       "inputs": [
         { "name": "onnx", "kind": "file", "required": false, "flag": "--onnx", "default": null },
-        { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/predictions_onnxrt.json" }
+        { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/predictions_onnxrt.json" },
+        { "name": "dataset", "kind": "dir", "required": false, "flag": "--dataset" },
+        { "name": "split", "kind": "string", "required": false, "flag": "--split" },
+        { "name": "max_images", "kind": "number", "required": false, "flag": "--max-images" },
+        { "name": "input_name", "kind": "string", "required": false, "flag": "--input-name" },
+        { "name": "combined_output", "kind": "string", "required": false, "flag": "--combined-output" },
+        { "name": "combined_format", "kind": "string", "required": false, "flag": "--combined-format" },
+        { "name": "boxes_output", "kind": "file", "required": false, "flag": "--boxes-output" },
+        { "name": "boxes_format", "kind": "string", "required": false, "flag": "--boxes-format" },
+        { "name": "boxes_scale", "kind": "string", "required": false, "flag": "--boxes-scale" },
+        { "name": "class_output", "kind": "file", "required": false, "flag": "--class-output" },
+        { "name": "scores_output", "kind": "file", "required": false, "flag": "--scores-output" },
+        { "name": "raw_output", "kind": "file", "required": false, "flag": "--raw-output" },
+        { "name": "raw_format", "kind": "string", "required": false, "flag": "--raw-format" },
+        { "name": "raw_postprocess", "kind": "string", "required": false, "flag": "--raw-postprocess" },
+        { "name": "nms_iou", "kind": "number", "required": false, "flag": "--nms-iou" },
+        { "name": "agnostic_nms", "kind": "string", "required": false, "flag": "--agnostic-nms" },
+        { "name": "topk", "kind": "number", "required": false, "flag": "--topk" },
+        { "name": "min_score", "kind": "number", "required": false, "flag": "--min-score" },
+        { "name": "wrap", "kind": "string", "required": false, "flag": "--wrap" },
+        { "name": "strict", "kind": "string", "required": false, "flag": "--strict" },
+        { "name": "dry_run", "kind": "string", "required": false, "flag": "--dry-run" }
       ],
       "effects": {
         "writes": [
-          { "flag": "--output", "kind": "file", "scope": "path", "description": "Writes predictions JSON." }
+          { "flag": "--output", "kind": "file", "scope": "path", "description": "Writes predictions JSON." },
+          { "flag": "--boxes-output", "kind": "file", "scope": "path", "description": "Optional raw boxes output." },
+          { "flag": "--class-output", "kind": "file", "scope": "path", "description": "Optional raw class output." },
+          { "flag": "--scores-output", "kind": "file", "scope": "path", "description": "Optional raw scores output." },
+          { "flag": "--raw-output", "kind": "file", "scope": "path", "description": "Optional raw tensor output." }
         ],
         "fixed_writes": []
       },
@@ -1045,13 +1332,30 @@
         { "name": "onnx", "kind": "file", "required": true, "flag": "--onnx" },
         { "name": "engine", "kind": "file", "required": false, "flag": "--engine", "default": "engines/model.plan" },
         { "name": "timing_cache", "kind": "file", "required": false, "flag": "--timing-cache", "default": "engines/timing.cache" },
-        { "name": "meta_output", "kind": "file", "required": false, "flag": "--meta-output", "default": "reports/trt_engine_meta.json" }
+        { "name": "meta_output", "kind": "file", "required": false, "flag": "--meta-output", "default": "reports/trt_engine_meta.json" },
+        { "name": "precision", "kind": "string", "required": false, "flag": "--precision" },
+        { "name": "input_name", "kind": "string", "required": false, "flag": "--input-name" },
+        { "name": "min_shape", "kind": "string", "required": false, "flag": "--min-shape" },
+        { "name": "opt_shape", "kind": "string", "required": false, "flag": "--opt-shape" },
+        { "name": "max_shape", "kind": "string", "required": false, "flag": "--max-shape" },
+        { "name": "workspace", "kind": "number", "required": false, "flag": "--workspace" },
+        { "name": "trtexec", "kind": "string", "required": false, "flag": "--trtexec" },
+        { "name": "builder", "kind": "string", "required": false, "flag": "--builder" },
+        { "name": "calib_cache", "kind": "file", "required": false, "flag": "--calib-cache" },
+        { "name": "calib_dataset", "kind": "dir", "required": false, "flag": "--calib-dataset" },
+        { "name": "calib_split", "kind": "string", "required": false, "flag": "--calib-split" },
+        { "name": "calib_images", "kind": "number", "required": false, "flag": "--calib-images" },
+        { "name": "calib_list_output", "kind": "file", "required": false, "flag": "--calib-list-output" },
+        { "name": "extra_args", "kind": "string", "required": false, "flag": "--extra-args" },
+        { "name": "dry_run", "kind": "string", "required": false, "flag": "--dry-run" }
       ],
       "effects": {
         "writes": [
           { "flag": "--engine", "kind": "file", "scope": "path", "description": "Writes TensorRT engine plan." },
           { "flag": "--timing-cache", "kind": "file", "scope": "path", "description": "Writes timing cache." },
-          { "flag": "--meta-output", "kind": "file", "scope": "path", "description": "Writes build metadata JSON." }
+          { "flag": "--meta-output", "kind": "file", "scope": "path", "description": "Writes build metadata JSON." },
+          { "flag": "--calib-cache", "kind": "file", "scope": "path", "description": "Optional INT8 calibration cache output." },
+          { "flag": "--calib-list-output", "kind": "file", "scope": "path", "description": "Optional calibration image list output." }
         ],
         "fixed_writes": []
       },
@@ -1078,14 +1382,35 @@
       },
       "requires": { "python_packages": ["torch", "onnx"], "system": ["trtexec (optional, for engine build)"] },
       "inputs": [
+        { "name": "config", "kind": "file", "required": false, "flag": "--config", "default": "rtdetr_pose/configs/base.json" },
+        { "name": "checkpoint", "kind": "file", "required": false, "flag": "--checkpoint" },
+        { "name": "device", "kind": "string", "required": false, "flag": "--device" },
+        { "name": "image_size", "kind": "number", "required": false, "flag": "--image-size" },
         { "name": "onnx", "kind": "file", "required": false, "flag": "--onnx", "default": "models/model.onnx" },
+        { "name": "onnx_meta", "kind": "file", "required": false, "flag": "--onnx-meta" },
+        { "name": "opset", "kind": "number", "required": false, "flag": "--opset" },
+        { "name": "input_name", "kind": "string", "required": false, "flag": "--input-name" },
+        { "name": "dynamic_hw", "kind": "string", "required": false, "flag": "--dynamic-hw" },
         { "name": "engine", "kind": "file", "required": false, "flag": "--engine", "default": "engines/model_fp16.plan" },
-        { "name": "timing_cache", "kind": "file", "required": false, "flag": "--timing-cache", "default": "engines/timing.cache" }
+        { "name": "engine_meta", "kind": "file", "required": false, "flag": "--engine-meta" },
+        { "name": "precision", "kind": "string", "required": false, "flag": "--precision" },
+        { "name": "min_shape", "kind": "string", "required": false, "flag": "--min-shape" },
+        { "name": "opt_shape", "kind": "string", "required": false, "flag": "--opt-shape" },
+        { "name": "max_shape", "kind": "string", "required": false, "flag": "--max-shape" },
+        { "name": "workspace", "kind": "number", "required": false, "flag": "--workspace" },
+        { "name": "timing_cache", "kind": "file", "required": false, "flag": "--timing-cache", "default": "engines/timing.cache" },
+        { "name": "trtexec", "kind": "string", "required": false, "flag": "--trtexec" },
+        { "name": "extra_args", "kind": "string", "required": false, "flag": "--extra-args" },
+        { "name": "skip_onnx", "kind": "string", "required": false, "flag": "--skip-onnx" },
+        { "name": "skip_engine", "kind": "string", "required": false, "flag": "--skip-engine" },
+        { "name": "dry_run", "kind": "string", "required": false, "flag": "--dry-run" }
       ],
       "effects": {
         "writes": [
           { "flag": "--onnx", "kind": "file", "scope": "path", "description": "Writes ONNX model." },
+          { "flag": "--onnx-meta", "kind": "file", "scope": "path", "description": "Optional ONNX export metadata JSON output." },
           { "flag": "--engine", "kind": "file", "scope": "path", "description": "Writes TensorRT engine plan." },
+          { "flag": "--engine-meta", "kind": "file", "scope": "path", "description": "Optional engine build metadata JSON output." },
           { "flag": "--timing-cache", "kind": "file", "scope": "path", "description": "Writes timing cache." }
         ],
         "fixed_writes": []
@@ -1114,7 +1439,27 @@
       "requires": { "python_packages": ["torch", "numpy"] },
       "inputs": [
         { "name": "config", "kind": "file", "required": true, "flag": "--config" },
-        { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/rtdetr_pose_backend_suite.json" }
+        { "name": "checkpoint", "kind": "file", "required": false, "flag": "--checkpoint" },
+        { "name": "device", "kind": "string", "required": false, "flag": "--device" },
+        { "name": "image_size", "kind": "number", "required": false, "flag": "--image-size" },
+        { "name": "batch", "kind": "number", "required": false, "flag": "--batch" },
+        { "name": "samples", "kind": "number", "required": false, "flag": "--samples" },
+        { "name": "seed", "kind": "number", "required": false, "flag": "--seed" },
+        { "name": "onnx", "kind": "file", "required": false, "flag": "--onnx" },
+        { "name": "engine", "kind": "file", "required": false, "flag": "--engine" },
+        { "name": "input_name", "kind": "string", "required": false, "flag": "--input-name" },
+        { "name": "onnx_meta", "kind": "file", "required": false, "flag": "--onnx-meta" },
+        { "name": "engine_meta", "kind": "file", "required": false, "flag": "--engine-meta" },
+        { "name": "embed_meta", "kind": "string", "required": false, "flag": "--embed-meta" },
+        { "name": "trtexec", "kind": "string", "required": false, "flag": "--trtexec" },
+        { "name": "backends", "kind": "string", "required": false, "flag": "--backends" },
+        { "name": "reference", "kind": "string", "required": false, "flag": "--reference" },
+        { "name": "score_atol", "kind": "number", "required": false, "flag": "--score-atol" },
+        { "name": "bbox_atol", "kind": "number", "required": false, "flag": "--bbox-atol" },
+        { "name": "warmup", "kind": "number", "required": false, "flag": "--warmup" },
+        { "name": "iterations", "kind": "number", "required": false, "flag": "--iterations" },
+        { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/rtdetr_pose_backend_suite.json" },
+        { "name": "dry_run", "kind": "string", "required": false, "flag": "--dry-run" }
       ],
       "effects": {
         "writes": [
@@ -1148,11 +1493,41 @@
       "inputs": [
         { "name": "config", "kind": "file", "required": false, "flag": "--config", "default": "rtdetr_pose/configs/base.json" },
         { "name": "checkpoint", "kind": "file", "required": false, "flag": "--checkpoint" },
+        { "name": "device", "kind": "string", "required": false, "flag": "--device" },
+        { "name": "export_device", "kind": "string", "required": false, "flag": "--export-device" },
+        { "name": "precision", "kind": "string", "required": false, "flag": "--precision" },
+        { "name": "input_name", "kind": "string", "required": false, "flag": "--input-name" },
+        { "name": "opset", "kind": "number", "required": false, "flag": "--opset" },
+        { "name": "dynamic_hw", "kind": "string", "required": false, "flag": "--dynamic-hw" },
+        { "name": "no_dynamic_hw", "kind": "string", "required": false, "flag": "--no-dynamic-hw" },
+        { "name": "export_image_size", "kind": "number", "required": false, "flag": "--export-image-size" },
+        { "name": "suite_image_size", "kind": "number", "required": false, "flag": "--suite-image-size" },
+        { "name": "max_image_size", "kind": "number", "required": false, "flag": "--max-image-size" },
+        { "name": "min_shape", "kind": "string", "required": false, "flag": "--min-shape" },
+        { "name": "opt_shape", "kind": "string", "required": false, "flag": "--opt-shape" },
+        { "name": "max_shape", "kind": "string", "required": false, "flag": "--max-shape" },
+        { "name": "workspace", "kind": "number", "required": false, "flag": "--workspace" },
+        { "name": "trtexec", "kind": "string", "required": false, "flag": "--trtexec" },
+        { "name": "extra_args", "kind": "string", "required": false, "flag": "--extra-args" },
+        { "name": "batch", "kind": "number", "required": false, "flag": "--batch" },
+        { "name": "samples", "kind": "number", "required": false, "flag": "--samples" },
+        { "name": "seed", "kind": "number", "required": false, "flag": "--seed" },
+        { "name": "score_atol", "kind": "number", "required": false, "flag": "--score-atol" },
+        { "name": "bbox_atol", "kind": "number", "required": false, "flag": "--bbox-atol" },
+        { "name": "warmup", "kind": "number", "required": false, "flag": "--warmup" },
+        { "name": "iterations", "kind": "number", "required": false, "flag": "--iterations" },
+        { "name": "backends", "kind": "string", "required": false, "flag": "--backends" },
+        { "name": "embed_meta", "kind": "string", "required": false, "flag": "--embed-meta" },
+        { "name": "run_id", "kind": "string", "required": false, "flag": "--run-id" },
         { "name": "run_dir", "kind": "dir", "required": false, "flag": "--run-dir" },
         { "name": "onnx", "kind": "file", "required": false, "flag": "--onnx", "default": null },
         { "name": "engine", "kind": "file", "required": false, "flag": "--engine", "default": null },
         { "name": "timing_cache", "kind": "file", "required": false, "flag": "--timing-cache", "default": null },
-        { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": null }
+        { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": null },
+        { "name": "skip_onnx", "kind": "string", "required": false, "flag": "--skip-onnx" },
+        { "name": "skip_engine", "kind": "string", "required": false, "flag": "--skip-engine" },
+        { "name": "force", "kind": "string", "required": false, "flag": "--force" },
+        { "name": "dry_run", "kind": "string", "required": false, "flag": "--dry-run" }
       ],
       "effects": {
         "writes": [
@@ -1186,11 +1561,36 @@
       "contracts": { "produces": ["predictions_json"] },
       "inputs": [
         { "name": "engine", "kind": "file", "required": false, "flag": "--engine", "default": null },
-        { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/predictions_trt.json" }
+        { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/predictions_trt.json" },
+        { "name": "dataset", "kind": "dir", "required": false, "flag": "--dataset" },
+        { "name": "split", "kind": "string", "required": false, "flag": "--split" },
+        { "name": "max_images", "kind": "number", "required": false, "flag": "--max-images" },
+        { "name": "input_name", "kind": "string", "required": false, "flag": "--input-name" },
+        { "name": "combined_output", "kind": "string", "required": false, "flag": "--combined-output" },
+        { "name": "combined_format", "kind": "string", "required": false, "flag": "--combined-format" },
+        { "name": "boxes_output", "kind": "file", "required": false, "flag": "--boxes-output" },
+        { "name": "boxes_format", "kind": "string", "required": false, "flag": "--boxes-format" },
+        { "name": "boxes_scale", "kind": "string", "required": false, "flag": "--boxes-scale" },
+        { "name": "class_output", "kind": "file", "required": false, "flag": "--class-output" },
+        { "name": "scores_output", "kind": "file", "required": false, "flag": "--scores-output" },
+        { "name": "raw_output", "kind": "file", "required": false, "flag": "--raw-output" },
+        { "name": "raw_format", "kind": "string", "required": false, "flag": "--raw-format" },
+        { "name": "raw_postprocess", "kind": "string", "required": false, "flag": "--raw-postprocess" },
+        { "name": "nms_iou", "kind": "number", "required": false, "flag": "--nms-iou" },
+        { "name": "agnostic_nms", "kind": "string", "required": false, "flag": "--agnostic-nms" },
+        { "name": "topk", "kind": "number", "required": false, "flag": "--topk" },
+        { "name": "min_score", "kind": "number", "required": false, "flag": "--min-score" },
+        { "name": "wrap", "kind": "string", "required": false, "flag": "--wrap" },
+        { "name": "strict", "kind": "string", "required": false, "flag": "--strict" },
+        { "name": "dry_run", "kind": "string", "required": false, "flag": "--dry-run" }
       ],
       "effects": {
         "writes": [
-          { "flag": "--output", "kind": "file", "scope": "path", "description": "Writes predictions JSON." }
+          { "flag": "--output", "kind": "file", "scope": "path", "description": "Writes predictions JSON." },
+          { "flag": "--boxes-output", "kind": "file", "scope": "path", "description": "Optional raw boxes output." },
+          { "flag": "--class-output", "kind": "file", "scope": "path", "description": "Optional raw class output." },
+          { "flag": "--scores-output", "kind": "file", "scope": "path", "description": "Optional raw scores output." },
+          { "flag": "--raw-output", "kind": "file", "scope": "path", "description": "Optional raw tensor output." }
         ],
         "fixed_writes": []
       },
@@ -1213,8 +1613,12 @@
       "contracts": { "produces": ["metrics_report_json"] },
       "inputs": [
         { "name": "engine", "kind": "file", "required": false, "flag": "--engine" },
+        { "name": "shape", "kind": "string", "required": false, "flag": "--shape" },
+        { "name": "input_name", "kind": "string", "required": false, "flag": "--input-name" },
         { "name": "iterations", "kind": "number", "required": false, "flag": "--iterations", "default": 200 },
         { "name": "warmup", "kind": "number", "required": false, "flag": "--warmup", "default": 20 },
+        { "name": "dry_run", "kind": "string", "required": false, "flag": "--dry-run" },
+        { "name": "notes", "kind": "string", "required": false, "flag": "--notes" },
         { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/latency_trt.json" }
       ],
       "effects": {
@@ -1249,17 +1653,77 @@
       "inputs": [
         { "name": "dataset", "kind": "dir", "required": true, "flag": "--dataset" },
         { "name": "onnx_template", "kind": "string", "required": true, "flag": "--onnx-template" },
-        { "name": "run_dir", "kind": "dir", "required": false, "flag": "--run-dir", "default": null }
+        { "name": "run_dir", "kind": "dir", "required": false, "flag": "--run-dir", "default": null },
+        { "name": "benchmark_config", "kind": "file", "required": false, "flag": "--benchmark-config" },
+        { "name": "benchmark_history", "kind": "file", "required": false, "flag": "--benchmark-history" },
+        { "name": "benchmark_output", "kind": "file", "required": false, "flag": "--benchmark-output" },
+        { "name": "boxes_scale", "kind": "string", "required": false, "flag": "--boxes-scale" },
+        { "name": "buckets", "kind": "string", "required": false, "flag": "--buckets" },
+        { "name": "calib_cache_template", "kind": "string", "required": false, "flag": "--calib-cache-template" },
+        { "name": "calib_dataset", "kind": "dir", "required": false, "flag": "--calib-dataset" },
+        { "name": "calib_images", "kind": "number", "required": false, "flag": "--calib-images" },
+        { "name": "calib_list_template", "kind": "string", "required": false, "flag": "--calib-list-template" },
+        { "name": "calib_split", "kind": "string", "required": false, "flag": "--calib-split" },
+        { "name": "combined_output", "kind": "string", "required": false, "flag": "--combined-output" },
+        { "name": "dry_run", "kind": "string", "required": false, "flag": "--dry-run" },
+        { "name": "engine_meta_template", "kind": "string", "required": false, "flag": "--engine-meta-template" },
+        { "name": "engine_template", "kind": "string", "required": false, "flag": "--engine-template" },
+        { "name": "eval_suite_output", "kind": "file", "required": false, "flag": "--eval-suite-output" },
+        { "name": "force", "kind": "string", "required": false, "flag": "--force" },
+        { "name": "help", "kind": "string", "required": false, "flag": "--help" },
+        { "name": "image_size", "kind": "string", "required": false, "flag": "--image-size" },
+        { "name": "input_name", "kind": "string", "required": false, "flag": "--input-name" },
+        { "name": "latency_iterations", "kind": "number", "required": false, "flag": "--latency-iterations" },
+        { "name": "latency_template", "kind": "string", "required": false, "flag": "--latency-template" },
+        { "name": "latency_warmup", "kind": "number", "required": false, "flag": "--latency-warmup" },
+        { "name": "max_images", "kind": "number", "required": false, "flag": "--max-images" },
+        { "name": "max_shape", "kind": "string", "required": false, "flag": "--max-shape" },
+        { "name": "min_score", "kind": "number", "required": false, "flag": "--min-score" },
+        { "name": "min_shape", "kind": "string", "required": false, "flag": "--min-shape" },
+        { "name": "notes", "kind": "string", "required": false, "flag": "--notes" },
+        { "name": "opt_shape", "kind": "string", "required": false, "flag": "--opt-shape" },
+        { "name": "parity_bbox_atol", "kind": "number", "required": false, "flag": "--parity-bbox-atol" },
+        { "name": "parity_iou", "kind": "number", "required": false, "flag": "--parity-iou" },
+        { "name": "parity_report_template", "kind": "string", "required": false, "flag": "--parity-report-template" },
+        { "name": "parity_score_atol", "kind": "number", "required": false, "flag": "--parity-score-atol" },
+        { "name": "precision", "kind": "string", "required": false, "flag": "--precision" },
+        { "name": "pred_onnxrt_template", "kind": "string", "required": false, "flag": "--pred-onnxrt-template" },
+        { "name": "pred_trt_template", "kind": "string", "required": false, "flag": "--pred-trt-template" },
+        { "name": "run_id", "kind": "string", "required": false, "flag": "--run-id" },
+        { "name": "shape", "kind": "string", "required": false, "flag": "--shape" },
+        { "name": "skip_benchmark", "kind": "string", "required": false, "flag": "--skip-benchmark" },
+        { "name": "skip_build", "kind": "string", "required": false, "flag": "--skip-build" },
+        { "name": "skip_eval", "kind": "string", "required": false, "flag": "--skip-eval" },
+        { "name": "skip_latency", "kind": "string", "required": false, "flag": "--skip-latency" },
+        { "name": "skip_onnxrt", "kind": "string", "required": false, "flag": "--skip-onnxrt" },
+        { "name": "skip_parity", "kind": "string", "required": false, "flag": "--skip-parity" },
+        { "name": "skip_trt", "kind": "string", "required": false, "flag": "--skip-trt" },
+        { "name": "timing_cache", "kind": "file", "required": false, "flag": "--timing-cache" },
+        { "name": "topk", "kind": "number", "required": false, "flag": "--topk" },
+        { "name": "trtexec", "kind": "string", "required": false, "flag": "--trtexec" },
+        { "name": "workspace_mib", "kind": "number", "required": false, "flag": "--workspace-mib" }
       ],
       "effects": {
         "writes": [
-          { "flag": "--run-dir", "kind": "dir", "scope": "tree", "description": "Optional run folder to copy key artifacts into." }
+          { "flag": "--run-dir", "kind": "dir", "scope": "tree", "description": "Optional run folder to copy key artifacts into." },
+          { "flag": "--engine-template", "kind": "file", "scope": "path", "description": "Writes TensorRT engine outputs rendered from template." },
+          { "flag": "--engine-meta-template", "kind": "file", "scope": "path", "description": "Writes per-bucket engine build metadata rendered from template." },
+          { "flag": "--timing-cache", "kind": "file", "scope": "path", "description": "Writes TensorRT timing cache." },
+          { "flag": "--calib-cache-template", "kind": "file", "scope": "path", "description": "Writes INT8 calibration cache rendered from template (when used)." },
+          { "flag": "--calib-list-template", "kind": "file", "scope": "path", "description": "Writes calibration image list rendered from template (when used)." },
+          { "flag": "--pred-onnxrt-template", "kind": "file", "scope": "path", "description": "Writes ONNXRuntime predictions JSON rendered from template." },
+          { "flag": "--pred-trt-template", "kind": "file", "scope": "path", "description": "Writes TensorRT predictions JSON rendered from template." },
+          { "flag": "--parity-report-template", "kind": "file", "scope": "path", "description": "Writes parity report JSON rendered from template." },
+          { "flag": "--latency-template", "kind": "file", "scope": "path", "description": "Writes per-bucket latency report JSON rendered from template." },
+          { "flag": "--benchmark-config", "kind": "file", "scope": "path", "description": "Writes generated benchmark harness config JSON." },
+          { "flag": "--benchmark-output", "kind": "file", "scope": "path", "description": "Writes benchmark latency report JSON." },
+          { "flag": "--benchmark-history", "kind": "file", "scope": "path", "description": "Optional JSONL history file for benchmark latency reports." },
+          { "flag": "--eval-suite-output", "kind": "file", "scope": "path", "description": "Writes eval suite output JSON." }
         ],
         "fixed_writes": [
           { "path": "engines", "kind": "dir", "scope": "tree", "description": "Default engine outputs and timing cache." },
           { "path": "reports", "kind": "dir", "scope": "tree", "description": "Default reports/artifacts (predictions, parity, eval suite, latency, generated configs)." }
-        ],
-        "allow_unknown_flags": true
+        ]
       },
       "outputs": [{ "name": "run_dir", "kind": "dir", "description": "Run folder containing run.json and copied artifacts." }],
       "examples": [
@@ -1280,6 +1744,17 @@
       "contracts": { "produces": ["metrics_report_json"] },
       "inputs": [
         { "name": "config", "kind": "file", "required": false, "flag": "--config" },
+        { "name": "model_template", "kind": "string", "required": false, "flag": "--model-template" },
+        { "name": "engine_template", "kind": "string", "required": false, "flag": "--engine-template" },
+        { "name": "buckets", "kind": "string", "required": false, "flag": "--buckets" },
+        { "name": "run_id", "kind": "string", "required": false, "flag": "--run-id" },
+        { "name": "notes", "kind": "string", "required": false, "flag": "--notes" },
+        { "name": "notes_file", "kind": "file", "required": false, "flag": "--notes-file" },
+        { "name": "iterations", "kind": "number", "required": false, "flag": "--iterations" },
+        { "name": "warmup", "kind": "number", "required": false, "flag": "--warmup" },
+        { "name": "sleep_s", "kind": "number", "required": false, "flag": "--sleep-s" },
+        { "name": "target_fps", "kind": "number", "required": false, "flag": "--target-fps" },
+        { "name": "target_latency_ms", "kind": "number", "required": false, "flag": "--target-latency-ms" },
         { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/benchmark_latency.json" },
         { "name": "history", "kind": "file", "required": false, "flag": "--history", "default": null }
       ],
@@ -1311,7 +1786,18 @@
       "contracts": { "consumes": ["predictions_json"], "produces": ["metrics_report_json"] },
       "inputs": [
         { "name": "dataset", "kind": "dir", "required": true, "flag": "--dataset" },
+        { "name": "split", "kind": "string", "required": false, "flag": "--split" },
         { "name": "predictions", "kind": "file", "required": true, "flag": "--predictions" },
+        { "name": "max_images", "kind": "number", "required": false, "flag": "--max-images" },
+        { "name": "warmup", "kind": "number", "required": false, "flag": "--warmup" },
+        { "name": "iterations", "kind": "number", "required": false, "flag": "--iterations" },
+        { "name": "iou_threshold", "kind": "number", "required": false, "flag": "--iou-threshold" },
+        { "name": "min_score", "kind": "number", "required": false, "flag": "--min-score" },
+        { "name": "pck_threshold", "kind": "number", "required": false, "flag": "--pck-threshold" },
+        { "name": "oks", "kind": "string", "required": false, "flag": "--oks" },
+        { "name": "oks_sigmas", "kind": "string", "required": false, "flag": "--oks-sigmas" },
+        { "name": "oks_sigmas_file", "kind": "file", "required": false, "flag": "--oks-sigmas-file" },
+        { "name": "oks_max_dets", "kind": "number", "required": false, "flag": "--oks-max-dets" },
         { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/benchmark_keypoints_eval.json" }
       ],
       "effects": {
@@ -1336,7 +1822,17 @@
       "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
       "contracts": { "produces": ["metrics_report_json"] },
       "inputs": [
+        { "name": "config", "kind": "file", "required": false, "flag": "--config" },
+        { "name": "adapter", "kind": "string", "required": false, "flag": "--adapter" },
         { "name": "dataset", "kind": "dir", "required": false, "flag": "--dataset" },
+        { "name": "split", "kind": "string", "required": false, "flag": "--split" },
+        { "name": "predictions", "kind": "file", "required": false, "flag": "--predictions" },
+        { "name": "checkpoint", "kind": "file", "required": false, "flag": "--checkpoint" },
+        { "name": "device", "kind": "string", "required": false, "flag": "--device" },
+        { "name": "image_size", "kind": "string", "required": false, "flag": "--image-size" },
+        { "name": "max_images", "kind": "number", "required": false, "flag": "--max-images" },
+        { "name": "max_detections", "kind": "number", "required": false, "flag": "--max-detections" },
+        { "name": "score_threshold", "kind": "number", "required": false, "flag": "--score-threshold" },
         { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/scenario_run.json" }
       ],
       "effects": {
@@ -1369,7 +1865,10 @@
       "tags": ["policy", "license"],
       "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
       "inputs": [
-        { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/dependency_licenses.json" }
+        { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/dependency_licenses.json" },
+        { "name": "requirements", "kind": "file", "required": false, "flag": "--requirements" },
+        { "name": "only_direct", "kind": "string", "required": false, "flag": "--only-direct" },
+        { "name": "fail_on_copyleft", "kind": "string", "required": false, "flag": "--fail-on-copyleft" }
       ],
       "effects": {
         "writes": [
@@ -1433,8 +1932,17 @@
       "requires": { "python_packages": ["torch", "Pillow"] },
       "inputs": [
         { "name": "run_json", "kind": "file", "required": true, "flag": "--run-json" },
+        { "name": "device", "kind": "string", "required": false, "flag": "--device" },
         { "name": "metric", "kind": "string", "required": false, "flag": "--metric" },
         { "name": "metric_key", "kind": "string", "required": false, "flag": "--metric-key" },
+        { "name": "image_size", "kind": "string", "required": false, "flag": "--image-size" },
+        { "name": "max_images", "kind": "number", "required": false, "flag": "--max-images" },
+        { "name": "iou_threshold", "kind": "number", "required": false, "flag": "--iou-threshold" },
+        { "name": "min_score", "kind": "number", "required": false, "flag": "--min-score" },
+        { "name": "keep_per_image", "kind": "number", "required": false, "flag": "--keep-per-image" },
+        { "name": "success_trans", "kind": "number", "required": false, "flag": "--success-trans" },
+        { "name": "success_rot_deg", "kind": "number", "required": false, "flag": "--success-rot-deg" },
+        { "name": "force", "kind": "string", "required": false, "flag": "--force" },
         { "name": "output", "kind": "file", "required": false, "flag": "--output" },
         { "name": "html", "kind": "file", "required": false, "flag": "--html" }
       ],
