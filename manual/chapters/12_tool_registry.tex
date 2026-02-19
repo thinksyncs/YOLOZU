@@ -24,6 +24,36 @@ This is designed for:
   \item CI-style reproducibility (stable commands and stable artifacts).
 \end{itemize}
 
+\section{Authority and update rule}
+For CLI capabilities and tool I/O behavior, \path{tools/manifest.json} is the
+\textbf{authoritative source of truth}. Manual text should be synchronized from the manifest,
+not maintained as an independent list.
+
+When there is a discrepancy:
+\begin{itemize}
+  \item \textbf{behavior truth}: code + manifest,
+  \item \textbf{docs action}: update this manual chapter and related chapters,
+  \item \textbf{quality gate}: re-run manifest validator before publishing.
+\end{itemize}
+
+Use this check command:
+\begin{lstlisting}[language=bash]
+python3 tools/validate_tool_manifest.py --manifest tools/manifest.json
+\end{lstlisting}
+
+\section{Declarative fields (what every tool entry should expose)}
+The manifest is used as a declarative contract. At practical minimum, tool entries should expose:
+\begin{itemize}
+  \item identity/execution: \texttt{id}, \texttt{entrypoint}, \texttt{runner}, \texttt{summary},
+  \item environment: \texttt{platform} and optional \texttt{requires},
+  \item interface: \texttt{inputs[]} and \texttt{outputs[]},
+  \item side effects: \texttt{effects.writes[]} and \texttt{effects.fixed\_writes[]},
+  \item reproducibility: at least one \texttt{examples[].command},
+  \item typing/compatibility: \texttt{contracts.consumes/produces}, optional \texttt{contract\_outputs}, and \texttt{docs[]} references.
+\end{itemize}
+
+For field-level policy and boundaries, see \path{docs/manifest_declarative_spec.md}.
+
 \section{Contracts referenced from the manifest}
 The manifest references stable JSON schemas under \path{docs/schemas/}. Common ones include:
 \begin{itemize}
@@ -45,9 +75,30 @@ A practical loop when you join the repo (or return after a while):
 \begin{enumerate}
   \item Read the docs index: \path{docs/README.md}.
   \item Scan the tool index: \path{docs/tools_index.md}.
-  \item Search the manifest for tags you care about (dataset/eval/parity/bench).
+  \item Search the manifest by \texttt{tags}, \texttt{id}, and \texttt{contracts}.
   \item Run the validator so the registry is trustworthy.
 \end{enumerate}
+
+\subsection*{Practical manifest queries}
+\begin{lstlisting}[language=bash]
+# List tool ids and entrypoints
+python3 - <<'PY'
+import json
+obj = json.load(open("tools/manifest.json", "r", encoding="utf-8"))
+for t in obj.get("tools", []):
+    print(f"{t.get('id')}\t{t.get('entrypoint')}")
+PY
+
+# Find tools that consume predictions_json
+python3 - <<'PY'
+import json
+obj = json.load(open("tools/manifest.json", "r", encoding="utf-8"))
+for t in obj.get("tools", []):
+    c = (t.get("contracts") or {}).get("consumes") or []
+    if "predictions_json" in c:
+        print(t.get("id"))
+PY
+\end{lstlisting}
 
 \section{AI-first entrypoints for agents}
 For autonomous or semi-autonomous usage, the recommended stable entrypoints are:
@@ -60,6 +111,18 @@ For autonomous or semi-autonomous usage, the recommended stable entrypoints are:
 
 This is an explicit design target of \yolozu{}: AI agents should be able to discover,
 validate, execute, and extend workflows using stable contracts.
+
+\section{Manifest-synchronized documentation workflow}
+When adding or changing a tool:
+\begin{enumerate}
+  \item update the script behavior in \path{tools/} and keep CLI help accurate,
+  \item update \path{tools/manifest.json} (inputs/effects/outputs/examples/contracts),
+  \item validate manifest structure and references,
+  \item update corresponding manual chapter sections and examples,
+  \item keep docs links in sync (\path{docs/README.md}, \path{docs/tools_index.md}).
+\end{enumerate}
+
+This keeps manual chapters aligned with the registry and reduces stale command drift.
 
 Validate the tool registry:
 \begin{lstlisting}[language=bash]

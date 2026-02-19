@@ -1,7 +1,7 @@
-\chapter{Test-Time Training (TTT): Tent and MIM}
+\chapter{Test-Time Training (TTT): Tent, MIM, CoTTA, EATA, SAR}
 
 \ChapterMeta{
-This chapter explains controlled test-time adaptation (Tent/MIM), presets, guard rails, and reset policies for fair comparisons.
+This chapter explains controlled test-time adaptation (Tent/MIM/CoTTA/EATA/SAR), presets, guard rails, and reset policies for fair comparisons.
 }{
 It can improve robustness under domain shift by adapting weights in memory, while keeping cost bounded and results reproducible.
 }{
@@ -16,6 +16,9 @@ Authoritative references:
 \begin{itemize}
   \item \path{docs/ttt_protocol.md}
   \item \path{docs/mim_inference.md}
+  \item \path{docs/cotta_design_spec.md}
+  \item \path{docs/eata_design_spec.md}
+  \item \path{docs/sar_design_spec.md}
 \end{itemize}
 
 TTT updates weights \emph{in memory} using unlabeled test data before (or during) inference \cite{sun2020ttt,wang2021tent}.
@@ -37,6 +40,9 @@ Both CLIs expose \cmd{--ttt-preset}:
   \item \cmd{safe}: Tent + BN-affine only (\cmd{update_filter=norm_only})
   \item \cmd{adapter_only}: Tent + adapter/head only
   \item \cmd{mim_safe}: MIM + adapter/head only
+  \item \cmd{cotta_safe}: CoTTA with conservative update/restore guard rails
+  \item \cmd{eata_safe}: EATA selective adaptation with anti-forgetting defaults
+  \item \cmd{sar_safe}: SAR LoRA-first sharpness-aware adaptation defaults
 \end{itemize}
 
 Presets override core knobs (method, steps, lr, update filter, max batches) and set conservative guard rails unless you override them.
@@ -69,6 +75,19 @@ Two knobs matter most for runtime and fairness:
 
 Suggested smoke-test settings:
 \cmd{--ttt-batch-size 1 --ttt-max-batches 1}.
+
+\section{Method switch (manifest-aligned)}
+TTT method can be selected with \cmd{--ttt-method}:
+\begin{itemize}
+  \item \cmd{tent}
+  \item \cmd{mim}
+  \item \cmd{cotta}
+  \item \cmd{eata}
+  \item \cmd{sar}
+\end{itemize}
+
+The current canonical CLI surface is reflected in \path{tools/manifest.json}
+for \path{tools/export_predictions.py} and \path{tools/yolozu.py}.
 
 \section{Make a fixed evaluation subset}
 TTT comparisons must be run on the exact same images.
@@ -136,3 +155,13 @@ In this repo, the important operational points are:
   \item Keep the evaluation subset fixed and record the exact preset and guards.
   \item For deployment, treat TTT as an optional mode; default inference should not require it.
 \end{itemize}
+
+\section{Method-specific evaluation tools}
+Manifest-registered benchmark tools for TTT phase validation:
+\begin{itemize}
+  \item \path{tools/eval_cotta_drift.py} (baseline vs CoTTA drift/stability)
+  \item \path{tools/benchmark_eata_stability.py} (baseline vs EATA stability/efficiency)
+  \item \path{tools/benchmark_sar_robustness.py} (SAR vs CoTTA/EATA go/no-go impact)
+\end{itemize}
+
+These tools emit reproducible JSON/Markdown evidence artifacts and should be preferred over ad-hoc notebook-only comparisons.
