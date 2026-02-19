@@ -70,6 +70,7 @@ python3 tools/validate_predictions.py /path/to/predictions.json --strict
 Read next:
 - [Predictions JSON schema (v1)](predictions_schema.md)
 - [Schema governance (version lifecycle + migration)](schema_governance.md)
+- [RFC workflow + golden compatibility assets](rfc_workflow.md)
 - [Adapter contract (v1)](adapter_contract.md)
 - [Adapter templates + onboarding](adapter_templates.md)
 - [Backend parity matrix automation](backend_parity_matrix.md)

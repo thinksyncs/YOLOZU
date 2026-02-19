@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "golden_version": "v1",
+  "sample_dataset": {
+    "id": "golden-sample-v1",
+    "description": "Versioned sample dataset pointer for compatibility regressions.",
+    "path": "data/coco128",
+    "split": "train2017"
+  },
+  "protocol": {
+    "path": "protocols/yolo26_eval.json",
+    "expected_sha256": "010888e1e3a2705c87bcf3d395876bd94f89249e837b037b1b501f96aa942598",
+    "expected_semantic_hash": "6e90030c1fc110fbc49e37f34513c229585585a8d63c5ef7c2c2da154b0e953d"
+  },
+  "assets": [
+    {
+      "name": "predictions_legacy_wrapped_no_schema",
+      "path": "baselines/golden/v1/predictions_legacy_wrapped_no_schema.json",
+      "contract": "predictions_json",
+      "strict": false,
+      "expected_sha256": "f0402e3a6942cf1c3798e16d09d28711c251afe69e9821bb12bab5f87edf1cc6"
+    },
+    {
+      "name": "predictions_v1",
+      "path": "baselines/golden/v1/predictions_v1.json",
+      "contract": "predictions_json",
+      "strict": true,
+      "expected_sha256": "cd5acc3059e6e2edbf104662192e3217e6828f3fec623790e9bd8ff80db62ccb"
+    },
+    {
+      "name": "segmentation_v1",
+      "path": "baselines/golden/v1/segmentation_v1.json",
+      "contract": "segmentation_predictions_json",
+      "strict": true,
+      "expected_sha256": "899054984d1c0958ea7815f523945f88ea37790c1b125c14c83431828db73b32"
+    },
+    {
+      "name": "instance_segmentation_v1",
+      "path": "baselines/golden/v1/instance_segmentation_v1.json",
+      "contract": "instance_segmentation_predictions_json",
+      "strict": true,
+      "expected_sha256": "56ab3ab4cedfafd671c5b7e038da80605b30b4946de61642dbea199097c518a3"
+    }
+  ]
+}

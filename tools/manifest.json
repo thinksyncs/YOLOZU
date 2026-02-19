@@ -1337,6 +1337,39 @@
       "docs": ["docs/backend_parity_matrix.md", "docs/onnx_export_parity.md"]
     },
     {
+      "id": "check_golden_compatibility",
+      "entrypoint": "tools/check_golden_compatibility.py",
+      "runner": "python3",
+      "summary": "Validate versioned golden compatibility assets and hash-pinned eval protocol snapshots.",
+      "tags": ["golden", "compatibility", "schema", "protocol", "gate"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "contracts": {
+        "consumes": [
+          "predictions_json",
+          "segmentation_predictions_json",
+          "instance_segmentation_predictions_json"
+        ]
+      },
+      "inputs": [
+        { "name": "manifest", "kind": "file", "required": false, "flag": "--manifest", "default": "baselines/golden/v1/manifest.json" }
+      ],
+      "effects": { "writes": [], "fixed_writes": [] },
+      "outputs": [
+        {
+          "name": "stdout",
+          "kind": "stdout",
+          "description": "Validation summary JSON; non-zero exit on incompatibility/hash mismatch."
+        }
+      ],
+      "examples": [
+        {
+          "description": "Run golden compatibility gate using versioned baseline manifest.",
+          "command": "python3 tools/check_golden_compatibility.py --manifest baselines/golden/v1/manifest.json"
+        }
+      ],
+      "docs": ["docs/rfc_workflow.md", "docs/schema_governance.md"]
+    },
+    {
       "id": "refine_predictions_hessian",
       "entrypoint": "tools/refine_predictions_hessian.py",
       "runner": "python3",

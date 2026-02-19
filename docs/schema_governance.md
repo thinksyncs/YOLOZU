@@ -52,6 +52,8 @@ When proposing a schema-breaking change:
    - schema-specific docs (e.g., predictions schema pages)
    - release notes with migration steps
 
+See also: [RFC workflow + golden compatibility assets](rfc_workflow.md).
+
 ## Migration steps template
 
 Use this template in release notes when introducing schema `N+1`:
@@ -70,3 +72,9 @@ CI includes a schema compatibility gate that asserts:
 - v2 wrapped payloads fail while current is v1
 
 This prevents silent schema drift and guarantees contract-first behavior.
+
+In addition, golden compatibility assets are versioned under `baselines/golden/` and validated by:
+
+- `python3 tools/check_golden_compatibility.py`
+
+This gate pins protocol + golden artifact hashes and fails when schema/protocol behavior changes without coordinated golden updates.

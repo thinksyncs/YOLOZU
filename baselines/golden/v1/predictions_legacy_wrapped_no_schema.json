@@ -1,0 +1,19 @@
+{
+  "predictions": [
+    {
+      "image": "samples/000001.jpg",
+      "detections": [
+        {
+          "class_id": 0,
+          "score": 0.9,
+          "bbox": {
+            "cx": 0.5,
+            "cy": 0.5,
+            "w": 0.2,
+            "h": 0.2
+          }
+        }
+      ]
+    }
+  ]
+}

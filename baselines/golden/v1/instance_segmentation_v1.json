@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "predictions": [
+    {
+      "image": "samples/000001.jpg",
+      "instances": [
+        {
+          "class_id": 0,
+          "score": 0.9,
+          "mask": "samples/000001_inst_0.png"
+        }
+      ]
+    }
+  ]
+}
