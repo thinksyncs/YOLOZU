@@ -1,5 +1,7 @@
 # TTT Integration Notes (implemented)
 
+See also phase-1 CoTTA rollout requirements: [docs/cotta_design_spec.md](cotta_design_spec.md).
+
 ## Goals
 - Enable test-time training (TTT) without breaking the current `tools/export_predictions.py` flow.
 - Keep default behavior unchanged when TTT is disabled.
