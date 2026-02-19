@@ -57,7 +57,7 @@ For agent automation, prefer running tools through the registry runner:
 
 ```bash
 # Machine-readable registry discovery (stable JSON)
-python3 tools/yolozu.py registry list --json > reports/tool_registry.json
+python3 tools/yolozu.py registry list > reports/tool_registry.txt
 
 # Safe execution with explicit side-effect allowlists
 python3 tools/yolozu.py registry run normalize_predictions -- \
@@ -68,7 +68,7 @@ python3 tools/yolozu.py registry run normalize_predictions -- \
 For tools that write outside `reports/` (for example dataset preparation under `data/`), add an explicit allowlist:
 
 ```bash
-python3 tools/yolozu.py registry run --allow-write-root data prepare_coco_yolo -- \
+python3 tools/yolozu.py registry run prepare_coco_yolo -- \
   --coco-root /path/to/coco \
   --out data/coco-yolo
 ```
@@ -77,7 +77,7 @@ python3 tools/yolozu.py registry run --allow-write-root data prepare_coco_yolo -
 
 - tools that require network unless `--allow-network`
 - tools that require GPU unless `--allow-gpu`
-- writes outside allowlisted roots (default: `reports/`) unless `--allow-write-root <root>`
+- writes outside allowlisted roots (default: `reports/`)
 - absolute paths / `..` segments unless `--allow-unsafe-paths`
 
 ## Quality gate command (recommended handoff)

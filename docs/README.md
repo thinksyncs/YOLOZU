@@ -31,7 +31,7 @@ Run inference anywhere (PyTorch / ONNXRuntime / TensorRT / C++ / Rust) and expor
 Shortest command:
 
 ```bash
-python3 tools/eval_suite.py --dataset /path/to/coco-yolo --predictions /path/to/predictions.json
+python3 tools/eval_suite.py --dataset /path/to/coco-yolo --predictions-glob 'reports/pred_*.json'
 ```
 
 Read next:

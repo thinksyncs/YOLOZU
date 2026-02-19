@@ -249,7 +249,7 @@ python3 -m unittest -q
 |---|---|---|
 | Environment report | `yolozu doctor --output -` | `python3 tools/yolozu.py doctor --output reports/doctor.json` |
 | Export smoke (no inference) | `yolozu export --backend labels --dataset /path/to/yolo --output reports/predictions.json --force` | same |
-| Folder inference + overlays/HTML | `yolozu predict-images --backend onnxrt --input-dir /path/to/images --onnx /path/to/model.onnx` | `python3 tools/yolozu.py predict-images ...` |
+| Folder inference + overlays/HTML | `yolozu predict-images --backend onnxrt --input-dir /path/to/images --model /path/to/model.onnx` | `python3 tools/yolozu.py predict-images ...` |
 | Backend parity check | `yolozu parity --reference reports/pred_torch.json --candidate reports/pred_onnxrt.json` | `python3 tools/check_predictions_parity.py ...` |
 | Validate dataset layout | `yolozu validate dataset /path/to/yolo --strict` | `python3 tools/validate_dataset.py /path/to/yolo --strict` |
 | Validate predictions JSON | `yolozu validate predictions reports/predictions.json --strict` | `python3 tools/validate_predictions.py reports/predictions.json --strict` |
