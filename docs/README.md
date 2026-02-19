@@ -74,6 +74,7 @@ Read next:
 - [Contract-first benchmark publication loop](benchmark_publication.md)
 - [CoTTA design spec (YOLOZU phase 1)](cotta_design_spec.md)
 - [CoTTA drift validation protocol](cotta_validation.md)
+- [EATA design spec (YOLOZU phase 1)](eata_design_spec.md)
 - [Adapter contract (v1)](adapter_contract.md)
 - [Adapter templates + onboarding](adapter_templates.md)
 - [Backend parity matrix automation](backend_parity_matrix.md)
