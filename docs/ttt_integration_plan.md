@@ -34,7 +34,7 @@ Default adapters that do not implement these methods will not support TTT.
 ## Export Predictions Integration
 Add CLI flags in `tools/export_predictions.py` (defaults keep existing behavior):
 - `--ttt` (bool): enable TTT
-- `--ttt-method {tent,mim,cotta,eata}` (default: tent)
+- `--ttt-method {tent,mim,cotta,eata,sar}` (default: tent)
 - `--ttt-steps` (int, default: 1)
 - `--ttt-lr` (float, default: 1e-4)
 - `--ttt-batch-size` (int, default: 1)

@@ -659,11 +659,11 @@ def _parse_common_export_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--ttt", action="store_true", help="Enable test-time training (TTT) before inference.")
     p.add_argument(
         "--ttt-preset",
-        choices=("safe", "adapter_only", "mim_safe", "cotta_safe", "eata_safe"),
+        choices=("safe", "adapter_only", "mim_safe", "cotta_safe", "eata_safe", "sar_safe"),
         default=None,
         help="Recommended TTT presets that override core knobs and fill safety guards unless explicitly set.",
     )
-    p.add_argument("--ttt-method", choices=("tent", "mim", "cotta", "eata"), default="tent", help="TTT method (default: tent).")
+    p.add_argument("--ttt-method", choices=("tent", "mim", "cotta", "eata", "sar"), default="tent", help="TTT method (default: tent).")
     p.add_argument(
         "--ttt-reset",
         choices=("stream", "sample"),
@@ -755,6 +755,14 @@ def _parse_common_export_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--ttt-eata-anchor-lambda", type=float, default=1e-3, help="EATA anchor regularization weight (default: 1e-3).")
     p.add_argument("--ttt-eata-selected-ratio-min", type=float, default=0.0, help="EATA minimum selected-sample ratio per step (default: 0.0).")
     p.add_argument("--ttt-eata-max-skip-streak", type=int, default=3, help="EATA max consecutive skipped steps before stop (default: 3).")
+    p.add_argument("--ttt-sar-rho", type=float, default=0.05, help="SAR perturbation radius rho (default: 0.05).")
+    p.add_argument(
+        "--ttt-sar-adaptive",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Use adaptive SAR perturbation scaling by parameter magnitude (default: false).",
+    )
+    p.add_argument("--ttt-sar-first-step-scale", type=float, default=1.0, help="SAR first-step scaling factor (default: 1.0).")
     p.add_argument("--ttt-log-out", default=None, help="Optional path to write TTT log JSON.")
 
     # ONNXRuntime/TensorRT backend (YOLO26 exporters).
@@ -869,6 +877,11 @@ def _export_with_backend(
                     "anchor_lambda": float(args.ttt_eata_anchor_lambda) if ttt_enabled else None,
                     "selected_ratio_min": float(args.ttt_eata_selected_ratio_min) if ttt_enabled else None,
                     "max_skip_streak": int(args.ttt_eata_max_skip_streak) if ttt_enabled else None,
+                },
+                "sar": {
+                    "rho": float(args.ttt_sar_rho) if ttt_enabled else None,
+                    "adaptive": bool(args.ttt_sar_adaptive) if ttt_enabled else None,
+                    "first_step_scale": float(args.ttt_sar_first_step_scale) if ttt_enabled else None,
                 },
             },
         }
@@ -1021,6 +1034,9 @@ def _export_with_backend(
             cmd.extend(["--ttt-eata-anchor-lambda", str(float(args.ttt_eata_anchor_lambda))])
             cmd.extend(["--ttt-eata-selected-ratio-min", str(float(args.ttt_eata_selected_ratio_min))])
             cmd.extend(["--ttt-eata-max-skip-streak", str(int(args.ttt_eata_max_skip_streak))])
+            cmd.extend(["--ttt-sar-rho", str(float(args.ttt_sar_rho))])
+            cmd.append("--ttt-sar-adaptive" if bool(args.ttt_sar_adaptive) else "--no-ttt-sar-adaptive")
+            cmd.extend(["--ttt-sar-first-step-scale", str(float(args.ttt_sar_first_step_scale))])
             if args.ttt_log_out:
                 cmd.extend(["--ttt-log-out", str(args.ttt_log_out)])
 

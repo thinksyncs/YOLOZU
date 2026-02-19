@@ -287,6 +287,59 @@ class TestTTTIntegration(unittest.TestCase):
         self.assertIn("adapt_loss", report.step_metrics[0])
         self.assertIn("anchor_loss", report.step_metrics[0])
 
+    def test_run_ttt_sar_lora_only(self):
+        class Model(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.lora_block = nn.Conv2d(3, 8, kernel_size=1, bias=False)
+                self.head = nn.Conv2d(8, 6, kernel_size=1, bias=False)
+
+            def forward(self, x):
+                y = self.head(self.lora_block(x)).mean(dim=(2, 3))
+                return {"logits": y.unsqueeze(1).repeat(1, 2, 1)}
+
+        class Adapter(ModelAdapter):
+            def __init__(self):
+                self._model = Model()
+
+            def predict(self, records):
+                return [{"image": r["image"], "detections": []} for r in records]
+
+            def supports_ttt(self) -> bool:
+                return True
+
+            def get_model(self):
+                return self._model
+
+            def build_loader(self, records, *, batch_size: int = 1):
+                yield torch.rand(2, 3, 8, 8)
+
+        adapter = Adapter()
+        report = run_ttt(
+            adapter,
+            [{"image": "a.jpg"}, {"image": "b.jpg"}],
+            config=TTTConfig(
+                enabled=True,
+                method="sar",
+                steps=2,
+                lr=1e-3,
+                update_filter="lora_only",
+                sar_rho=0.05,
+                sar_adaptive=False,
+                sar_first_step_scale=1.0,
+            ),
+        )
+        self.assertTrue(report.enabled)
+        self.assertEqual(report.method, "sar")
+        self.assertEqual(report.steps_run, 2)
+        self.assertEqual(len(report.losses), 2)
+        self.assertIsInstance(report.updated_param_count, int)
+        self.assertGreater(report.updated_param_count or 0, 0)
+        self.assertTrue(report.step_metrics)
+        self.assertIn("loss_first", report.step_metrics[0])
+        self.assertIn("loss_second", report.step_metrics[0])
+        self.assertIn("sar_rho", report.step_metrics[0])
+
 
 if __name__ == "__main__":
     unittest.main()

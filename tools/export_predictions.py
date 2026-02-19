@@ -128,13 +128,13 @@ def _parse_args(argv):
     parser.add_argument("--ttt", action="store_true", help="Enable test-time training (TTT) before inference.")
     parser.add_argument(
         "--ttt-preset",
-        choices=("safe", "adapter_only", "mim_safe", "cotta_safe", "eata_safe"),
+        choices=("safe", "adapter_only", "mim_safe", "cotta_safe", "eata_safe", "sar_safe"),
         default=None,
         help="Recommended TTT presets that override core knobs (method/steps/lr/filter/max_batches) and fill safety guards unless explicitly set.",
     )
     parser.add_argument(
         "--ttt-method",
-        choices=("tent", "mim", "cotta", "eata"),
+        choices=("tent", "mim", "cotta", "eata", "sar"),
         default="tent",
         help="TTT method (default: tent).",
     )
@@ -234,6 +234,14 @@ def _parse_args(argv):
     parser.add_argument("--ttt-eata-anchor-lambda", type=float, default=1e-3, help="EATA anchor regularization weight (default: 1e-3).")
     parser.add_argument("--ttt-eata-selected-ratio-min", type=float, default=0.0, help="EATA minimum selected-sample ratio per step (default: 0.0).")
     parser.add_argument("--ttt-eata-max-skip-streak", type=int, default=3, help="EATA max consecutive skipped steps before stop (default: 3).")
+    parser.add_argument("--ttt-sar-rho", type=float, default=0.05, help="SAR perturbation radius rho (default: 0.05).")
+    parser.add_argument(
+        "--ttt-sar-adaptive",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Use adaptive SAR perturbation scaling by parameter magnitude (default: false).",
+    )
+    parser.add_argument("--ttt-sar-first-step-scale", type=float, default=1.0, help="SAR first-step scaling factor (default: 1.0).")
     parser.add_argument("--ttt-log-out", default=None, help="Optional path to write TTT log JSON.")
     return parser.parse_args(argv)
 
@@ -371,6 +379,9 @@ def main(argv=None):
             eata_anchor_lambda=float(args.ttt_eata_anchor_lambda),
             eata_selected_ratio_min=float(args.ttt_eata_selected_ratio_min),
             eata_max_skip_streak=int(args.ttt_eata_max_skip_streak),
+            sar_rho=float(args.ttt_sar_rho),
+            sar_adaptive=bool(args.ttt_sar_adaptive),
+            sar_first_step_scale=float(args.ttt_sar_first_step_scale),
         )
         if str(args.ttt_reset) == "sample":
             try:
@@ -531,6 +542,11 @@ def main(argv=None):
                         "selected_ratio_min": float(args.ttt_eata_selected_ratio_min),
                         "max_skip_streak": int(args.ttt_eata_max_skip_streak),
                     },
+                    "sar": {
+                        "rho": float(args.ttt_sar_rho),
+                        "adaptive": bool(args.ttt_sar_adaptive),
+                        "first_step_scale": float(args.ttt_sar_first_step_scale),
+                    },
                     "report": ttt_report,
                 },
             },
@@ -611,6 +627,11 @@ def main(argv=None):
                     "anchor_lambda": float(args.ttt_eata_anchor_lambda),
                     "selected_ratio_min": float(args.ttt_eata_selected_ratio_min),
                     "max_skip_streak": int(args.ttt_eata_max_skip_streak),
+                },
+                "sar": {
+                    "rho": float(args.ttt_sar_rho),
+                    "adaptive": bool(args.ttt_sar_adaptive),
+                    "first_step_scale": float(args.ttt_sar_first_step_scale),
                 },
                 "report": ttt_report,
             },

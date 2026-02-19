@@ -84,12 +84,26 @@ PRESETS: dict[str, TTTPreset] = {
         max_total_update_norm=1.0,
         max_loss_ratio=3.0,
     ),
+    "sar_safe": TTTPreset(
+        method="sar",
+        steps=1,
+        batch_size=1,
+        lr=1e-4,
+        update_filter="lora_only",
+        max_batches=1,
+        max_grad_norm=1.0,
+        max_update_norm=1.0,
+        max_total_update_norm=1.0,
+        max_loss_ratio=3.0,
+    ),
 }
 
 
 def _choose_default_preset_id(args: Any) -> str:
     method = str(getattr(args, "ttt_method", "tent") or "tent").lower()
     update_filter = str(getattr(args, "ttt_update_filter", "all") or "all").lower()
+    if method == "sar":
+        return "sar_safe"
     if method == "eata":
         return "eata_safe"
     if method == "cotta":

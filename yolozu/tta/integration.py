@@ -236,6 +236,58 @@ def _eata_anchor_loss(snapshot: Iterable[tuple["torch.Tensor", "torch.Tensor"]])
     return total
 
 
+def _sar_perturb_and_backup(
+    params: Iterable["torch.Tensor"],
+    *,
+    rho: float,
+    adaptive: bool,
+    first_step_scale: float,
+) -> tuple[list[tuple["torch.Tensor", "torch.Tensor"]], float]:
+    _ensure_torch()
+    rho_value = max(0.0, float(rho)) * max(0.0, float(first_step_scale))
+    if rho_value <= 0.0:
+        return [], 0.0
+
+    grad_norm_sq = None
+    params_list = list(params)
+    for param in params_list:
+        grad = getattr(param, "grad", None)
+        if grad is None:
+            continue
+        direction = grad.detach().to(dtype=torch.float32)
+        if adaptive:
+            direction = direction * param.detach().abs().to(dtype=torch.float32)
+        term = (direction * direction).sum()
+        grad_norm_sq = term if grad_norm_sq is None else (grad_norm_sq + term)
+    if grad_norm_sq is None:
+        return [], 0.0
+
+    grad_norm = float(torch.sqrt(grad_norm_sq).detach().cpu().item())
+    if grad_norm <= 0.0:
+        return [], 0.0
+
+    scale = rho_value / (grad_norm + 1e-12)
+    backup: list[tuple[torch.Tensor, torch.Tensor]] = []
+    with torch.no_grad():
+        for param in params_list:
+            grad = getattr(param, "grad", None)
+            if grad is None:
+                continue
+            backup.append((param, param.detach().clone()))
+            perturb = grad
+            if adaptive:
+                perturb = perturb * param.detach().abs()
+            param.add_(perturb, alpha=float(scale))
+    return backup, float(rho_value)
+
+
+def _sar_restore(backup: Iterable[tuple["torch.Tensor", "torch.Tensor"]]) -> None:
+    _ensure_torch()
+    with torch.no_grad():
+        for param, value in backup:
+            param.copy_(value)
+
+
 def _forward_cotta_augs(
     model: Any,
     x: "torch.Tensor",
@@ -368,8 +420,8 @@ def run_ttt(adapter: Any, records: list[dict[str, Any]], *, config: TTTConfig) -
         raise RuntimeError("TTT requires at least one batch from adapter.build_loader()")
 
     method = (config.method or "tent").lower()
-    if method not in ("tent", "mim", "cotta", "eata"):
-        raise ValueError("TTT method must be one of: tent, mim, cotta, eata")
+    if method not in ("tent", "mim", "cotta", "eata", "sar"):
+        raise ValueError("TTT method must be one of: tent, mim, cotta, eata, sar")
 
     steps = int(config.steps)
     if steps <= 0:
@@ -730,7 +782,7 @@ def run_ttt(adapter: Any, records: list[dict[str, Any]], *, config: TTTConfig) -
 
                 losses.append(float(loss_value))
                 step_metrics.append(step_entry)
-        else:
+        elif method == "eata":
             from .ttt_mim import select_parameters
 
             params = select_parameters(
@@ -869,6 +921,135 @@ def run_ttt(adapter: Any, records: list[dict[str, Any]], *, config: TTTConfig) -
                         "total_update_norm": float(total_update_norm),
                     }
                 )
+
+                non_finite_fields = []
+                if bool(config.stop_on_non_finite):
+                    for key, value in (
+                        ("loss", loss_value),
+                        ("grad_norm", step_entry["grad_norm"]),
+                        ("grad_norm_clipped", step_entry["grad_norm_clipped"]),
+                        ("update_norm", update_norm),
+                        ("total_update_norm", total_update_norm),
+                    ):
+                        if value is None:
+                            continue
+                        if not math.isfinite(float(value)):
+                            non_finite_fields.append(str(key))
+
+                if non_finite_fields:
+                    stopped_early = True
+                    stop_reason = "non_finite_metrics"
+                elif config.max_update_norm is not None and update_norm > float(config.max_update_norm):
+                    stopped_early = True
+                    stop_reason = "max_update_norm_exceeded"
+                elif config.max_total_update_norm is not None and total_update_norm > float(config.max_total_update_norm):
+                    stopped_early = True
+                    stop_reason = "max_total_update_norm_exceeded"
+                elif (
+                    config.max_loss_ratio is not None
+                    and initial_loss is not None
+                    and initial_loss > 0.0
+                    and loss_value > (initial_loss * float(config.max_loss_ratio))
+                ):
+                    stopped_early = True
+                    stop_reason = "max_loss_ratio_exceeded"
+                elif (
+                    config.max_loss_increase is not None
+                    and initial_loss is not None
+                    and loss_value > (initial_loss + float(config.max_loss_increase))
+                ):
+                    stopped_early = True
+                    stop_reason = "max_loss_increase_exceeded"
+
+                if stopped_early:
+                    step_entry["rolled_back"] = bool(config.rollback_on_stop)
+                    step_entry["stop_reason"] = str(stop_reason)
+                    step_entry["non_finite_fields"] = non_finite_fields or None
+                    warnings.append(str(stop_reason))
+                    if non_finite_fields:
+                        warnings.append(f"non_finite_fields:{','.join(non_finite_fields)}")
+                    if bool(config.rollback_on_stop):
+                        _restore_params(pre_snapshot)
+                        _restore_buffers(pre_buffer_snapshot)
+                    step_metrics.append(step_entry)
+                    break
+
+                losses.append(float(loss_value))
+                step_metrics.append(step_entry)
+        else:
+            from .ttt_mim import select_parameters
+
+            params = select_parameters(
+                model,
+                update_filter=str(config.update_filter),
+                include=config.include,
+                exclude=config.exclude,
+            )
+            if not params:
+                raise RuntimeError("no parameters selected for TTT")
+
+            optimizer = torch.optim.Adam(params, lr=float(config.lr))
+            updated_param_count = _count_unique_params(params)
+            base_snapshot = _snapshot_params(params)
+            rho = float(config.sar_rho)
+            adaptive = bool(config.sar_adaptive)
+            first_step_scale = float(config.sar_first_step_scale)
+
+            for step_idx in range(steps):
+                x = batches[step_idx % len(batches)]
+                if not torch.is_tensor(x):
+                    raise RuntimeError("SAR requires tensor batches from adapter.build_loader()")
+
+                pre_snapshot = _snapshot_params(params)
+                pre_buffer_snapshot = _snapshot_norm_buffers(model) if bool(config.rollback_on_stop) else []
+
+                optimizer.zero_grad(set_to_none=True)
+                logits_first = _extract_logits(model(x))
+                loss_first = _entropy_loss_from_logits(logits_first)
+                loss_first.backward()
+
+                grad_norm_first = _global_grad_norm(params)
+                grad_norm_clipped = None
+                if config.max_grad_norm is not None:
+                    clipped = torch.nn.utils.clip_grad_norm_(params, float(config.max_grad_norm))
+                    grad_norm_clipped = float(clipped.detach().cpu().item()) if torch.is_tensor(clipped) else float(clipped)
+
+                backup, rho_applied = _sar_perturb_and_backup(
+                    params,
+                    rho=rho,
+                    adaptive=adaptive,
+                    first_step_scale=first_step_scale,
+                )
+
+                optimizer.zero_grad(set_to_none=True)
+                logits_second = _extract_logits(model(x))
+                loss_second = _entropy_loss_from_logits(logits_second)
+                loss_second.backward()
+
+                _sar_restore(backup)
+                optimizer.step()
+
+                loss_value = float(loss_second.detach().cpu().item())
+                if initial_loss is None:
+                    initial_loss = loss_value
+
+                update_norm = _global_l2_update_norm(pre_snapshot)
+                total_update_norm = _global_l2_update_norm(base_snapshot)
+                step_entry = {
+                    "step": int(step_idx),
+                    "loss": float(loss_value),
+                    "loss_first": float(loss_first.detach().cpu().item()),
+                    "loss_second": float(loss_second.detach().cpu().item()),
+                    "grad_norm": float(grad_norm_first),
+                    "grad_norm_clipped": (float(grad_norm_clipped) if grad_norm_clipped is not None else None),
+                    "update_norm": float(update_norm),
+                    "total_update_norm": float(total_update_norm),
+                    "rolled_back": False,
+                    "sar_rho": float(rho),
+                    "sar_rho_applied": float(rho_applied),
+                    "sar_adaptive": bool(adaptive),
+                    "sar_first_step_scale": float(first_step_scale),
+                }
 
                 non_finite_fields = []
                 if bool(config.stop_on_non_finite):

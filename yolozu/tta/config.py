@@ -10,7 +10,8 @@ class TTTConfig:
 
     # "tent" (entropy minimization), "mim" (masked image modeling),
     # "cotta" (EMA-guided entropy minimization with safe restoration), or
-    # "eata" (selective entropy adaptation with anti-forgetting regularization)
+    # "eata" (selective entropy adaptation with anti-forgetting regularization), or
+    # "sar" (sharpness-aware entropy adaptation)
     method: str = "tent"
 
     # Reset strategy for applying adaptation across inference.
@@ -70,3 +71,8 @@ class TTTConfig:
     eata_anchor_lambda: float = 1e-3
     eata_selected_ratio_min: float = 0.0
     eata_max_skip_streak: int = 3
+
+    # SAR-specific options.
+    sar_rho: float = 0.05
+    sar_adaptive: bool = False
+    sar_first_step_scale: float = 1.0
