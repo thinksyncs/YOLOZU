@@ -8,6 +8,8 @@
     "report_schema_version": { "type": "integer", "minimum": 1 },
     "timestamp": { "type": "string" },
     "protocol_id": { "type": ["string", "null"] },
+    "protocol_schema_version": { "type": ["integer", "null"], "minimum": 1 },
+    "protocol_hash": { "type": ["string", "null"] },
     "protocol": { "type": ["object", "null"], "additionalProperties": true },
     "dataset": { "type": "string" },
     "split": { "type": "string" },
@@ -47,6 +49,14 @@
           "properties": {
             "images": { "type": "integer", "minimum": 0 },
             "detections": { "type": "integer", "minimum": 0 }
+          },
+          "additionalProperties": true
+        },
+        "protocol_check": {
+          "type": "object",
+          "properties": {
+            "ok": { "type": "boolean" },
+            "mismatches": { "type": "array", "items": { "type": "string" } }
           },
           "additionalProperties": true
         }

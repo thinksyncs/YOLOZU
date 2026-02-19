@@ -11,7 +11,7 @@ sys.path.insert(0, str(repo_root))
 
 from yolozu.coco_eval import build_coco_ground_truth, evaluate_coco_map, predictions_to_coco_detections
 from yolozu.dataset import build_manifest
-from yolozu.eval_protocol import apply_eval_protocol_args, load_eval_protocol
+from yolozu.eval_protocol import apply_eval_protocol_args, eval_protocol_hash, load_eval_protocol
 from yolozu.predictions import load_predictions_payload, validate_predictions_entries
 
 
@@ -125,6 +125,16 @@ def _extract_preprocess(entries: list[dict[str, Any]], meta_cfg: dict[str, Any] 
             norm = pp.get("normalize")
             if isinstance(norm, str) and norm:
                 out["normalize"] = norm
+            input_color = pp.get("input_color")
+            if isinstance(input_color, str) and input_color:
+                out["input_color"] = input_color
+            resize_interp = pp.get("resize_interp")
+            if isinstance(resize_interp, str) and resize_interp:
+                out["resize_interp"] = resize_interp
+            letterbox_fill = pp.get("letterbox_fill")
+            normalized_fill = _normalize_fill(letterbox_fill)
+            if normalized_fill is not None:
+                out["letterbox_fill"] = normalized_fill
             input_size = _normalize_image_size(pp.get("input_size"))
             if input_size is None:
                 input_size = _normalize_image_size(entry0.get("image_size"))
@@ -166,11 +176,13 @@ def _extract_export_settings(
             imgsz = int(size["width"])
 
     score_threshold = None
+    iou_threshold = None
     max_detections = None
     if isinstance(meta_cfg, dict):
         score_threshold = _coerce_float(
             meta_cfg.get("score_threshold", meta_cfg.get("conf", meta_cfg.get("min_score")))
         )
+        iou_threshold = _coerce_float(meta_cfg.get("iou_threshold", meta_cfg.get("nms_iou", meta_cfg.get("iou"))))
         max_detections = _coerce_int(
             meta_cfg.get("max_detections", meta_cfg.get("max_det", meta_cfg.get("topk")))
         )
@@ -192,6 +204,7 @@ def _extract_export_settings(
         "imgsz": imgsz,
         "image_size": image_size,
         "score_threshold": score_threshold,
+        "iou_threshold": iou_threshold,
         "max_detections": max_detections,
         "preprocess": preprocess,
     }
@@ -233,6 +246,77 @@ def _extract_predictions_meta_ref(meta: dict[str, Any] | None) -> dict[str, Any]
     return ref or None
 
 
+def _normalize_fill(value: Any) -> list[int] | None:
+    if not isinstance(value, list) or len(value) != 3:
+        return None
+    out: list[int] = []
+    for item in value:
+        if not isinstance(item, int) or isinstance(item, bool):
+            return None
+        out.append(int(item))
+    return out
+
+
+def _compare_fixed_conditions(
+    export_settings: dict[str, Any] | None,
+    protocol: dict[str, Any] | None,
+    *,
+    result_name: str,
+    runtime_bbox_format: str,
+) -> list[str]:
+    if not isinstance(protocol, dict):
+        return []
+    fixed = protocol.get("fixed_conditions")
+    if not isinstance(fixed, dict):
+        return []
+
+    mismatches: list[str] = []
+    if not isinstance(export_settings, dict):
+        return [f"{result_name}: missing export settings required for fixed-condition protocol validation"]
+
+    def check_eq(key: str) -> None:
+        expected = fixed.get(key)
+        actual = export_settings.get(key)
+        if actual is None:
+            mismatches.append(f"{result_name}: missing export_settings.{key} (expected {expected})")
+            return
+        if actual != expected:
+            mismatches.append(f"{result_name}: export_settings.{key}={actual} does not match protocol fixed_conditions.{key}={expected}")
+
+    check_eq("imgsz")
+    check_eq("score_threshold")
+    check_eq("iou_threshold")
+    check_eq("max_detections")
+
+    expected_bbox = fixed.get("bbox_format")
+    if expected_bbox is not None and runtime_bbox_format != expected_bbox:
+        mismatches.append(
+            f"{result_name}: runtime bbox_format={runtime_bbox_format} does not match protocol fixed_conditions.bbox_format={expected_bbox}"
+        )
+
+    expected_pp = fixed.get("preprocess")
+    actual_pp = export_settings.get("preprocess")
+    if isinstance(expected_pp, dict):
+        if not isinstance(actual_pp, dict):
+            mismatches.append(f"{result_name}: missing export_settings.preprocess")
+        else:
+            for key in ("method", "input_color", "normalize", "resize_interp"):
+                exp_v = expected_pp.get(key)
+                act_v = actual_pp.get(key)
+                if act_v != exp_v:
+                    mismatches.append(
+                        f"{result_name}: export_settings.preprocess.{key}={act_v} does not match protocol preprocess.{key}={exp_v}"
+                    )
+            exp_fill = _normalize_fill(expected_pp.get("letterbox_fill"))
+            act_fill = _normalize_fill(actual_pp.get("letterbox_fill"))
+            if exp_fill is not None and act_fill != exp_fill:
+                mismatches.append(
+                    f"{result_name}: export_settings.preprocess.letterbox_fill={act_fill} does not match protocol preprocess.letterbox_fill={exp_fill}"
+                )
+
+    return mismatches
+
+
 def main(argv=None):
     args, protocol = _resolve_args(sys.argv[1:] if argv is None else argv)
 
@@ -254,6 +338,7 @@ def main(argv=None):
         raise SystemExit(f"no predictions matched: {args.predictions_glob}")
 
     results = []
+    protocol_mismatches: list[str] = []
     for path in pred_paths:
         entries, meta = load_predictions_payload(path)
         validation = validate_predictions_entries(entries, strict=args.strict)
@@ -262,6 +347,13 @@ def main(argv=None):
         )
         export_settings = _extract_export_settings(entries, meta)
         meta_ref = _extract_predictions_meta_ref(meta)
+        fixed_condition_mismatches = _compare_fixed_conditions(
+            export_settings,
+            protocol,
+            result_name=path.stem,
+            runtime_bbox_format=args.bbox_format,
+        )
+        protocol_mismatches.extend(fixed_condition_mismatches)
         if args.dry_run:
             eval_result = {
                 "metrics": {
@@ -283,14 +375,30 @@ def main(argv=None):
                 "warnings": validation.warnings,
                 "export_settings": export_settings,
                 "predictions_meta_ref": meta_ref,
+                "protocol_check": {
+                    "ok": len(fixed_condition_mismatches) == 0,
+                    "mismatches": fixed_condition_mismatches,
+                },
                 **eval_result,
             }
         )
+
+    if protocol and protocol_mismatches:
+        joined = "\n".join(protocol_mismatches)
+        raise SystemExit(f"fixed-condition protocol validation failed:\n{joined}")
+
+    protocol_version = None
+    protocol_digest = None
+    if protocol:
+        protocol_version = protocol.get("protocol_schema_version")
+        protocol_digest = eval_protocol_hash(protocol)
 
     payload = {
         "report_schema_version": 1,
         "timestamp": _now_utc(),
         "protocol_id": args.protocol,
+        "protocol_schema_version": protocol_version,
+        "protocol_hash": protocol_digest,
         "protocol": protocol,
         "dataset": str(args.dataset),
         "split": split_effective,

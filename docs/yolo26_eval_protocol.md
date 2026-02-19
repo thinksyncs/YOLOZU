@@ -4,6 +4,11 @@ This repository uses a pinned evaluation protocol for comparing against **YOLO26
 
 Protocol file: `protocols/yolo26_eval.json`
 
+Schema/version metadata:
+
+- `protocol_schema_version`: `1`
+- `protocol_hash`: SHA-256 over canonical protocol JSON (emitted in suite report)
+
 ## Canonical settings
 
 - Task: `detect`
@@ -13,6 +18,20 @@ Protocol file: `protocols/yolo26_eval.json`
 - BBox format: `cxcywh_norm` (normalized `[0,1]` center-x/center-y/width/height)
 - Metric key: `map50_95`
 - Metric meaning: e2e mAP@[.5:.95] (bbox, no NMS)
+
+### Fixed-condition comparison rules
+
+`tools/eval_suite.py --protocol yolo26` validates each predictions artifact against
+the protocol's `fixed_conditions`:
+
+- `imgsz = 640`
+- `score_threshold = 0.001`
+- `iou_threshold = 0.7`
+- `max_detections = 300`
+- `bbox_format = cxcywh_norm`
+- preprocess must match `letterbox + RGB + 0_1 + linear + fill[114,114,114]`
+
+If any artifact deviates, `eval_suite` exits non-zero.
 
 ## e2e mAP (no NMS)
 
@@ -28,6 +47,7 @@ Evaluation outputs are JSON and include protocol metadata:
 
 Both reports include:
 - `protocol_id` / `protocol`
+- `protocol_schema_version` / `protocol_hash`
 - `dataset`, `split` (effective), `split_requested`
 - `bbox_format`
 

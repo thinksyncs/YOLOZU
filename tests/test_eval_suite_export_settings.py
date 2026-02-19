@@ -111,6 +111,129 @@ class TestEvalSuiteExportSettings(unittest.TestCase):
             self.assertEqual(pp.get("method"), "letterbox")
             self.assertEqual(pp.get("input_color"), "RGB")
 
+    def test_eval_suite_protocol_hash_and_version_in_report(self):
+        tool = _load_module(self.repo_root / "tools" / "eval_suite.py", "eval_suite")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            dataset = tmp / "coco-yolo"
+            images = dataset / "images" / "val2017"
+            labels = dataset / "labels" / "val2017"
+            images.mkdir(parents=True, exist_ok=True)
+            labels.mkdir(parents=True, exist_ok=True)
+
+            img1 = images / "000001.jpg"
+            img1.write_bytes(_MIN_JPEG_1X1)
+            (labels / "000001.txt").write_text("0 0.5 0.5 0.2 0.2\n")
+
+            preds = [
+                {
+                    "image": str(img1),
+                    "preprocess": {
+                        "method": "letterbox",
+                        "normalize": "0_1",
+                        "input_size": {"width": 640, "height": 640},
+                        "input_color": "RGB",
+                        "resize_interp": "linear",
+                        "letterbox_fill": [114, 114, 114],
+                    },
+                    "detections": [{"class_id": 0, "score": 0.9, "bbox": {"cx": 0.5, "cy": 0.5, "w": 0.2, "h": 0.2}}],
+                }
+            ]
+            payload = {
+                "predictions": preds,
+                "meta": {
+                    "exporter": "onnxruntime",
+                    "protocol_id": "yolo26",
+                    "imgsz": 640,
+                    "min_score": 0.001,
+                    "iou": 0.7,
+                    "max_det": 300,
+                },
+            }
+
+            pred_dir = tmp / "preds"
+            pred_dir.mkdir(parents=True, exist_ok=True)
+            pred_path = pred_dir / "pred_yolo26n.json"
+            pred_path.write_text(json.dumps(payload))
+
+            out_path = tmp / "eval_suite_protocol.json"
+            with redirect_stdout(io.StringIO()):
+                tool.main(
+                    [
+                        "--protocol",
+                        "yolo26",
+                        "--dataset",
+                        str(dataset),
+                        "--predictions-glob",
+                        str(pred_path),
+                        "--dry-run",
+                        "--output",
+                        str(out_path),
+                    ]
+                )
+
+            suite = json.loads(out_path.read_text())
+            self.assertEqual(suite.get("protocol_id"), "yolo26")
+            self.assertEqual(suite.get("protocol_schema_version"), 1)
+            self.assertIsInstance(suite.get("protocol_hash"), str)
+            self.assertEqual(len(suite.get("protocol_hash")), 64)
+            result = suite["results"][0]
+            self.assertTrue(result.get("protocol_check", {}).get("ok"))
+            self.assertEqual(result.get("protocol_check", {}).get("mismatches"), [])
+
+    def test_eval_suite_protocol_mismatch_fails(self):
+        tool = _load_module(self.repo_root / "tools" / "eval_suite.py", "eval_suite")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            dataset = tmp / "coco-yolo"
+            images = dataset / "images" / "val2017"
+            labels = dataset / "labels" / "val2017"
+            images.mkdir(parents=True, exist_ok=True)
+            labels.mkdir(parents=True, exist_ok=True)
+
+            img1 = images / "000001.jpg"
+            img1.write_bytes(_MIN_JPEG_1X1)
+            (labels / "000001.txt").write_text("0 0.5 0.5 0.2 0.2\n")
+
+            payload = {
+                "predictions": [
+                    {
+                        "image": str(img1),
+                        "detections": [{"class_id": 0, "score": 0.9, "bbox": {"cx": 0.5, "cy": 0.5, "w": 0.2, "h": 0.2}}],
+                    }
+                ],
+                "meta": {
+                    "exporter": "onnxruntime",
+                    "protocol_id": "yolo26",
+                    "imgsz": 640,
+                    "min_score": 0.123,
+                    "iou": 0.7,
+                    "max_det": 300,
+                },
+            }
+
+            pred_path = tmp / "pred_yolo26n.json"
+            pred_path.write_text(json.dumps(payload))
+
+            with self.assertRaises(SystemExit) as ctx:
+                with redirect_stdout(io.StringIO()):
+                    tool.main(
+                        [
+                            "--protocol",
+                            "yolo26",
+                            "--dataset",
+                            str(dataset),
+                            "--predictions-glob",
+                            str(pred_path),
+                            "--dry-run",
+                            "--output",
+                            str(tmp / "eval_suite_protocol_mismatch.json"),
+                        ]
+                    )
+            self.assertIn("fixed-condition protocol validation failed", str(ctx.exception))
+
 
 if __name__ == "__main__":
     unittest.main()
