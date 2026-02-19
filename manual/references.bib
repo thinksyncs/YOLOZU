@@ -62,3 +62,124 @@
   howpublished  = {\url{https://arxiv.org/abs/2601.19897?utm_source=chatgpt.com}},
   url           = {https://arxiv.org/abs/2601.19897}
 }
+
+% Test-time training / adaptation
+
+@inproceedings{sun2020ttt,
+  title     = {Test-Time Training with Self-Supervision for Generalization under Distribution Shifts},
+  author    = {Sun, Yu and Wang, Xiaolong and Liu, Zhuang and Miller, John and Efros, Alexei A. and Hardt, Moritz},
+  booktitle = {International Conference on Machine Learning (ICML)},
+  year      = {2020}
+}
+
+@inproceedings{wang2021tent,
+  title     = {Tent: Fully Test-Time Adaptation by Entropy Minimization},
+  author    = {Wang, Dequan and Shelhamer, Evan and Liu, Shaoteng and Olshausen, Bruno and Darrell, Trevor},
+  booktitle = {International Conference on Learning Representations (ICLR)},
+  year      = {2021}
+}
+
+@inproceedings{grandvalet2005entropy,
+  title     = {Semi-Supervised Learning by Entropy Minimization},
+  author    = {Grandvalet, Yves and Bengio, Yoshua},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  year      = {2005}
+}
+
+% Masked image modeling (used as an auxiliary adaptation loss)
+
+@inproceedings{he2022mae,
+  title     = {Masked Autoencoders Are Scalable Vision Learners},
+  author    = {He, Kaiming and Chen, Xinlei and Xie, Saining and Li, Yanghao and Doll{\'a}r, Piotr and Girshick, Ross},
+  booktitle = {IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
+  year      = {2022}
+}
+
+@inproceedings{xie2022simmim,
+  title     = {Sim{MIM}: A Simple Framework for Masked Image Modeling},
+  author    = {Xie, Zhenda and Lin, Chunyu and Bao, Yuxin and Zhang, Ping and Sun, Jian and Hu, Han},
+  booktitle = {IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
+  year      = {2022}
+}
+
+% Calibration / long-tail adjustments
+
+@inproceedings{guo2017calibration,
+  title     = {On Calibration of Modern Neural Networks},
+  author    = {Guo, Chuan and Pleiss, Geoff and Sun, Yu and Weinberger, Kilian Q.},
+  booktitle = {International Conference on Machine Learning (ICML)},
+  year      = {2017}
+}
+
+@inproceedings{menon2021longtail,
+  title     = {Long-Tail Learning via Logit Adjustment},
+  author    = {Menon, Aditya K. and Jayasumana, Sadeep and Rawat, Ankit Singh and Jain, Himanshu and Veit, Andreas and Kumar, Sanjiv},
+  booktitle = {International Conference on Learning Representations (ICLR)},
+  year      = {2021}
+}
+
+% Depth / 6DoF pose / symmetry
+
+@inproceedings{eigen2014depth,
+  title     = {Depth Map Prediction from a Single Image using a Multi-Scale Deep Network},
+  author    = {Eigen, David and Puhrsch, Christian and Fergus, Rob},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  year      = {2014}
+}
+
+@inproceedings{ranftl2021dpt,
+  title     = {Vision Transformers for Dense Prediction},
+  author    = {Ranftl, Ren{\'e} and Bochkovskiy, Alexey and Koltun, Vladlen},
+  booktitle = {IEEE/CVF International Conference on Computer Vision (ICCV)},
+  year      = {2021}
+}
+
+@inproceedings{zhou2019rot6d,
+  title     = {On the Continuity of Rotation Representations in Neural Networks},
+  author    = {Zhou, Yi and Barnes, Connelly and Lu, Jingwan and Yang, Jimei and Li, Hao},
+  booktitle = {IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
+  year      = {2019}
+}
+
+@inproceedings{hodan2016poseeval,
+  title     = {On Evaluation of 6D Object Pose Estimation},
+  author    = {Hodan, Tom{\'a}{\v s} and Matas, Ji{\v r}{\'\i} and Obdr{\v z}{\'a}lek, \v S{\'a}rka},
+  booktitle = {European Conference on Computer Vision Workshops (ECCVW)},
+  year      = {2016}
+}
+
+@inproceedings{hodan2020bop,
+  title     = {BOP Challenge 2020 on 6D Object Localization},
+  author    = {Hodan, Tom{\'a}{\v s} and Sundermeyer, Martin and Drost, Bertram and Labb{\'e}, Yann and Brachmann, Eric and Kuan, Benjamin and Kehl, Wadim and Glent Buchanan, A. and Matas, Ji{\v r}{\'\i} and others},
+  booktitle = {European Conference on Computer Vision Workshops (ECCVW)},
+  year      = {2020}
+}
+
+@inproceedings{labbe2020cosypose,
+  title     = {CosyPose: Consistent Multi-View 6D Pose Estimation for Real-World Objects},
+  author    = {Labb{\'e}, Yann and Carpentier, Justin and Aubry, Mathieu and Sivic, Josef and Laptev, Ivan},
+  booktitle = {European Conference on Computer Vision (ECCV)},
+  year      = {2020}
+}
+
+% Gauss--Newton / Levenberg--Marquardt refinement
+
+@article{levenberg1944,
+  title   = {A Method for the Solution of Certain Non-Linear Problems in Least Squares},
+  author  = {Levenberg, Kenneth},
+  journal = {Quarterly of Applied Mathematics},
+  year    = {1944},
+  volume  = {2},
+  number  = {2},
+  pages   = {164--168}
+}
+
+@article{marquardt1963lm,
+  title   = {An Algorithm for Least-Squares Estimation of Nonlinear Parameters},
+  author  = {Marquardt, Donald W.},
+  journal = {SIAM Journal on Applied Mathematics},
+  year    = {1963},
+  volume  = {11},
+  number  = {2},
+  pages   = {431--441}
+}

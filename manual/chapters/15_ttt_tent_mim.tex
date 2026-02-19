@@ -18,7 +18,7 @@ Authoritative references:
   \item \path{docs/mim_inference.md}
 \end{itemize}
 
-TTT updates weights \emph{in memory} using unlabeled test data before (or during) inference.
+TTT updates weights \emph{in memory} using unlabeled test data before (or during) inference \cite{sun2020ttt,wang2021tent}.
 This makes comparisons sensitive to domain shift, random seeds, and reset policy.
 
 \section{When TTT is meaningful}
@@ -118,7 +118,7 @@ The geometry-aligned MIM branch (when enabled in the model) can be used for test
 Conceptually:
 \begin{itemize}
   \item Use geometry-derived features as a teacher (mask + normalized depth).
-  \item Reconstruct masked features and optionally minimize entropy.
+  \item Reconstruct masked features (MIM/MAE-style) \cite{he2022mae,xie2022simmim} and optionally minimize entropy \cite{grandvalet2005entropy}.
   \item Update a restricted parameter subset (e.g., norm or adapter/head) under guard rails.
 \end{itemize}
 

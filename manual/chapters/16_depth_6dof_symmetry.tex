@@ -29,7 +29,7 @@ Practical entry points (``real model'' path):
 The 6DoF-oriented design documents and utilities assume per-detection regression heads such as:
 \begin{itemize}
   \item \cmd{log\_z}: object center depth in log space
-  \item \cmd{rot6d}: 6D rotation representation
+  \item \cmd{rot6d}: 6D rotation representation \cite{zhou2019rot6d}
   \item \cmd{offsets}: center correction \cmd{(\u0394u,\u0394v)}
   \item \cmd{k\_delta}: small intrinsics correction (global / per-frame)
 \end{itemize}
@@ -39,6 +39,7 @@ See the design spec for clear definitions of frames and outputs:\\
 
 \section{Translation recovery (postprocess)}
 A common pattern is to recover translation from depth + intrinsics:
+For monocular depth estimation background (if you learn depth from RGB), see \cite{eigen2014depth,ranftl2021dpt}.
 
 Let bbox center be $(u,v)$ and corrected center $(u',v')$ be:
 $$
@@ -138,7 +139,7 @@ contract surface), not a substitute for real model evaluation.
 
 \section{Per-detection refinement: Hessian solver}
 \yolozu{} includes a Gauss--Newton / Levenberg--Marquardt style refinement utility to iteratively refine
-regression head outputs per detection.
+regression head outputs per detection \cite{levenberg1944,marquardt1963lm}.
 
 Key idea: refine per-detection parameters (depth/rotation/offsets) with bounded iterations; treat it as a research postprocess (not a default real-time feature).
 
@@ -223,6 +224,9 @@ Definitions:
   \item \textbf{ADD}: mean point distance under fixed point correspondence between $(R_{pred}, t_{pred})$ and $(R_{gt}, t_{gt})$.
   \item \textbf{ADDS}: mean distance from each transformed predicted point to its nearest transformed GT point.
 \end{itemize}
+
+These pose metrics and the symmetry caveats around them are discussed in standard 6D pose evaluation literature \cite{hodan2016poseeval,hodan2020bop}.
+For an example of a modern end-to-end 6D pose system (useful as conceptual background), see \cite{labbe2020cosypose}.
 
 Input requirements:
 \begin{itemize}

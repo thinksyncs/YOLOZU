@@ -42,10 +42,10 @@ yolozu calibrate \
 
 \section{Supported methods (high level)}
 \begin{itemize}
-  \item \textbf{FRACAL}: frequency-aware calibration using class count statistics.
-  \item \textbf{LA (logit adjustment)}: apply a class-prior logit shift (parameter \cmd{--tau}).
+  \item \textbf{FRACAL}: frequency-aware calibration using class count statistics (repo method; compare alongside standard calibration baselines).
+  \item \textbf{LA (logit adjustment)}: apply a class-prior logit shift (parameter \cmd{--tau}) \cite{menon2021longtail}.
   \item \textbf{NorCal}: frequency-based adjustment (parameter \cmd{--gamma}).
-  \item \textbf{Temperature scaling}: global temperature \cmd{--temperature}, with optional fitting for certain tasks.
+  \item \textbf{Temperature scaling}: global temperature \cmd{--temperature}, with optional fitting for certain tasks \cite{guo2017calibration}.
 \end{itemize}
 
 \section{Tasks}
