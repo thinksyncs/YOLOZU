@@ -185,17 +185,19 @@ yolozu train configs/examples/train_contract.yaml --run-id exp01 --resume
 Backbone-related settings are not primarily controlled by solver flags; they come from
 the model config file referenced by \texttt{model\_config} in the training YAML.
 
+Backbone output contract is fixed to three feature maps:
+\texttt{[P3, P4, P5]} with strides \texttt{[8,16,32]}.
+Each level is projected to transformer \texttt{d\_model} by independent 1x1 convs.
+
 \begin{longtable}{@{}p{0.28\textwidth}p{0.24\textwidth}p{0.42\textwidth}@{}}
 \toprule
 \textbf{Where} & \textbf{Key} & \textbf{Role} \\
 \midrule
 train YAML & \texttt{model\_config} & points to model JSON (example: \path{rtdetr_pose/configs/base.json}) \\
-model JSON (\texttt{model.*}) & \texttt{backbone\_name} & backbone family (default: \texttt{cspresnet}) \\
-model JSON (\texttt{model.*}) & \texttt{stem\_channels} & stem width \\
-model JSON (\texttt{model.*}) & \texttt{backbone\_channels} & per-stage channels \\
-model JSON (\texttt{model.*}) & \texttt{stage\_blocks} & per-stage block depth \\
-model JSON (\texttt{model.*}) & \texttt{backbone\_activation} & backbone activation preset \\
-model JSON (\texttt{model.*}) & \texttt{backbone\_kwargs} & optional backbone-specific kwargs \\
+model JSON (\texttt{model.backbone.*}) & \texttt{name} & backbone family (e.g. \texttt{cspresnet}, \texttt{cspdarknet\_s}, \texttt{resnet50}, \texttt{convnext\_tiny}) \\
+model JSON (\texttt{model.backbone.*}) & \texttt{norm} & normalization type (\texttt{bn|syncbn|frozenbn|gn}) \\
+model JSON (\texttt{model.backbone.*}) & \texttt{args} & optional backbone-specific constructor args \\
+model JSON (\texttt{model.projector.*}) & \texttt{d\_model} & projection/output channel size for transformer input \\
 solver YAML/CLI & \texttt{backbone\_lr\_mult} & LR multiplier for backbone params \\
 solver YAML/CLI & \texttt{backbone\_wd\_mult} & WD multiplier for backbone params \\
 \bottomrule
@@ -204,7 +206,8 @@ solver YAML/CLI & \texttt{backbone\_wd\_mult} & WD multiplier for backbone param
 Recommended procedure:
 \begin{enumerate}
   \item Copy \path{rtdetr_pose/configs/base.json} to a project-local model JSON.
-  \item Edit \texttt{model.backbone\_name} and related channel/block fields.
+  \item Edit \texttt{model.backbone.name} and \texttt{model.backbone.args}.
+  \item Set \texttt{model.projector.d\_model} to the intended transformer hidden size.
   \item Point training YAML \texttt{model\_config} to the new JSON.
   \item Start with smoke settings (small \texttt{image\_size}/\texttt{max\_steps}), then scale.
 \end{enumerate}
@@ -212,7 +215,7 @@ Recommended procedure:
 Example:
 \begin{lstlisting}[language=bash]
 cp rtdetr_pose/configs/base.json rtdetr_pose/configs/my_backbone.json
-# edit model.backbone_name / backbone_channels / stage_blocks
+# edit model.backbone.name / model.backbone.args / model.projector.d_model
 
 yolozu train configs/examples/train_setting.yaml \
   --model-config rtdetr_pose/configs/my_backbone.json \

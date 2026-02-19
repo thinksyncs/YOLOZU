@@ -395,6 +395,8 @@ Trainer core features (implemented):
 - Validation cadence: epoch (`--val-every`) and step-based (`--val-every-steps`).
 - Early stop: `--early-stop-patience` (+ `--early-stop-min-delta`).
 - Activation swapping (config): set `model.backbone_activation` / `model.head_activation` to `silu|gelu|swish|hardswish|hard-swish|leakyrelu`, or use `model.activation_preset` (recommended default: `default` = SiLU/SiLU).
+- Backbone swap (config): prefer `model.backbone.name|norm|args` plus `model.projector.d_model` (legacy `model.backbone_name` is still accepted).
+- Backbone contract: model backbones return `[P3,P4,P5]` at strides `[8,16,32]`; channels are aligned by 1x1 projection before encoder input.
 
 Common next checks:
 
@@ -403,6 +405,8 @@ python3 tools/plot_metrics.py --jsonl runs/train_minimal_smoke/metrics.jsonl --o
 python3 tools/export_predictions.py --adapter rtdetr_pose --config rtdetr_pose/configs/base.json --checkpoint runs/train_minimal_smoke/checkpoint.pt --max-images 20 --wrap --output reports/predictions.json
 python3 tools/eval_coco.py --dataset data/coco128 --predictions reports/predictions.json --bbox-format cxcywh_norm --max-images 20 --dry-run
 ```
+
+Backbone details and extension guide: [docs/backbones.md](docs/backbones.md)
 
 Plot a loss curve (requires matplotlib):
 

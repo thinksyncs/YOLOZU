@@ -1,5 +1,13 @@
 # Releasing to PyPI
 
+## Recent notable changes (2026-02-19)
+
+- Added pluggable RT-DETR pose backbone architecture with a strict P3/P4/P5 contract (`[8,16,32]` strides).
+- Added CSP-style YOLO backbone support (`cspdarknet_s`) and registry-based backbone selection.
+- Added channel projector (`1x1` per level) so backbone output channels are aligned to transformer `d_model`.
+- Added config path for swaps: `model.backbone.name|norm|args` and `model.projector.d_model` (legacy fields remain compatible).
+- Added smoke/shape/ONNX tests and corresponding docs updates (`docs/backbones.md`, training docs, manual updates).
+
 YOLOZU is configured for **PyPI Trusted Publishing** (OIDC) via GitHub Actions.
 This avoids long-lived PyPI API tokens.
 

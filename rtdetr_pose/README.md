@@ -42,4 +42,9 @@ Mask-only labels (optional)
 
 ## Notes
 - The model is a stub to wire losses/metrics and export; integrate with a full RT-DETR implementation next.
-- `configs/base.json` supports `model.backbone_name` (e.g. `cspresnet`, `tiny_cnn`) and a `loss` section for swapping/tuning loss weights.
+- Backbone swapping supports the new nested keys:
+  - `model.backbone.name` (e.g. `cspresnet`, `cspdarknet_s`, `resnet50`, `convnext_tiny`)
+  - `model.backbone.norm` (`bn|syncbn|frozenbn|gn`)
+  - `model.backbone.args` (optional backbone-specific args)
+  - `model.projector.d_model` (channel projection size into transformer)
+- Legacy `model.backbone_name` / `model.backbone_channels` / `model.stage_blocks` fields remain supported for backward compatibility.

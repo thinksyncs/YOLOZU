@@ -1888,8 +1888,8 @@
       "id": "rtdetr_pose_train_continual",
       "entrypoint": "rtdetr_pose/tools/train_continual.py",
       "runner": "python3",
-      "summary": "Continual fine-tuning runner for rtdetr_pose that wires replay + checkpoint-based self-distillation (passes --self-distill-from <prev_ckpt> to train_minimal), with optional LoRA/EWC/SI.",
-      "tags": ["rtdetr_pose", "continual", "train", "replay", "self_distill", "distill", "lora", "ewc", "si"],
+      "summary": "Continual fine-tuning runner for rtdetr_pose that wires replay + checkpoint-based self-distillation (passes --self-distill-from <prev_ckpt> to train_minimal), with optional LoRA/EWC/SI. Backbone swaps are configured via model.backbone.* in the model config (P3/P4/P5 contract).",
+      "tags": ["rtdetr_pose", "continual", "train", "replay", "self_distill", "distill", "lora", "ewc", "si", "backbone"],
       "platform": {
         "cpu_ok": true,
         "gpu_required": false,
@@ -1924,7 +1924,7 @@
           "command": "python3 rtdetr_pose/tools/train_continual.py --config configs/continual/rtdetr_pose_domain_inc_example.yaml --replay-size 0"
         }
       ],
-      "docs": ["docs/continual_learning.md", "rtdetr_pose/README.md"]
+      "docs": ["docs/continual_learning.md", "docs/backbones.md", "docs/training_inference_export.md", "rtdetr_pose/README.md"]
     },
     {
       "id": "eval_continual",
