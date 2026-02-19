@@ -1,0 +1,18 @@
+{
+  "predictions": [],
+  "meta": {
+    "ttt": {
+      "enabled": true,
+      "report": {
+        "method": "eata",
+        "seconds": 0.1,
+        "losses": [
+          0.98,
+          0.92,
+          0.89
+        ],
+        "warnings": []
+      }
+    }
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "predictions": [],
+  "meta": {
+    "ttt": {
+      "enabled": true,
+      "report": {
+        "method": "cotta",
+        "seconds": 0.12,
+        "losses": [
+          1.0,
+          0.95,
+          0.9
+        ],
+        "warnings": []
+      }
+    }
+  }
+}

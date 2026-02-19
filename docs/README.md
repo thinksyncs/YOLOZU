@@ -77,6 +77,7 @@ Read next:
 - [EATA design spec (YOLOZU phase 1)](eata_design_spec.md)
 - [EATA stability/efficiency benchmark](eata_benchmark.md)
 - [SAR design spec (YOLOZU phase 1)](sar_design_spec.md)
+- [SAR robustness impact benchmark](sar_evaluation.md)
 - [Adapter contract (v1)](adapter_contract.md)
 - [Adapter templates + onboarding](adapter_templates.md)
 - [Backend parity matrix automation](backend_parity_matrix.md)

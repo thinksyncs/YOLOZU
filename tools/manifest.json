@@ -2082,6 +2082,43 @@
       "docs": ["docs/eata_design_spec.md", "docs/eata_benchmark.md"]
     },
     {
+      "id": "benchmark_sar_robustness",
+      "entrypoint": "tools/benchmark_sar_robustness.py",
+      "runner": "python3",
+      "summary": "Benchmark SAR robustness gains and side effects versus CoTTA/EATA and emit a go/no-go report.",
+      "tags": ["tta", "sar", "benchmark", "robustness", "report"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "contracts": { "consumes": ["predictions_json"] },
+      "inputs": [
+        { "name": "cotta", "kind": "file", "required": true, "flag": "--cotta" },
+        { "name": "eata", "kind": "file", "required": true, "flag": "--eata" },
+        { "name": "sar", "kind": "file", "required": true, "flag": "--sar" },
+        { "name": "output_json", "kind": "file", "required": false, "flag": "--output-json", "default": "reports/sar_robustness_report.json" },
+        { "name": "output_md", "kind": "file", "required": false, "flag": "--output-md", "default": "reports/sar_robustness_report.md" },
+        { "name": "max_overhead_ratio", "kind": "number", "required": false, "flag": "--max-overhead-ratio", "default": 1.5 },
+        { "name": "max_loss_ratio", "kind": "number", "required": false, "flag": "--max-loss-ratio", "default": 1.05 },
+        { "name": "max_variance_ratio", "kind": "number", "required": false, "flag": "--max-variance-ratio", "default": 1.2 }
+      ],
+      "effects": {
+        "writes": [
+          { "flag": "--output-json", "kind": "file", "scope": "path", "description": "Writes SAR robustness benchmark JSON artifact." },
+          { "flag": "--output-md", "kind": "file", "scope": "path", "description": "Writes SAR robustness benchmark Markdown summary." }
+        ],
+        "fixed_writes": []
+      },
+      "outputs": [
+        { "name": "sar_robustness_json", "kind": "file", "default": "reports/sar_robustness_report.json" },
+        { "name": "sar_robustness_md", "kind": "file", "default": "reports/sar_robustness_report.md" }
+      ],
+      "examples": [
+        {
+          "description": "Benchmark SAR against CoTTA/EATA references and produce go/no-go evidence.",
+          "command": "python3 tools/benchmark_sar_robustness.py --cotta reports/preds_cotta_ttt.json --eata reports/preds_eata_ttt.json --sar reports/preds_sar_ttt.json --output-json reports/sar_robustness_report.json --output-md reports/sar_robustness_report.md --max-overhead-ratio 1.5 --max-loss-ratio 1.05 --max-variance-ratio 1.2"
+        }
+      ],
+      "docs": ["docs/sar_design_spec.md", "docs/sar_evaluation.md"]
+    },
+    {
       "id": "run_scenarios",
       "entrypoint": "tools/run_scenarios.py",
       "runner": "python3",

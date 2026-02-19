@@ -1,0 +1,18 @@
+{
+  "predictions": [],
+  "meta": {
+    "ttt": {
+      "enabled": true,
+      "report": {
+        "method": "sar",
+        "seconds": 0.11,
+        "losses": [
+          0.96,
+          0.9,
+          0.87
+        ],
+        "warnings": []
+      }
+    }
+  }
+}
