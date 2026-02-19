@@ -8,7 +8,8 @@ from typing import Iterable
 class TTTConfig:
     enabled: bool = False
 
-    # "tent" (entropy minimization) or "mim" (masked image modeling)
+    # "tent" (entropy minimization), "mim" (masked image modeling), or
+    # "cotta" (EMA-guided entropy minimization with safe restoration)
     method: str = "tent"
 
     # Reset strategy for applying adaptation across inference.
@@ -35,7 +36,7 @@ class TTTConfig:
     max_loss_increase: float | None = None
 
     # Parameter selection strategy (see yolozu/tta/ttt_mim.py: select_parameters).
-    update_filter: str = "all"  # all | norm_only | adapter_only
+    update_filter: str = "all"  # all | norm_only | adapter_only | lora_only | lora_norm_only
     include: Iterable[str] | None = None
     exclude: Iterable[str] | None = None
 
@@ -52,3 +53,10 @@ class TTTConfig:
     mim_mask_prob: float = 0.6
     mim_patch_size: int = 16
     mim_mask_value: float = 0.0
+
+    # CoTTA-specific options.
+    cotta_ema_momentum: float = 0.999
+    cotta_augmentations: tuple[str, ...] = ("identity", "hflip")
+    cotta_aggregation: str = "confidence_weighted_mean"
+    cotta_restore_prob: float = 0.01
+    cotta_restore_interval: int = 1

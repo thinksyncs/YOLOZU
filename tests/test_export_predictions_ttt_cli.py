@@ -28,6 +28,9 @@ class TestExportPredictionsTTTCLI(unittest.TestCase):
         self.assertIn("--ttt-reset", out)
         self.assertIn("--ttt-steps", out)
         self.assertIn("--ttt-max-update-norm", out)
+        self.assertIn("--ttt-cotta-ema-momentum", out)
+        self.assertIn("--ttt-cotta-augmentations", out)
+        self.assertIn("--ttt-cotta-restore-prob", out)
 
     def test_dummy_adapter_smoke_and_ttt_unsupported(self):
         repo_root = Path(__file__).resolve().parents[1]

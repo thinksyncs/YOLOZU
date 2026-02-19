@@ -182,8 +182,26 @@ def select_parameters(
         allowed = _collect_param_names(model, lambda name, module: _is_norm_module(module))
     elif update_filter == "adapter_only":
         allowed = _collect_param_names(model, _is_adapter_module)
+    elif update_filter == "lora_only":
+        allowed = _collect_param_names(
+            model,
+            lambda name, module: _is_adapter_module(name, module) and (
+                "lora" in str(name).lower() or "lora" in module.__class__.__name__.lower()
+            ),
+        )
+    elif update_filter == "lora_norm_only":
+        lora_allowed = _collect_param_names(
+            model,
+            lambda name, module: _is_adapter_module(name, module) and (
+                "lora" in str(name).lower() or "lora" in module.__class__.__name__.lower()
+            ),
+        )
+        norm_allowed = _collect_param_names(model, lambda name, module: _is_norm_module(module))
+        allowed = set(lora_allowed) | set(norm_allowed)
     elif update_filter != "all":
-        raise ValueError("update_filter must be one of: all, norm_only, adapter_only")
+        raise ValueError(
+            "update_filter must be one of: all, norm_only, adapter_only, lora_only, lora_norm_only"
+        )
     return filter_parameters(
         model.named_parameters(),
         include=include,

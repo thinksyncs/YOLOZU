@@ -73,6 +73,39 @@ class TestTTTMIM(unittest.TestCase):
         expected = sum(p.numel() for p in model.adapter.parameters())
         self.assertEqual(res.updated_param_count, expected)
 
+    def test_update_filter_lora_only(self):
+        class Model(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.lora_block = nn.Conv2d(3, 3, 1)
+                self.norm = nn.BatchNorm2d(3)
+
+            def forward(self, x):
+                return self.lora_block(x)
+
+        model = Model()
+        x = torch.rand(1, 3, 4, 4)
+        res = run_ttt_mim(model, x, steps=1, mask_prob=0.5, patch_size=2, update_filter="lora_only")
+        expected = sum(p.numel() for p in model.lora_block.parameters())
+        self.assertEqual(res.updated_param_count, expected)
+
+    def test_update_filter_lora_norm_only(self):
+        class Model(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.lora_block = nn.Conv2d(3, 3, 1)
+                self.norm = nn.BatchNorm2d(3)
+                self.head = nn.Conv2d(3, 3, 1)
+
+            def forward(self, x):
+                return self.lora_block(x)
+
+        model = Model()
+        x = torch.rand(1, 3, 4, 4)
+        res = run_ttt_mim(model, x, steps=1, mask_prob=0.5, patch_size=2, update_filter="lora_norm_only")
+        expected = sum(p.numel() for p in model.lora_block.parameters()) + sum(p.numel() for p in model.norm.parameters())
+        self.assertEqual(res.updated_param_count, expected)
+
 
 if __name__ == "__main__":
     unittest.main()

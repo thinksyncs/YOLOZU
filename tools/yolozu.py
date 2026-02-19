@@ -659,11 +659,11 @@ def _parse_common_export_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--ttt", action="store_true", help="Enable test-time training (TTT) before inference.")
     p.add_argument(
         "--ttt-preset",
-        choices=("safe", "adapter_only", "mim_safe"),
+        choices=("safe", "adapter_only", "mim_safe", "cotta_safe"),
         default=None,
         help="Recommended TTT presets that override core knobs and fill safety guards unless explicitly set.",
     )
-    p.add_argument("--ttt-method", choices=("tent", "mim"), default="tent", help="TTT method (default: tent).")
+    p.add_argument("--ttt-method", choices=("tent", "mim", "cotta"), default="tent", help="TTT method (default: tent).")
     p.add_argument(
         "--ttt-reset",
         choices=("stream", "sample"),
@@ -712,7 +712,7 @@ def _parse_common_export_args(p: argparse.ArgumentParser) -> None:
     )
     p.add_argument(
         "--ttt-update-filter",
-        choices=("all", "norm_only", "adapter_only"),
+        choices=("all", "norm_only", "adapter_only", "lora_only", "lora_norm_only"),
         default="all",
         help="Which parameters to update during TTT (default: all).",
     )
@@ -733,6 +733,21 @@ def _parse_common_export_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--ttt-mask-prob", type=float, default=0.6, help="MIM mask probability (default: 0.6).")
     p.add_argument("--ttt-patch-size", type=int, default=16, help="MIM patch size (default: 16).")
     p.add_argument("--ttt-mask-value", type=float, default=0.0, help="MIM mask fill value (default: 0.0).")
+    p.add_argument("--ttt-cotta-ema-momentum", type=float, default=0.999, help="CoTTA EMA momentum (default: 0.999).")
+    p.add_argument(
+        "--ttt-cotta-augmentations",
+        action="append",
+        default=None,
+        help="CoTTA augmentation branch name (repeatable, e.g. identity/hflip).",
+    )
+    p.add_argument(
+        "--ttt-cotta-aggregation",
+        choices=("confidence_weighted_mean", "mean"),
+        default="confidence_weighted_mean",
+        help="CoTTA logits aggregation mode (default: confidence_weighted_mean).",
+    )
+    p.add_argument("--ttt-cotta-restore-prob", type=float, default=0.01, help="CoTTA stochastic restore probability (default: 0.01).")
+    p.add_argument("--ttt-cotta-restore-interval", type=int, default=1, help="CoTTA restore cadence in steps (default: 1).")
     p.add_argument("--ttt-log-out", default=None, help="Optional path to write TTT log JSON.")
 
     # ONNXRuntime/TensorRT backend (YOLO26 exporters).
@@ -831,6 +846,13 @@ def _export_with_backend(
                     "mask_prob": float(args.ttt_mask_prob) if ttt_enabled else None,
                     "patch_size": int(args.ttt_patch_size) if ttt_enabled else None,
                     "mask_value": float(args.ttt_mask_value) if ttt_enabled else None,
+                },
+                "cotta": {
+                    "ema_momentum": float(args.ttt_cotta_ema_momentum) if ttt_enabled else None,
+                    "augmentations": list(args.ttt_cotta_augmentations) if ttt_enabled and args.ttt_cotta_augmentations else None,
+                    "aggregation": str(args.ttt_cotta_aggregation) if ttt_enabled else None,
+                    "restore_prob": float(args.ttt_cotta_restore_prob) if ttt_enabled else None,
+                    "restore_interval": int(args.ttt_cotta_restore_interval) if ttt_enabled else None,
                 },
             },
         }
@@ -969,6 +991,13 @@ def _export_with_backend(
             cmd.extend(["--ttt-mask-prob", str(float(args.ttt_mask_prob))])
             cmd.extend(["--ttt-patch-size", str(int(args.ttt_patch_size))])
             cmd.extend(["--ttt-mask-value", str(float(args.ttt_mask_value))])
+            cmd.extend(["--ttt-cotta-ema-momentum", str(float(args.ttt_cotta_ema_momentum))])
+            if args.ttt_cotta_augmentations:
+                for aug in args.ttt_cotta_augmentations:
+                    cmd.extend(["--ttt-cotta-augmentations", str(aug)])
+            cmd.extend(["--ttt-cotta-aggregation", str(args.ttt_cotta_aggregation)])
+            cmd.extend(["--ttt-cotta-restore-prob", str(float(args.ttt_cotta_restore_prob))])
+            cmd.extend(["--ttt-cotta-restore-interval", str(int(args.ttt_cotta_restore_interval))])
             if args.ttt_log_out:
                 cmd.extend(["--ttt-log-out", str(args.ttt_log_out)])
 

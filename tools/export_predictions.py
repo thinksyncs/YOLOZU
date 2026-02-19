@@ -128,13 +128,13 @@ def _parse_args(argv):
     parser.add_argument("--ttt", action="store_true", help="Enable test-time training (TTT) before inference.")
     parser.add_argument(
         "--ttt-preset",
-        choices=("safe", "adapter_only", "mim_safe"),
+        choices=("safe", "adapter_only", "mim_safe", "cotta_safe"),
         default=None,
         help="Recommended TTT presets that override core knobs (method/steps/lr/filter/max_batches) and fill safety guards unless explicitly set.",
     )
     parser.add_argument(
         "--ttt-method",
-        choices=("tent", "mim"),
+        choices=("tent", "mim", "cotta"),
         default="tent",
         help="TTT method (default: tent).",
     )
@@ -186,7 +186,7 @@ def _parse_args(argv):
     )
     parser.add_argument(
         "--ttt-update-filter",
-        choices=("all", "norm_only", "adapter_only"),
+        choices=("all", "norm_only", "adapter_only", "lora_only", "lora_norm_only"),
         default="all",
         help="Which parameters to update during TTT (default: all).",
     )
@@ -212,6 +212,21 @@ def _parse_args(argv):
     parser.add_argument("--ttt-mask-prob", type=float, default=0.6, help="MIM mask probability (default: 0.6).")
     parser.add_argument("--ttt-patch-size", type=int, default=16, help="MIM patch size (default: 16).")
     parser.add_argument("--ttt-mask-value", type=float, default=0.0, help="MIM mask fill value (default: 0.0).")
+    parser.add_argument("--ttt-cotta-ema-momentum", type=float, default=0.999, help="CoTTA EMA momentum (default: 0.999).")
+    parser.add_argument(
+        "--ttt-cotta-augmentations",
+        action="append",
+        default=None,
+        help="CoTTA augmentation branch name (repeatable, e.g. identity/hflip).",
+    )
+    parser.add_argument(
+        "--ttt-cotta-aggregation",
+        choices=("confidence_weighted_mean", "mean"),
+        default="confidence_weighted_mean",
+        help="CoTTA logits aggregation mode (default: confidence_weighted_mean).",
+    )
+    parser.add_argument("--ttt-cotta-restore-prob", type=float, default=0.01, help="CoTTA stochastic restore probability (default: 0.01).")
+    parser.add_argument("--ttt-cotta-restore-interval", type=int, default=1, help="CoTTA restore cadence in steps (default: 1).")
     parser.add_argument("--ttt-log-out", default=None, help="Optional path to write TTT log JSON.")
     return parser.parse_args(argv)
 
@@ -337,6 +352,11 @@ def main(argv=None):
             mim_mask_prob=float(args.ttt_mask_prob),
             mim_patch_size=int(args.ttt_patch_size),
             mim_mask_value=float(args.ttt_mask_value),
+            cotta_ema_momentum=float(args.ttt_cotta_ema_momentum),
+            cotta_augmentations=tuple(args.ttt_cotta_augmentations or ["identity", "hflip"]),
+            cotta_aggregation=str(args.ttt_cotta_aggregation),
+            cotta_restore_prob=float(args.ttt_cotta_restore_prob),
+            cotta_restore_interval=int(args.ttt_cotta_restore_interval),
         )
         if str(args.ttt_reset) == "sample":
             try:
@@ -481,6 +501,13 @@ def main(argv=None):
                         "patch_size": int(args.ttt_patch_size),
                         "mask_value": float(args.ttt_mask_value),
                     },
+                    "cotta": {
+                        "ema_momentum": float(args.ttt_cotta_ema_momentum),
+                        "augmentations": list(args.ttt_cotta_augmentations or ["identity", "hflip"]),
+                        "aggregation": str(args.ttt_cotta_aggregation),
+                        "restore_prob": float(args.ttt_cotta_restore_prob),
+                        "restore_interval": int(args.ttt_cotta_restore_interval),
+                    },
                     "report": ttt_report,
                 },
             },
@@ -545,6 +572,13 @@ def main(argv=None):
                     "mask_prob": float(args.ttt_mask_prob),
                     "patch_size": int(args.ttt_patch_size),
                     "mask_value": float(args.ttt_mask_value),
+                },
+                "cotta": {
+                    "ema_momentum": float(args.ttt_cotta_ema_momentum),
+                    "augmentations": list(args.ttt_cotta_augmentations or ["identity", "hflip"]),
+                    "aggregation": str(args.ttt_cotta_aggregation),
+                    "restore_prob": float(args.ttt_cotta_restore_prob),
+                    "restore_interval": int(args.ttt_cotta_restore_interval),
                 },
                 "report": ttt_report,
             },

@@ -166,6 +166,62 @@ class TestTTTIntegration(unittest.TestCase):
         self.assertIsInstance(report.updated_param_count, int)
         self.assertGreater(report.updated_param_count or 0, 0)
 
+    def test_run_ttt_cotta(self):
+        class CoTTAModel(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = nn.Conv2d(3, 6, kernel_size=1, bias=False)
+                self.norm = nn.BatchNorm2d(6)
+
+            def forward(self, x):
+                y = self.norm(self.conv(x))
+                y = y.mean(dim=(2, 3))
+                return {"logits": y}
+
+        class Adapter(ModelAdapter):
+            def __init__(self):
+                self._model = CoTTAModel()
+
+            def predict(self, records):
+                return [{"image": r["image"], "detections": []} for r in records]
+
+            def supports_ttt(self) -> bool:
+                return True
+
+            def get_model(self):
+                return self._model
+
+            def build_loader(self, records, *, batch_size: int = 1):
+                yield torch.rand(1, 3, 8, 8)
+
+        adapter = Adapter()
+        records = [{"image": "a.jpg"}]
+        report = run_ttt(
+            adapter,
+            records,
+            config=TTTConfig(
+                enabled=True,
+                method="cotta",
+                steps=2,
+                lr=1e-3,
+                update_filter="norm_only",
+                cotta_ema_momentum=0.99,
+                cotta_augmentations=("identity", "hflip"),
+                cotta_restore_prob=0.05,
+                cotta_restore_interval=1,
+            ),
+        )
+        self.assertTrue(report.enabled)
+        self.assertEqual(report.method, "cotta")
+        self.assertEqual(report.steps_run, 2)
+        self.assertEqual(len(report.losses), 2)
+        self.assertIsInstance(report.updated_param_count, int)
+        self.assertGreater(report.updated_param_count or 0, 0)
+        self.assertTrue(report.step_metrics)
+        self.assertIn("ema_momentum", report.step_metrics[0])
+        self.assertIn("restored_count", report.step_metrics[0])
+        self.assertIn("aug", report.step_metrics[0])
+
     def test_run_ttt_unsupported_adapter_errors(self):
         adapter = DummyAdapter()
         records = [{"image": "a.jpg"}]
