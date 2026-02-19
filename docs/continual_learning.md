@@ -8,6 +8,15 @@ The baseline strategy is:
 - **Memory**: add a small **replay buffer** (default 50 images, reservoir sampling) and train on *(current task + replay)* while also self-distilling.
 - Optional: **LoRA** to restrict trainable parameters (parameter-efficient continual fine-tuning).
 
+## References (self-distillation background)
+
+This repo’s checkpoint-based self-distillation is a pragmatic anti-forgetting regularizer; it is not intended as a faithful reproduction of any single paper.
+
+- Knowledge distillation (original): Hinton et al., “Distilling the Knowledge in a Neural Network” (arXiv:1503.02531)
+  - https://arxiv.org/abs/1503.02531
+- Self-distillation (classic reference): Furlanello et al., “Born Again Neural Networks” (arXiv:1805.04770)
+  - https://arxiv.org/abs/1805.04770
+
 ## 0-minute start (pip users; CPU)
 
 If you want to **see continual-learning behavior** (domain shift + forgetting mitigation) without downloading datasets:

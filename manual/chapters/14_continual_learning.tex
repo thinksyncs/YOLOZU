@@ -119,3 +119,11 @@ Commonly tuned items include:
   \item Some continual comparisons use a CPU-friendly proxy metric (e.g., a lightweight mAP-style summary) on a pinned subset to keep iteration fast.
   \item For ``real'' mAP, switch your evaluation workflow to a full COCO evaluator when appropriate.
 \end{itemize}
+
+\section{References (self-distillation background)}
+This repository's checkpoint-based self-distillation is a pragmatic anti-forgetting regularizer.
+For background reading:
+\begin{itemize}
+  \item Knowledge distillation (original): Hinton et al., \emph{Distilling the Knowledge in a Neural Network} (arXiv:1503.02531).\;\url{https://arxiv.org/abs/1503.02531}
+  \item Self-distillation (classic reference): Furlanello et al., \emph{Born Again Neural Networks} (arXiv:1805.04770).\;\url{https://arxiv.org/abs/1805.04770}
+\end{itemize}
