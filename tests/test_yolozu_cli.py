@@ -49,6 +49,12 @@ class TestYOLOZUCLI(unittest.TestCase):
             self.assertIn("timestamp", payload)
             self.assertIn("gpu", payload)
             self.assertIn("env", payload)
+            self.assertIn("runtime_capabilities", payload)
+            self.assertIn("drift_hints", payload)
+            self.assertIsInstance(payload.get("drift_hints"), list)
+            links = payload.get("guidance_links") or {}
+            self.assertIn("backend_parity", links)
+            self.assertIn("onnx_parity", links)
 
     def test_export_dummy_injects_run_meta(self):
         repo_root = Path(__file__).resolve().parents[1]

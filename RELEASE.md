@@ -10,6 +10,7 @@
 - Hardened `run_meta` provenance contract: required git SHA/dependency lock/preprocess/runtime/command fields, validator tool, and CI gate checks.
 - Added adapter suite expansion assets: framework starter templates (MMDet/Detectron2/Ultralytics/RT-DETR/OpenCV-dnn/custom C++), adapter parity suite tool, and onboarding docs.
 - Added backend parity matrix automation (`tools/backend_parity_matrix.py`) to generate JSON+HTML parity reports across Torch/ONNXRuntime/TensorRT/OpenCV-dnn/custom C++ with reproducible fixed-input fingerprinting under `runs/.../reports`.
+- Extended `yolozu doctor` diagnostics with runtime capability matrix (CUDA/Torch/ONNXRuntime/TensorRT/OpenCV), drift explanation hints, and remediation links for parity/debug workflows.
 
 YOLOZU is configured for **PyPI Trusted Publishing** (OIDC) via GitHub Actions.
 This avoids long-lived PyPI API tokens.

@@ -1078,39 +1078,9 @@ def _export_with_backend(
 
 
 def _doctor(args: argparse.Namespace) -> int:
-    out_path = Path(args.output)
-    if not out_path.is_absolute():
-        out_path = repo_root / out_path
+    from yolozu.doctor import write_doctor_report
 
-    report: dict[str, Any] = {
-        "timestamp": _now_utc(),
-        "git": {"head": _git_head(), "dirty": _git_is_dirty()},
-        "python": sys.version,
-        "platform": {
-            "system": platform.system(),
-            "release": platform.release(),
-            "version": platform.version(),
-            "machine": platform.machine(),
-            "processor": platform.processor(),
-        },
-        "gpu": _gather_gpu_info(),
-        "env": _gather_env_info(),
-        "tools": {
-            "nvidia_smi": bool(_run_capture(["nvidia-smi", "-L"])),
-            "trtexec": bool(_run_capture(["trtexec", "--version"])),
-        },
-    }
-
-    warnings: list[str] = []
-    if report["tools"]["nvidia_smi"] is False:
-        warnings.append("nvidia-smi not found (expected on Linux+NVIDIA)")
-    if report["tools"]["trtexec"] is False:
-        warnings.append("trtexec not found (TensorRT engine build requires it)")
-    report["warnings"] = warnings
-
-    _write_json(out_path, report)
-    print(out_path)
-    return 0
+    return int(write_doctor_report(output=str(args.output), cwd=repo_root))
 
 
 def _sweep(args: argparse.Namespace) -> int:

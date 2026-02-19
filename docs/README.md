@@ -73,6 +73,7 @@ Read next:
 - [Adapter contract (v1)](adapter_contract.md)
 - [Adapter templates + onboarding](adapter_templates.md)
 - [Backend parity matrix automation](backend_parity_matrix.md)
+- [Doctor diagnostics for environment drift](doctor_diagnostics.md)
 
 ### 4) Protocols & Bench (YOLO26 protocol + sweeps)
 
