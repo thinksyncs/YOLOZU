@@ -1974,6 +1974,41 @@
       "docs": ["docs/benchmark_publication.md", "docs/yolo26_eval_protocol.md"]
     },
     {
+      "id": "eval_cotta_drift",
+      "entrypoint": "tools/eval_cotta_drift.py",
+      "runner": "python3",
+      "summary": "Compare baseline-vs-CoTTA TTT reports and generate reproducible drift/stability evidence artifacts (JSON+Markdown).",
+      "tags": ["tta", "cotta", "drift", "validation", "report"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "contracts": { "consumes": ["predictions_json"] },
+      "inputs": [
+        { "name": "baseline", "kind": "file", "required": true, "flag": "--baseline", "description": "Wrapped predictions JSON for baseline TTT run." },
+        { "name": "cotta", "kind": "file", "required": true, "flag": "--cotta", "description": "Wrapped predictions JSON for CoTTA run." },
+        { "name": "output_json", "kind": "file", "required": false, "flag": "--output-json", "default": "reports/cotta_drift_report.json" },
+        { "name": "output_md", "kind": "file", "required": false, "flag": "--output-md", "default": "reports/cotta_drift_report.md" },
+        { "name": "stability_loss_ratio_threshold", "kind": "number", "required": false, "flag": "--stability-loss-ratio-threshold", "default": 1.0 },
+        { "name": "max_safe_total_update_norm", "kind": "number", "required": false, "flag": "--max-safe-total-update-norm", "default": 5.0 }
+      ],
+      "effects": {
+        "writes": [
+          { "flag": "--output-json", "kind": "file", "scope": "path", "description": "Writes CoTTA drift validation JSON evidence artifact." },
+          { "flag": "--output-md", "kind": "file", "scope": "path", "description": "Writes CoTTA drift validation Markdown summary." }
+        ],
+        "fixed_writes": []
+      },
+      "outputs": [
+        { "name": "cotta_drift_report_json", "kind": "file", "default": "reports/cotta_drift_report.json" },
+        { "name": "cotta_drift_report_md", "kind": "file", "default": "reports/cotta_drift_report.md" }
+      ],
+      "examples": [
+        {
+          "description": "Compare baseline and CoTTA wrapped predictions for drift/stability validation.",
+          "command": "python3 tools/eval_cotta_drift.py --baseline reports/preds_baseline_ttt.json --cotta reports/preds_cotta_ttt.json --output-json reports/cotta_drift_report.json --output-md reports/cotta_drift_report.md --stability-loss-ratio-threshold 1.0 --max-safe-total-update-norm 5.0"
+        }
+      ],
+      "docs": ["docs/cotta_design_spec.md", "docs/cotta_validation.md"]
+    },
+    {
       "id": "benchmark_keypoints_eval",
       "entrypoint": "tools/benchmark_keypoints_eval.py",
       "runner": "python3",

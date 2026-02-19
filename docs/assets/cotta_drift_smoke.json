@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "kind": "cotta_drift_validation",
+  "timestamp": "2026-02-19T12:23:28Z",
+  "inputs": {
+    "baseline": {
+      "path": "reports/cotta_baseline_smoke.json",
+      "sha256": "3c7ba0f69d4a4f80e81536757067727d2d8b08aca904ce20e9a22000c722d0b3"
+    },
+    "cotta": {
+      "path": "reports/cotta_candidate_smoke.json",
+      "sha256": "2c8db1cfaabbfddedac37e8e221439f699634dd9eaa043c68b01529e39af9041"
+    }
+  },
+  "thresholds": {
+    "stability_loss_ratio_threshold": 1.0,
+    "max_safe_total_update_norm": 5.0
+  },
+  "baseline": {
+    "reports_count": 1,
+    "steps_count": 3,
+    "mean_loss": 1.1300000000000001,
+    "mean_final_loss": 1.09,
+    "max_total_update_norm": 1.15,
+    "guard_breaches": 1,
+    "stopped_early_count": 1,
+    "warnings": [
+      "max_update_norm_exceeded"
+    ]
+  },
+  "cotta": {
+    "reports_count": 1,
+    "steps_count": 3,
+    "mean_loss": 0.9666666666666667,
+    "mean_final_loss": 0.92,
+    "max_total_update_norm": 0.71,
+    "guard_breaches": 0,
+    "stopped_early_count": 0,
+    "warnings": []
+  },
+  "decision": {
+    "stabilization_by_loss": true,
+    "guard_not_worse": true,
+    "unsafe_drift_detected": false,
+    "stabilization_pass": true
+  }
+}
