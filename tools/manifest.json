@@ -48,6 +48,11 @@
       "summary": "Instance segmentation eval report payload emitted by tools/eval_instance_segmentation.py.",
       "schema": "docs/schemas/instance_seg_eval_report.schema.json",
       "producer": "python3 tools/eval_instance_segmentation.py"
+    },
+    "run_meta_json": {
+      "summary": "Run provenance metadata contract emitted at runs/<run_id>/reports/run_meta.json.",
+      "schema": "docs/schemas/run_meta.schema.json",
+      "validator": "python3 tools/validate_run_meta.py <path>"
     }
   },
   "tools": [
@@ -698,6 +703,27 @@
           "command": "python3 tools/validate_instance_segmentation_predictions.py reports/instance_seg_predictions.json"
         }
       ]
+    },
+    {
+      "id": "validate_run_meta",
+      "entrypoint": "tools/validate_run_meta.py",
+      "runner": "python3",
+      "summary": "Validate run_meta.json contract (git SHA, dependency lock, preprocess, hardware/runtime, command).",
+      "tags": ["run_meta", "validation", "repro"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "inputs": [
+        { "name": "run_meta", "kind": "file", "required": true, "description": "Path to runs/<run_id>/reports/run_meta.json." },
+        { "name": "allow_missing_git_sha", "kind": "string", "required": false, "flag": "--allow-missing-git-sha" }
+      ],
+      "effects": { "writes": [], "fixed_writes": [] },
+      "outputs": [{ "name": "stdout", "kind": "stdout", "description": "OK line or validation error." }],
+      "examples": [
+        {
+          "description": "Validate contracted run metadata.",
+          "command": "python3 tools/validate_run_meta.py runs/ci_smoke/reports/run_meta.json"
+        }
+      ],
+      "docs": ["docs/run_contract.md"]
     },
     {
       "id": "normalize_predictions",

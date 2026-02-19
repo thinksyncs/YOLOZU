@@ -5,8 +5,15 @@ import platform
 import socket
 import subprocess
 import sys
+import hashlib
+import shlex
 from pathlib import Path
 from typing import Any
+
+try:
+    from importlib import metadata as importlib_metadata
+except Exception:  # pragma: no cover
+    importlib_metadata = None
 
 
 def _safe_version(module_name: str) -> str | None:
@@ -158,6 +165,153 @@ def versions() -> dict[str, Any]:
     }
 
 
+def _sha256_text(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _collect_installed_packages() -> list[dict[str, str]]:
+    packages: list[dict[str, str]] = []
+    if importlib_metadata is None:
+        return packages
+    try:
+        for dist in importlib_metadata.distributions():
+            name = str(dist.metadata.get("Name") or dist.metadata.get("Summary") or "").strip()
+            version = str(getattr(dist, "version", "") or "").strip()
+            if not name:
+                continue
+            packages.append({"name": name, "version": version})
+    except Exception:
+        return []
+    packages.sort(key=lambda item: item["name"].lower())
+    return packages
+
+
+def dependency_lock_info(repo_root: str | Path) -> dict[str, Any]:
+    packages = _collect_installed_packages()
+    package_lines = [f"{pkg['name']}=={pkg['version']}" for pkg in packages]
+    package_blob = "\n".join(package_lines)
+
+    requirements_hashes: dict[str, str] = {}
+    root = Path(repo_root)
+    for rel in ("requirements.txt", "requirements-dev.txt", "requirements-test.txt"):
+        p = root / rel
+        if not p.exists() or not p.is_file():
+            continue
+        try:
+            requirements_hashes[rel] = hashlib.sha256(p.read_bytes()).hexdigest()
+        except Exception:
+            continue
+
+    return {
+        "python_version": platform.python_version(),
+        "package_count": int(len(packages)),
+        "package_set_sha256": _sha256_text(package_blob),
+        "requirements_files_sha256": requirements_hashes,
+    }
+
+
+def preprocess_config(args: dict[str, Any] | None) -> dict[str, Any]:
+    args = args or {}
+    image_size = args.get("image_size", args.get("imgsz"))
+    try:
+        image_size = int(image_size) if image_size is not None else None
+    except Exception:
+        image_size = None
+
+    scale_min = args.get("scale_min")
+    scale_max = args.get("scale_max")
+    try:
+        scale_min = float(scale_min) if scale_min is not None else None
+    except Exception:
+        scale_min = None
+    try:
+        scale_max = float(scale_max) if scale_max is not None else None
+    except Exception:
+        scale_max = None
+
+    return {
+        "image_size": image_size,
+        "multiscale": bool(args.get("multiscale", False)),
+        "scale_min": scale_min,
+        "scale_max": scale_max,
+    }
+
+
+def _command_info(argv: list[str]) -> dict[str, Any]:
+    command = [str(sys.executable), *[str(x) for x in argv]]
+    return {
+        "argv": list(argv),
+        "command": command,
+        "command_str": shlex.join(command),
+        "python_executable": str(sys.executable),
+        "cwd": str(Path.cwd()),
+    }
+
+
+def runtime_info() -> dict[str, Any]:
+    return {
+        "python_version": platform.python_version(),
+        "platform": platform.platform(),
+        "python_executable": str(sys.executable),
+    }
+
+
+def validate_run_record_contract(record: Any, *, require_git_sha: bool = True) -> None:
+    if not isinstance(record, dict):
+        raise ValueError("run_meta must be an object")
+
+    schema_version = record.get("schema_version")
+    if not isinstance(schema_version, int) or isinstance(schema_version, bool) or schema_version < 1:
+        raise ValueError("run_meta.schema_version must be a positive integer")
+
+    command = record.get("command")
+    if not isinstance(command, dict):
+        raise ValueError("run_meta.command must be an object")
+    argv = command.get("argv")
+    if not isinstance(argv, list):
+        raise ValueError("run_meta.command.argv must be a list")
+    if not isinstance(command.get("command_str"), str) or not str(command.get("command_str")).strip():
+        raise ValueError("run_meta.command.command_str must be a non-empty string")
+
+    runtime = record.get("runtime")
+    if not isinstance(runtime, dict):
+        raise ValueError("run_meta.runtime must be an object")
+    for key in ("python_version", "platform", "python_executable"):
+        value = runtime.get(key)
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"run_meta.runtime.{key} must be a non-empty string")
+
+    hardware = record.get("hardware")
+    if not isinstance(hardware, dict):
+        raise ValueError("run_meta.hardware must be an object")
+    if not isinstance(hardware.get("host"), dict):
+        raise ValueError("run_meta.hardware.host must be an object")
+    if not isinstance(hardware.get("accelerator"), dict):
+        raise ValueError("run_meta.hardware.accelerator must be an object")
+
+    preprocess = record.get("preprocess")
+    if not isinstance(preprocess, dict):
+        raise ValueError("run_meta.preprocess must be an object")
+    image_size = preprocess.get("image_size")
+    if not isinstance(image_size, int) or isinstance(image_size, bool) or image_size <= 0:
+        raise ValueError("run_meta.preprocess.image_size must be a positive integer")
+
+    dependency_lock = record.get("dependency_lock")
+    if not isinstance(dependency_lock, dict):
+        raise ValueError("run_meta.dependency_lock must be an object")
+    package_hash = dependency_lock.get("package_set_sha256")
+    if not isinstance(package_hash, str) or len(package_hash) != 64:
+        raise ValueError("run_meta.dependency_lock.package_set_sha256 must be a sha256 hex string")
+
+    git = record.get("git")
+    if not isinstance(git, dict):
+        raise ValueError("run_meta.git must be an object")
+    sha = git.get("sha")
+    if require_git_sha:
+        if not isinstance(sha, str) or not sha.strip():
+            raise ValueError("run_meta.git.sha must be a non-empty string")
+
+
 def build_run_record(
     *,
     repo_root: str | Path,
@@ -182,6 +336,22 @@ def build_run_record(
         argv = sys.argv[1:]
     record["argv"] = list(argv)
 
+    pp = preprocess_config(args)
+    dep = dependency_lock_info(repo_root)
+    cmd = _command_info(argv)
+    run_rt = runtime_info()
+
+    record.update(
+        {
+            "schema_version": 1,
+            "command": cmd,
+            "runtime": run_rt,
+            "hardware": {"host": record.get("host"), "accelerator": record.get("accelerator")},
+            "preprocess": pp,
+            "dependency_lock": dep,
+        }
+    )
+
     if args is not None:
         record["args"] = dict(args)
 
@@ -190,5 +360,15 @@ def build_run_record(
 
     if extra:
         record["extra"] = dict(extra)
+
+    # Fallbacks for detached/no-git environments where git CLI is unavailable.
+    git_obj = record.get("git") if isinstance(record.get("git"), dict) else {}
+    if not isinstance(git_obj.get("sha"), str) or not str(git_obj.get("sha", "")).strip():
+        for env_key in ("GITHUB_SHA", "GIT_COMMIT", "CI_COMMIT_SHA"):
+            env_sha = os.environ.get(env_key)
+            if isinstance(env_sha, str) and env_sha.strip():
+                git_obj["sha"] = env_sha.strip()
+                break
+    record["git"] = git_obj
 
     return record

@@ -34,7 +34,7 @@ from rtdetr_pose.sched_factory import EMA, build_scheduler
 from yolozu.metrics_report import append_jsonl, build_report, write_csv_row, write_json
 from yolozu.jitter import default_jitter_profile, sample_intrinsics_jitter, sample_extrinsics_jitter
 from yolozu.long_tail_metrics import build_fracal_stats
-from yolozu.run_record import build_run_record
+from yolozu.run_record import build_run_record, validate_run_record_contract
 from yolozu.sdft import SdftConfig, compute_sdft_loss
 from yolozu.simple_map import evaluate_map
 
@@ -3275,6 +3275,10 @@ def main(argv: list[str] | None = None) -> int:
             "host": {"hostname": socket.gethostname(), "pid": os.getpid()},
         },
     )
+    try:
+        validate_run_record_contract(run_record, require_git_sha=True)
+    except Exception as exc:
+        raise SystemExit(f"invalid run_meta contract: {exc}") from exc
 
     seed = int(getattr(args, "seed", 0) or 0)
     random.seed(seed)

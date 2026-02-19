@@ -338,9 +338,13 @@ jobs:
           python - <<'PY'
           import json
           from pathlib import Path
+          from yolozu.run_record import validate_run_record_contract
+
           meta = json.loads(Path("runs/ci_smoke/reports/run_meta.json").read_text(encoding="utf-8"))
-          assert "host" in meta and isinstance(meta["host"], dict)
-          assert "accelerator" in meta and isinstance(meta["accelerator"], dict)
+          validate_run_record_contract(meta, require_git_sha=True)
+          assert "dependency_lock" in meta and isinstance(meta["dependency_lock"], dict)
+          assert "preprocess" in meta and isinstance(meta["preprocess"], dict)
+          assert "command" in meta and isinstance(meta["command"], dict)
           print("run_meta keys OK")
           PY
 

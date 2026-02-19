@@ -7,6 +7,7 @@
 - Added channel projector (`1x1` per level) so backbone output channels are aligned to transformer `d_model`.
 - Added config path for swaps: `model.backbone.name|norm|args` and `model.projector.d_model` (legacy fields remain compatible).
 - Added smoke/shape/ONNX tests and corresponding docs updates (`docs/backbones.md`, training docs, manual updates).
+- Hardened `run_meta` provenance contract: required git SHA/dependency lock/preprocess/runtime/command fields, validator tool, and CI gate checks.
 
 YOLOZU is configured for **PyPI Trusted Publishing** (OIDC) via GitHub Actions.
 This avoids long-lived PyPI API tokens.

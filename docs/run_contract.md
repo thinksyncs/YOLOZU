@@ -48,10 +48,24 @@ Required artifacts:
 - `runs/<run_id>/reports/config_resolved.yaml` (fully-resolved args)
 - `runs/<run_id>/reports/run_meta.json` (git SHA, torch/cuda, host, cmdline, etc.)
 
+`run_meta.json` is now contract-validated and must include:
+- `schema_version`
+- `git.sha`
+- `dependency_lock` (package set + requirements file hashes)
+- `preprocess` (image size + multiscale params)
+- `hardware` / `runtime`
+- `command` (argv + command string)
+
 Export + verification artifacts (enabled by default):
 - `runs/<run_id>/exports/model.onnx`
 - `runs/<run_id>/exports/model.onnx.meta.json`
 - `runs/<run_id>/reports/onnx_parity.json` (Torch vs ONNXRuntime diff stats)
+
+Validation command:
+
+```bash
+python3 tools/validate_run_meta.py runs/<run_id>/reports/run_meta.json
+```
 
 ### Best checkpoint definition
 
