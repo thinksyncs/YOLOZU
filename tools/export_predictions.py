@@ -128,13 +128,13 @@ def _parse_args(argv):
     parser.add_argument("--ttt", action="store_true", help="Enable test-time training (TTT) before inference.")
     parser.add_argument(
         "--ttt-preset",
-        choices=("safe", "adapter_only", "mim_safe", "cotta_safe"),
+        choices=("safe", "adapter_only", "mim_safe", "cotta_safe", "eata_safe"),
         default=None,
         help="Recommended TTT presets that override core knobs (method/steps/lr/filter/max_batches) and fill safety guards unless explicitly set.",
     )
     parser.add_argument(
         "--ttt-method",
-        choices=("tent", "mim", "cotta"),
+        choices=("tent", "mim", "cotta", "eata"),
         default="tent",
         help="TTT method (default: tent).",
     )
@@ -227,6 +227,13 @@ def _parse_args(argv):
     )
     parser.add_argument("--ttt-cotta-restore-prob", type=float, default=0.01, help="CoTTA stochastic restore probability (default: 0.01).")
     parser.add_argument("--ttt-cotta-restore-interval", type=int, default=1, help="CoTTA restore cadence in steps (default: 1).")
+    parser.add_argument("--ttt-eata-conf-min", type=float, default=0.2, help="EATA minimum confidence threshold (default: 0.2).")
+    parser.add_argument("--ttt-eata-entropy-min", type=float, default=0.05, help="EATA minimum entropy threshold (default: 0.05).")
+    parser.add_argument("--ttt-eata-entropy-max", type=float, default=3.0, help="EATA maximum entropy threshold (default: 3.0).")
+    parser.add_argument("--ttt-eata-min-valid-dets", type=int, default=1, help="EATA minimum valid detections per sample (default: 1).")
+    parser.add_argument("--ttt-eata-anchor-lambda", type=float, default=1e-3, help="EATA anchor regularization weight (default: 1e-3).")
+    parser.add_argument("--ttt-eata-selected-ratio-min", type=float, default=0.0, help="EATA minimum selected-sample ratio per step (default: 0.0).")
+    parser.add_argument("--ttt-eata-max-skip-streak", type=int, default=3, help="EATA max consecutive skipped steps before stop (default: 3).")
     parser.add_argument("--ttt-log-out", default=None, help="Optional path to write TTT log JSON.")
     return parser.parse_args(argv)
 
@@ -357,6 +364,13 @@ def main(argv=None):
             cotta_aggregation=str(args.ttt_cotta_aggregation),
             cotta_restore_prob=float(args.ttt_cotta_restore_prob),
             cotta_restore_interval=int(args.ttt_cotta_restore_interval),
+            eata_conf_min=float(args.ttt_eata_conf_min),
+            eata_entropy_min=float(args.ttt_eata_entropy_min),
+            eata_entropy_max=float(args.ttt_eata_entropy_max),
+            eata_min_valid_dets=int(args.ttt_eata_min_valid_dets),
+            eata_anchor_lambda=float(args.ttt_eata_anchor_lambda),
+            eata_selected_ratio_min=float(args.ttt_eata_selected_ratio_min),
+            eata_max_skip_streak=int(args.ttt_eata_max_skip_streak),
         )
         if str(args.ttt_reset) == "sample":
             try:
@@ -508,6 +522,15 @@ def main(argv=None):
                         "restore_prob": float(args.ttt_cotta_restore_prob),
                         "restore_interval": int(args.ttt_cotta_restore_interval),
                     },
+                    "eata": {
+                        "conf_min": float(args.ttt_eata_conf_min),
+                        "entropy_min": float(args.ttt_eata_entropy_min),
+                        "entropy_max": float(args.ttt_eata_entropy_max),
+                        "min_valid_dets": int(args.ttt_eata_min_valid_dets),
+                        "anchor_lambda": float(args.ttt_eata_anchor_lambda),
+                        "selected_ratio_min": float(args.ttt_eata_selected_ratio_min),
+                        "max_skip_streak": int(args.ttt_eata_max_skip_streak),
+                    },
                     "report": ttt_report,
                 },
             },
@@ -579,6 +602,15 @@ def main(argv=None):
                     "aggregation": str(args.ttt_cotta_aggregation),
                     "restore_prob": float(args.ttt_cotta_restore_prob),
                     "restore_interval": int(args.ttt_cotta_restore_interval),
+                },
+                "eata": {
+                    "conf_min": float(args.ttt_eata_conf_min),
+                    "entropy_min": float(args.ttt_eata_entropy_min),
+                    "entropy_max": float(args.ttt_eata_entropy_max),
+                    "min_valid_dets": int(args.ttt_eata_min_valid_dets),
+                    "anchor_lambda": float(args.ttt_eata_anchor_lambda),
+                    "selected_ratio_min": float(args.ttt_eata_selected_ratio_min),
+                    "max_skip_streak": int(args.ttt_eata_max_skip_streak),
                 },
                 "report": ttt_report,
             },

@@ -659,11 +659,11 @@ def _parse_common_export_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--ttt", action="store_true", help="Enable test-time training (TTT) before inference.")
     p.add_argument(
         "--ttt-preset",
-        choices=("safe", "adapter_only", "mim_safe", "cotta_safe"),
+        choices=("safe", "adapter_only", "mim_safe", "cotta_safe", "eata_safe"),
         default=None,
         help="Recommended TTT presets that override core knobs and fill safety guards unless explicitly set.",
     )
-    p.add_argument("--ttt-method", choices=("tent", "mim", "cotta"), default="tent", help="TTT method (default: tent).")
+    p.add_argument("--ttt-method", choices=("tent", "mim", "cotta", "eata"), default="tent", help="TTT method (default: tent).")
     p.add_argument(
         "--ttt-reset",
         choices=("stream", "sample"),
@@ -748,6 +748,13 @@ def _parse_common_export_args(p: argparse.ArgumentParser) -> None:
     )
     p.add_argument("--ttt-cotta-restore-prob", type=float, default=0.01, help="CoTTA stochastic restore probability (default: 0.01).")
     p.add_argument("--ttt-cotta-restore-interval", type=int, default=1, help="CoTTA restore cadence in steps (default: 1).")
+    p.add_argument("--ttt-eata-conf-min", type=float, default=0.2, help="EATA minimum confidence threshold (default: 0.2).")
+    p.add_argument("--ttt-eata-entropy-min", type=float, default=0.05, help="EATA minimum entropy threshold (default: 0.05).")
+    p.add_argument("--ttt-eata-entropy-max", type=float, default=3.0, help="EATA maximum entropy threshold (default: 3.0).")
+    p.add_argument("--ttt-eata-min-valid-dets", type=int, default=1, help="EATA minimum valid detections per sample (default: 1).")
+    p.add_argument("--ttt-eata-anchor-lambda", type=float, default=1e-3, help="EATA anchor regularization weight (default: 1e-3).")
+    p.add_argument("--ttt-eata-selected-ratio-min", type=float, default=0.0, help="EATA minimum selected-sample ratio per step (default: 0.0).")
+    p.add_argument("--ttt-eata-max-skip-streak", type=int, default=3, help="EATA max consecutive skipped steps before stop (default: 3).")
     p.add_argument("--ttt-log-out", default=None, help="Optional path to write TTT log JSON.")
 
     # ONNXRuntime/TensorRT backend (YOLO26 exporters).
@@ -853,6 +860,15 @@ def _export_with_backend(
                     "aggregation": str(args.ttt_cotta_aggregation) if ttt_enabled else None,
                     "restore_prob": float(args.ttt_cotta_restore_prob) if ttt_enabled else None,
                     "restore_interval": int(args.ttt_cotta_restore_interval) if ttt_enabled else None,
+                },
+                "eata": {
+                    "conf_min": float(args.ttt_eata_conf_min) if ttt_enabled else None,
+                    "entropy_min": float(args.ttt_eata_entropy_min) if ttt_enabled else None,
+                    "entropy_max": float(args.ttt_eata_entropy_max) if ttt_enabled else None,
+                    "min_valid_dets": int(args.ttt_eata_min_valid_dets) if ttt_enabled else None,
+                    "anchor_lambda": float(args.ttt_eata_anchor_lambda) if ttt_enabled else None,
+                    "selected_ratio_min": float(args.ttt_eata_selected_ratio_min) if ttt_enabled else None,
+                    "max_skip_streak": int(args.ttt_eata_max_skip_streak) if ttt_enabled else None,
                 },
             },
         }
@@ -998,6 +1014,13 @@ def _export_with_backend(
             cmd.extend(["--ttt-cotta-aggregation", str(args.ttt_cotta_aggregation)])
             cmd.extend(["--ttt-cotta-restore-prob", str(float(args.ttt_cotta_restore_prob))])
             cmd.extend(["--ttt-cotta-restore-interval", str(int(args.ttt_cotta_restore_interval))])
+            cmd.extend(["--ttt-eata-conf-min", str(float(args.ttt_eata_conf_min))])
+            cmd.extend(["--ttt-eata-entropy-min", str(float(args.ttt_eata_entropy_min))])
+            cmd.extend(["--ttt-eata-entropy-max", str(float(args.ttt_eata_entropy_max))])
+            cmd.extend(["--ttt-eata-min-valid-dets", str(int(args.ttt_eata_min_valid_dets))])
+            cmd.extend(["--ttt-eata-anchor-lambda", str(float(args.ttt_eata_anchor_lambda))])
+            cmd.extend(["--ttt-eata-selected-ratio-min", str(float(args.ttt_eata_selected_ratio_min))])
+            cmd.extend(["--ttt-eata-max-skip-streak", str(int(args.ttt_eata_max_skip_streak))])
             if args.ttt_log_out:
                 cmd.extend(["--ttt-log-out", str(args.ttt_log_out)])
 

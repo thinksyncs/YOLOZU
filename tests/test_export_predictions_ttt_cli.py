@@ -31,6 +31,9 @@ class TestExportPredictionsTTTCLI(unittest.TestCase):
         self.assertIn("--ttt-cotta-ema-momentum", out)
         self.assertIn("--ttt-cotta-augmentations", out)
         self.assertIn("--ttt-cotta-restore-prob", out)
+        self.assertIn("--ttt-eata-conf-min", out)
+        self.assertIn("--ttt-eata-anchor-lambda", out)
+        self.assertIn("--ttt-eata-max-skip-streak", out)
 
     def test_dummy_adapter_smoke_and_ttt_unsupported(self):
         repo_root = Path(__file__).resolve().parents[1]

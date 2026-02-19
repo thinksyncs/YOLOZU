@@ -197,6 +197,45 @@ def _entropy_loss_from_logits(logits: "torch.Tensor") -> "torch.Tensor":
     return entropy.mean()
 
 
+def _eata_sample_signals(logits: "torch.Tensor", *, conf_min: float) -> tuple["torch.Tensor", "torch.Tensor", "torch.Tensor"]:
+    _ensure_torch()
+    if logits.shape[-1] <= 1:
+        batch = int(logits.shape[0]) if logits.ndim >= 1 else 1
+        conf = torch.zeros((batch,), dtype=torch.float32, device=logits.device)
+        entropy = torch.zeros((batch,), dtype=torch.float32, device=logits.device)
+        valid = torch.zeros((batch,), dtype=torch.float32, device=logits.device)
+        return conf, entropy, valid
+
+    probs = torch.softmax(logits, dim=-1)
+    conf_map = probs.amax(dim=-1)
+    entropy_map = -(probs * torch.log(probs.clamp_min(1e-12))).sum(dim=-1)
+
+    if conf_map.ndim == 1:
+        conf = conf_map
+        entropy = entropy_map
+        valid = torch.ones_like(conf_map)
+    else:
+        batch = int(conf_map.shape[0])
+        conf_flat = conf_map.reshape(batch, -1)
+        entropy_flat = entropy_map.reshape(batch, -1)
+        conf = conf_flat.mean(dim=1)
+        entropy = entropy_flat.mean(dim=1)
+        valid = (conf_flat >= float(conf_min)).to(dtype=torch.float32).sum(dim=1)
+    return conf, entropy, valid
+
+
+def _eata_anchor_loss(snapshot: Iterable[tuple["torch.Tensor", "torch.Tensor"]]) -> "torch.Tensor":
+    _ensure_torch()
+    total = None
+    for param, base in snapshot:
+        diff = (param - base).to(dtype=torch.float32)
+        part = (diff * diff).mean()
+        total = part if total is None else (total + part)
+    if total is None:
+        return torch.zeros((), dtype=torch.float32)
+    return total
+
+
 def _forward_cotta_augs(
     model: Any,
     x: "torch.Tensor",
@@ -329,8 +368,8 @@ def run_ttt(adapter: Any, records: list[dict[str, Any]], *, config: TTTConfig) -
         raise RuntimeError("TTT requires at least one batch from adapter.build_loader()")
 
     method = (config.method or "tent").lower()
-    if method not in ("tent", "mim", "cotta"):
-        raise ValueError("TTT method must be one of: tent, mim, cotta")
+    if method not in ("tent", "mim", "cotta", "eata"):
+        raise ValueError("TTT method must be one of: tent, mim, cotta, eata")
 
     steps = int(config.steps)
     if steps <= 0:
@@ -551,7 +590,7 @@ def run_ttt(adapter: Any, records: list[dict[str, Any]], *, config: TTTConfig) -
                 losses.append(float(loss_value))
                 mask_ratios.append(float(_mask_ratio))
                 step_metrics.append(step_entry)
-        else:
+        elif method == "cotta":
             from .ttt_mim import select_parameters
 
             params = select_parameters(
@@ -651,6 +690,200 @@ def run_ttt(adapter: Any, records: list[dict[str, Any]], *, config: TTTConfig) -
                             continue
                         if not math.isfinite(float(value)):
                             non_finite_fields.append(str(key))
+                if non_finite_fields:
+                    stopped_early = True
+                    stop_reason = "non_finite_metrics"
+                elif config.max_update_norm is not None and update_norm > float(config.max_update_norm):
+                    stopped_early = True
+                    stop_reason = "max_update_norm_exceeded"
+                elif config.max_total_update_norm is not None and total_update_norm > float(config.max_total_update_norm):
+                    stopped_early = True
+                    stop_reason = "max_total_update_norm_exceeded"
+                elif (
+                    config.max_loss_ratio is not None
+                    and initial_loss is not None
+                    and initial_loss > 0.0
+                    and loss_value > (initial_loss * float(config.max_loss_ratio))
+                ):
+                    stopped_early = True
+                    stop_reason = "max_loss_ratio_exceeded"
+                elif (
+                    config.max_loss_increase is not None
+                    and initial_loss is not None
+                    and loss_value > (initial_loss + float(config.max_loss_increase))
+                ):
+                    stopped_early = True
+                    stop_reason = "max_loss_increase_exceeded"
+
+                if stopped_early:
+                    step_entry["rolled_back"] = bool(config.rollback_on_stop)
+                    step_entry["stop_reason"] = str(stop_reason)
+                    step_entry["non_finite_fields"] = non_finite_fields or None
+                    warnings.append(str(stop_reason))
+                    if non_finite_fields:
+                        warnings.append(f"non_finite_fields:{','.join(non_finite_fields)}")
+                    if bool(config.rollback_on_stop):
+                        _restore_params(pre_snapshot)
+                        _restore_buffers(pre_buffer_snapshot)
+                    step_metrics.append(step_entry)
+                    break
+
+                losses.append(float(loss_value))
+                step_metrics.append(step_entry)
+        else:
+            from .ttt_mim import select_parameters
+
+            params = select_parameters(
+                model,
+                update_filter=str(config.update_filter),
+                include=config.include,
+                exclude=config.exclude,
+            )
+            if not params:
+                raise RuntimeError("no parameters selected for TTT")
+
+            optimizer = torch.optim.Adam(params, lr=float(config.lr))
+            updated_param_count = _count_unique_params(params)
+            base_snapshot = _snapshot_params(params)
+
+            conf_min = float(config.eata_conf_min)
+            entropy_min = float(config.eata_entropy_min)
+            entropy_max = float(config.eata_entropy_max)
+            min_valid_dets = int(config.eata_min_valid_dets)
+            anchor_lambda = float(config.eata_anchor_lambda)
+            selected_ratio_min = float(config.eata_selected_ratio_min)
+            max_skip_streak = max(0, int(config.eata_max_skip_streak))
+            skip_streak = 0
+
+            for step_idx in range(steps):
+                x = batches[step_idx % len(batches)]
+                if not torch.is_tensor(x):
+                    raise RuntimeError("EATA requires tensor batches from adapter.build_loader()")
+                if x.ndim == 0:
+                    raise RuntimeError("EATA requires batched tensor input")
+
+                pre_snapshot = _snapshot_params(params)
+                pre_buffer_snapshot = _snapshot_norm_buffers(model) if bool(config.rollback_on_stop) else []
+
+                optimizer.zero_grad(set_to_none=True)
+                logits = _extract_logits(model(x))
+                if logits.ndim == 0:
+                    raise RuntimeError("EATA logits must have batch dimension")
+
+                conf_vec, entropy_vec, valid_vec = _eata_sample_signals(logits, conf_min=conf_min)
+                conf_sel = conf_vec >= conf_min
+                ent_sel = (entropy_vec >= entropy_min) & (entropy_vec <= entropy_max)
+                valid_sel = valid_vec >= float(min_valid_dets)
+                selected_mask = conf_sel & ent_sel & valid_sel
+
+                batch_count = int(conf_vec.shape[0]) if conf_vec.ndim >= 1 else 1
+                selected_count = int(selected_mask.to(dtype=torch.int32).sum().detach().cpu().item())
+                selected_ratio = float(selected_count) / float(max(1, batch_count))
+
+                step_entry: dict[str, Any] = {
+                    "step": int(step_idx),
+                    "selected_count": int(selected_count),
+                    "batch_count": int(batch_count),
+                    "selected_ratio": float(selected_ratio),
+                    "mean_conf": float(conf_vec.mean().detach().cpu().item()) if conf_vec.numel() else 0.0,
+                    "mean_entropy": float(entropy_vec.mean().detach().cpu().item()) if entropy_vec.numel() else 0.0,
+                    "mean_valid_dets": float(valid_vec.mean().detach().cpu().item()) if valid_vec.numel() else 0.0,
+                    "rolled_back": False,
+                }
+
+                if selected_count <= 0:
+                    skip_streak += 1
+                    step_entry.update(
+                        {
+                            "skipped": True,
+                            "skip_reason": "empty_selected_set",
+                            "skip_streak": int(skip_streak),
+                            "loss": None,
+                            "anchor_loss": 0.0,
+                            "adapt_loss": 0.0,
+                            "grad_norm": None,
+                            "grad_norm_clipped": None,
+                            "update_norm": 0.0,
+                            "total_update_norm": float(_global_l2_update_norm(base_snapshot)),
+                        }
+                    )
+                    step_metrics.append(step_entry)
+                    warnings.append("eata_empty_selected_set")
+                    if skip_streak > max_skip_streak:
+                        stopped_early = True
+                        stop_reason = "eata_max_skip_streak_exceeded"
+                        warnings.append(str(stop_reason))
+                        step_entry["stop_reason"] = str(stop_reason)
+                        break
+                    continue
+
+                skip_streak = 0
+                if selected_ratio < selected_ratio_min:
+                    stopped_early = True
+                    stop_reason = "eata_selected_ratio_below_min"
+
+                selected = selected_mask
+                while selected.ndim < logits.ndim - 1:
+                    selected = selected.unsqueeze(-1)
+                selected = selected.expand_as(logits[..., 0])
+
+                probs = torch.softmax(logits, dim=-1)
+                entropy_map = -(probs * torch.log(probs.clamp_min(1e-12))).sum(dim=-1)
+                selected_entropy = entropy_map.masked_select(selected)
+                if selected_entropy.numel() == 0:
+                    adapt_loss = logits.sum() * 0.0
+                else:
+                    adapt_loss = selected_entropy.mean()
+
+                anchor_loss = _eata_anchor_loss(base_snapshot)
+                loss = adapt_loss + (anchor_lambda * anchor_loss)
+                loss.backward()
+
+                grad_norm = _global_grad_norm(params)
+                grad_norm_clipped = None
+                if config.max_grad_norm is not None:
+                    clipped = torch.nn.utils.clip_grad_norm_(params, float(config.max_grad_norm))
+                    grad_norm_clipped = float(clipped.detach().cpu().item()) if torch.is_tensor(clipped) else float(clipped)
+
+                optimizer.step()
+
+                loss_value = float(loss.detach().cpu().item())
+                adapt_loss_value = float(adapt_loss.detach().cpu().item())
+                anchor_loss_value = float(anchor_loss.detach().cpu().item())
+                if initial_loss is None:
+                    initial_loss = loss_value
+
+                update_norm = _global_l2_update_norm(pre_snapshot)
+                total_update_norm = _global_l2_update_norm(base_snapshot)
+
+                step_entry.update(
+                    {
+                        "skipped": False,
+                        "loss": float(loss_value),
+                        "adapt_loss": float(adapt_loss_value),
+                        "anchor_loss": float(anchor_loss_value),
+                        "anchor_lambda": float(anchor_lambda),
+                        "grad_norm": float(grad_norm),
+                        "grad_norm_clipped": (float(grad_norm_clipped) if grad_norm_clipped is not None else None),
+                        "update_norm": float(update_norm),
+                        "total_update_norm": float(total_update_norm),
+                    }
+                )
+
+                non_finite_fields = []
+                if bool(config.stop_on_non_finite):
+                    for key, value in (
+                        ("loss", loss_value),
+                        ("grad_norm", step_entry["grad_norm"]),
+                        ("grad_norm_clipped", step_entry["grad_norm_clipped"]),
+                        ("update_norm", update_norm),
+                        ("total_update_norm", total_update_norm),
+                    ):
+                        if value is None:
+                            continue
+                        if not math.isfinite(float(value)):
+                            non_finite_fields.append(str(key))
+
                 if non_finite_fields:
                     stopped_early = True
                     stop_reason = "non_finite_metrics"

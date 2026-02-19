@@ -8,8 +8,9 @@ from typing import Iterable
 class TTTConfig:
     enabled: bool = False
 
-    # "tent" (entropy minimization), "mim" (masked image modeling), or
-    # "cotta" (EMA-guided entropy minimization with safe restoration)
+    # "tent" (entropy minimization), "mim" (masked image modeling),
+    # "cotta" (EMA-guided entropy minimization with safe restoration), or
+    # "eata" (selective entropy adaptation with anti-forgetting regularization)
     method: str = "tent"
 
     # Reset strategy for applying adaptation across inference.
@@ -60,3 +61,12 @@ class TTTConfig:
     cotta_aggregation: str = "confidence_weighted_mean"
     cotta_restore_prob: float = 0.01
     cotta_restore_interval: int = 1
+
+    # EATA-specific options.
+    eata_conf_min: float = 0.2
+    eata_entropy_min: float = 0.05
+    eata_entropy_max: float = 3.0
+    eata_min_valid_dets: int = 1
+    eata_anchor_lambda: float = 1e-3
+    eata_selected_ratio_min: float = 0.0
+    eata_max_skip_streak: int = 3
