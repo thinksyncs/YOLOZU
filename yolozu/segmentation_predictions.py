@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
+from .schema_governance import validate_payload_schema_version
+
 
 @dataclass(frozen=True)
 class ValidationResult:
@@ -95,8 +97,10 @@ def validate_segmentation_predictions_entries(
 
 
 def validate_segmentation_predictions_payload(payload: Any) -> ValidationResult:
+    warnings = validate_payload_schema_version(payload, artifact="segmentation_predictions")
     entries = normalize_segmentation_predictions_json(payload)
-    return validate_segmentation_predictions_entries(entries)
+    res = validate_segmentation_predictions_entries(entries)
+    return ValidationResult(warnings=[*warnings, *res.warnings])
 
 
 def load_segmentation_predictions_entries(path: str | Path) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:

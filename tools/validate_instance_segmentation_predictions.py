@@ -7,8 +7,8 @@ repo_root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(repo_root))
 
 from yolozu.instance_segmentation_predictions import (  # noqa: E402
-    normalize_instance_segmentation_predictions_payload,
-    validate_instance_segmentation_predictions_entries,
+    normalize_instance_segmentation_predictions_json,
+    validate_instance_segmentation_predictions_payload,
 )
 
 
@@ -21,8 +21,8 @@ def _parse_args(argv):
 def main(argv=None):
     args = _parse_args(sys.argv[1:] if argv is None else argv)
     raw = json.loads(Path(args.predictions).read_text(encoding="utf-8"))
-    entries, _ = normalize_instance_segmentation_predictions_payload(raw)
-    result = validate_instance_segmentation_predictions_entries(entries)
+    entries = normalize_instance_segmentation_predictions_json(raw)
+    result = validate_instance_segmentation_predictions_payload(raw)
 
     if result.warnings:
         for w in result.warnings:

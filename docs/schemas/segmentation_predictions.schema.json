@@ -26,6 +26,7 @@
       "type": "object",
       "required": ["predictions"],
       "properties": {
+        "schema_version": { "type": "integer", "minimum": 1 },
         "predictions": { "$ref": "#/$defs/predictions_list" },
         "meta": { "type": "object", "additionalProperties": true }
       },

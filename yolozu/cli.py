@@ -487,13 +487,11 @@ def _cmd_validate(args: argparse.Namespace) -> int:
 
     if args.validate_command == "instance-seg":
         from yolozu.instance_segmentation_predictions import (
-            normalize_instance_segmentation_predictions_payload,
-            validate_instance_segmentation_predictions_entries,
+            validate_instance_segmentation_predictions_payload,
         )
 
         try:
-            entries, _meta = normalize_instance_segmentation_predictions_payload(payload)
-            res = validate_instance_segmentation_predictions_entries(entries, where="predictions")
+            res = validate_instance_segmentation_predictions_payload(payload)
         except Exception as exc:
             raise SystemExit(str(exc)) from exc
         for w in res.warnings:

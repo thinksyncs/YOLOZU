@@ -7,6 +7,7 @@ from typing import Any, Iterable
 
 from .image_keys import add_image_aliases, require_image_key
 from .keypoints import normalize_keypoints
+from .schema_governance import validate_payload_schema_version
 
 
 @dataclass(frozen=True)
@@ -270,10 +271,12 @@ def load_predictions_payload(path: str | Path) -> tuple[list[dict[str, Any]], di
 def validate_predictions_payload(payload: Any, *, strict: bool = False) -> ValidationResult:
     """Validate any supported predictions JSON payload shape (wrapper/list/mapping)."""
 
+    warnings = validate_payload_schema_version(payload, artifact="predictions")
     entries, meta = normalize_predictions_payload(payload)
     if meta is not None:
         validate_wrapped_meta(meta)
-    return validate_predictions_entries(entries, strict=strict)
+    res = validate_predictions_entries(entries, strict=strict)
+    return ValidationResult(warnings=[*warnings, *res.warnings])
 
 
 def load_predictions_index(path: str | Path, *, add_basename_aliases: bool = True) -> dict[str, list[Any]]:

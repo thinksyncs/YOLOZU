@@ -9,6 +9,7 @@ results here.
 - `schema_version`: integer, current version is `1`.
 - Backward compatible additions are allowed (new optional fields).
 - Breaking changes must bump `schema_version`.
+- Lifecycle, compatibility, and migration process are defined in [schema_governance.md](schema_governance.md).
 
 ## Allowed top-level shapes
 

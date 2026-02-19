@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
+from .schema_governance import validate_payload_schema_version
+
 
 @dataclass(frozen=True)
 class ValidationResult:
@@ -104,6 +106,13 @@ def validate_instance_segmentation_predictions_entries(
                 warnings.append(f"{where}[{idx}].instances[{j}]: missing 'score' (defaulting to 1.0 in evaluation)")
 
     return ValidationResult(warnings=warnings)
+
+
+def validate_instance_segmentation_predictions_payload(payload: Any) -> ValidationResult:
+    warnings = validate_payload_schema_version(payload, artifact="instance_segmentation_predictions")
+    entries = normalize_instance_segmentation_predictions_json(payload)
+    res = validate_instance_segmentation_predictions_entries(entries)
+    return ValidationResult(warnings=[*warnings, *res.warnings])
 
 
 def load_instance_segmentation_predictions_entries(
