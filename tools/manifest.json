@@ -1273,6 +1273,70 @@
       "docs": ["docs/adapter_templates.md", "docs/adapter_contract.md"]
     },
     {
+      "id": "backend_parity_matrix",
+      "entrypoint": "tools/backend_parity_matrix.py",
+      "runner": "python3",
+      "summary": "Run one-command backend parity matrix checks across torch/onnxrt/trt/opencv_dnn/custom_cpp and export JSON+HTML reports.",
+      "tags": ["backend", "parity", "validation", "report"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "contracts": { "consumes": ["predictions_json"] },
+      "inputs": [
+        { "name": "backend_predictions", "kind": "string", "required": true, "flag": "--backend-predictions", "description": "Repeatable backend=predictions.json mapping (torch/onnxrt/trt/opencv_dnn/custom_cpp)." },
+        { "name": "reference_backend", "kind": "string", "required": false, "flag": "--reference-backend", "default": "torch" },
+        { "name": "image_size", "kind": "string", "required": false, "flag": "--image-size" },
+        { "name": "max_images", "kind": "number", "required": false, "flag": "--max-images" },
+        { "name": "iou_thresh", "kind": "number", "required": false, "flag": "--iou-thresh", "default": 0.99 },
+        { "name": "score_atol", "kind": "number", "required": false, "flag": "--score-atol", "default": 0.0001 },
+        { "name": "bbox_atol", "kind": "number", "required": false, "flag": "--bbox-atol", "default": 0.0001 },
+        { "name": "run_id", "kind": "string", "required": false, "flag": "--run-id" },
+        { "name": "runs_dir", "kind": "dir", "required": false, "flag": "--runs-dir", "default": "runs" },
+        { "name": "run_dir", "kind": "dir", "required": false, "flag": "--run-dir" },
+        { "name": "output_json", "kind": "file", "required": false, "flag": "--output-json" },
+        { "name": "output_html", "kind": "file", "required": false, "flag": "--output-html" }
+      ],
+      "effects": {
+        "writes": [
+          {
+            "flag": "--output-json",
+            "kind": "file",
+            "scope": "path",
+            "description": "Writes backend parity matrix JSON report (defaults to <run_dir>/reports/backend_parity_matrix.json)."
+          },
+          {
+            "flag": "--output-html",
+            "kind": "file",
+            "scope": "path",
+            "description": "Writes backend parity matrix HTML report (defaults to <run_dir>/reports/backend_parity_matrix.html)."
+          },
+          {
+            "flag": "--run-dir",
+            "kind": "dir",
+            "scope": "tree",
+            "description": "Creates run/report directories under --run-dir when provided."
+          }
+        ],
+        "fixed_writes": [
+          {
+            "path": "runs/backend_parity_matrix",
+            "kind": "dir",
+            "scope": "tree",
+            "description": "Default run root when --run-dir is not provided."
+          }
+        ]
+      },
+      "outputs": [
+        { "name": "report_json", "kind": "file", "default": "runs/backend_parity_matrix/<run_id>/reports/backend_parity_matrix.json" },
+        { "name": "report_html", "kind": "file", "default": "runs/backend_parity_matrix/<run_id>/reports/backend_parity_matrix.html" }
+      ],
+      "examples": [
+        {
+          "description": "One-command parity matrix against torch reference with fixed thresholds.",
+          "command": "python3 tools/backend_parity_matrix.py --backend-predictions torch=reports/pred_torch.json --backend-predictions onnxrt=reports/pred_onnxrt.json --backend-predictions trt=reports/pred_trt.json --backend-predictions opencv_dnn=reports/pred_opencv_dnn.json --backend-predictions custom_cpp=reports/pred_custom_cpp.json --reference-backend torch --image-size 640 --iou-thresh 0.99 --score-atol 1e-4 --bbox-atol 1e-4"
+        }
+      ],
+      "docs": ["docs/backend_parity_matrix.md", "docs/onnx_export_parity.md"]
+    },
+    {
       "id": "refine_predictions_hessian",
       "entrypoint": "tools/refine_predictions_hessian.py",
       "runner": "python3",

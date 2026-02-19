@@ -72,6 +72,7 @@ Read next:
 - [Schema governance (version lifecycle + migration)](schema_governance.md)
 - [Adapter contract (v1)](adapter_contract.md)
 - [Adapter templates + onboarding](adapter_templates.md)
+- [Backend parity matrix automation](backend_parity_matrix.md)
 
 ### 4) Protocols & Bench (YOLO26 protocol + sweeps)
 
