@@ -54,18 +54,17 @@
 \newcommand{\yolozu}{\textsc{YOLOZU}}
 \newcommand{\cmd}[1]{\texttt{\detokenize{#1}}}
 
-% Chapter intro summary box (Function / Effects / Conditions)
+% Chapter intro summary (plain prose)
+% Keep it as a single paragraph to avoid awkward copy/paste line splitting.
 \newcommand{\ChapterMeta}[3]{%
-  \begin{center}
-    \fbox{\begin{minipage}{0.95\textwidth}
-      \textbf{Function (\u6a5f\u80fd):} #1\par
-      \medskip
-      \textbf{Effects (\u52b9\u679c):} #2\par
-      \medskip
-      \textbf{Conditions (\u6761\u4ef6):} #3\par
-    \end{minipage}}
-  \end{center}
-  \vspace{0.5em}
+  \begingroup
+  \small
+  \noindent
+  \raggedright
+  \hyphenpenalty=10000\exhyphenpenalty=10000\sloppy
+  #1\space #2\space #3\par
+  \endgroup
+  \vspace{0.75em}
 }
 
 \title{\yolozu{} Manual (Detailed)}
