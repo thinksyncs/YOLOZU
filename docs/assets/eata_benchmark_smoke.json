@@ -1,0 +1,65 @@
+{
+  "baseline": {
+    "guard_breaches": 1,
+    "mean_final_loss": 1.0,
+    "mean_loss": 1.05,
+    "mean_seconds": 0.5,
+    "mean_selected_ratio": 0.0,
+    "runs_count": 1,
+    "steps_count": 2,
+    "warnings": [
+      "max_update_norm_exceeded"
+    ]
+  },
+  "checks": {
+    "efficient": true,
+    "stable_guard": true,
+    "stable_loss": true,
+    "stable_select": true
+  },
+  "eata": {
+    "guard_breaches": 0,
+    "mean_final_loss": 0.9,
+    "mean_loss": 0.925,
+    "mean_seconds": 0.65,
+    "mean_selected_ratio": 0.55,
+    "runs_count": 1,
+    "steps_count": 2,
+    "warnings": []
+  },
+  "inputs": {
+    "baseline": {
+      "path": "/Users/akira/YOLOZU/docs/assets/eata_baseline_smoke_input.json",
+      "sha256": "f642a68c8ba516c9ddb4e368abcadc89a12558ca28a65150bd298c080c3f7e82"
+    },
+    "eata": {
+      "path": "/Users/akira/YOLOZU/docs/assets/eata_candidate_smoke_input.json",
+      "sha256": "e32e71c2b272bd2f4995f00b3878d0110502ab034b313045ec1c5b94dc90cfbb"
+    }
+  },
+  "kind": "eata_stability_efficiency_benchmark",
+  "recommended_defaults": {
+    "enabled": true,
+    "ttt_eata_anchor_lambda": 0.001,
+    "ttt_eata_conf_min": 0.2,
+    "ttt_eata_entropy_max": 3.0,
+    "ttt_eata_entropy_min": 0.05,
+    "ttt_eata_min_valid_dets": 1,
+    "ttt_method": "eata",
+    "ttt_preset": "eata_safe",
+    "ttt_update_filter": "lora_norm_only"
+  },
+  "schema_version": 1,
+  "thresholds": {
+    "max_loss_ratio": 1.05,
+    "max_overhead_ratio": 1.5,
+    "min_selected_ratio": 0.1
+  },
+  "timestamp": "2026-02-19T12:46:10Z",
+  "tradeoff": {
+    "guard_breach_delta": -1,
+    "loss_delta_vs_baseline": -0.09999999999999998,
+    "loss_ratio": 0.9,
+    "overhead_ratio": 1.3
+  }
+}

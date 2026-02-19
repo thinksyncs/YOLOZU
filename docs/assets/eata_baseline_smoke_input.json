@@ -1,0 +1,27 @@
+{
+  "predictions": [],
+  "meta": {
+    "ttt": {
+      "enabled": true,
+      "report": {
+        "method": "tent",
+        "seconds": 0.5,
+        "losses": [
+          1.1,
+          1.0
+        ],
+        "warnings": [
+          "max_update_norm_exceeded"
+        ],
+        "step_metrics": [
+          {
+            "step": 0
+          },
+          {
+            "step": 1
+          }
+        ]
+      }
+    }
+  }
+}

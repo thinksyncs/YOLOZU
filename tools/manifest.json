@@ -2046,6 +2046,42 @@
       ]
     },
     {
+      "id": "benchmark_eata_stability",
+      "entrypoint": "tools/benchmark_eata_stability.py",
+      "runner": "python3",
+      "summary": "Benchmark EATA stability/efficiency tradeoffs versus baseline TTT and emit recommended defaults.",
+      "tags": ["tta", "eata", "benchmark", "stability", "efficiency", "report"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "contracts": { "consumes": ["predictions_json"] },
+      "inputs": [
+        { "name": "baseline", "kind": "file", "required": true, "flag": "--baseline" },
+        { "name": "eata", "kind": "file", "required": true, "flag": "--eata" },
+        { "name": "output_json", "kind": "file", "required": false, "flag": "--output-json", "default": "reports/eata_benchmark.json" },
+        { "name": "output_md", "kind": "file", "required": false, "flag": "--output-md", "default": "reports/eata_benchmark.md" },
+        { "name": "max_overhead_ratio", "kind": "number", "required": false, "flag": "--max-overhead-ratio", "default": 1.5 },
+        { "name": "max_loss_ratio", "kind": "number", "required": false, "flag": "--max-loss-ratio", "default": 1.05 },
+        { "name": "min_selected_ratio", "kind": "number", "required": false, "flag": "--min-selected-ratio", "default": 0.1 }
+      ],
+      "effects": {
+        "writes": [
+          { "flag": "--output-json", "kind": "file", "scope": "path", "description": "Writes EATA benchmark JSON artifact." },
+          { "flag": "--output-md", "kind": "file", "scope": "path", "description": "Writes EATA benchmark Markdown summary." }
+        ],
+        "fixed_writes": []
+      },
+      "outputs": [
+        { "name": "eata_benchmark_json", "kind": "file", "default": "reports/eata_benchmark.json" },
+        { "name": "eata_benchmark_md", "kind": "file", "default": "reports/eata_benchmark.md" }
+      ],
+      "examples": [
+        {
+          "description": "Benchmark baseline vs EATA tradeoffs and generate recommended defaults.",
+          "command": "python3 tools/benchmark_eata_stability.py --baseline reports/preds_baseline_ttt.json --eata reports/preds_eata_ttt.json --output-json reports/eata_benchmark.json --output-md reports/eata_benchmark.md --max-overhead-ratio 1.5 --max-loss-ratio 1.05 --min-selected-ratio 0.1"
+        }
+      ],
+      "docs": ["docs/eata_design_spec.md", "docs/eata_benchmark.md"]
+    },
+    {
       "id": "run_scenarios",
       "entrypoint": "tools/run_scenarios.py",
       "runner": "python3",
