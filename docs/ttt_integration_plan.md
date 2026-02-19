@@ -2,6 +2,7 @@
 
 See also phase-1 CoTTA rollout requirements: [docs/cotta_design_spec.md](cotta_design_spec.md).
 Planned next method design: [docs/eata_design_spec.md](eata_design_spec.md).
+Planned SAR rollout constraints: [docs/sar_design_spec.md](sar_design_spec.md).
 
 ## Goals
 - Enable test-time training (TTT) without breaking the current `tools/export_predictions.py` flow.
