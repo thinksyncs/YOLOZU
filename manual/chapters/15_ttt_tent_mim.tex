@@ -15,8 +15,8 @@ It is most relevant when there is clear domain shift; comparisons require fixed 
 Authoritative references:
 \begin{itemize}
   \item \path{docs/ttt_protocol.md}
+  \item \path{docs/ttt_integration_plan.md}
   \item \path{docs/mim_inference.md}
-  \item \path{docs/cotta_design_spec.md}
   \item \path{docs/eata_design_spec.md}
   \item \path{docs/sar_design_spec.md}
 \end{itemize}
@@ -46,6 +46,88 @@ Both CLIs expose \cmd{--ttt-preset}:
 \end{itemize}
 
 Presets override core knobs (method, steps, lr, update filter, max batches) and set conservative guard rails unless you override them.
+
+\section{YOLOZU introduction priority (high \texorpdfstring{$\to$}{->} low)}
+For \yolozu{} (detection/pose), the recommended operational rollout order is:
+\begin{enumerate}
+  \item \textbf{CoTTA (highest priority)}: standardize \emph{teacher=EMA(model)}, use \emph{augmentation-averaged predictions} (e.g., flips) as prediction stabilization, and enable \emph{stochastic restoration} to suppress long-run drift.
+  Start safely by limiting restoration and updates to \textbf{LoRA/Norm} subsets only.
+  \item \textbf{EATA (second)}: add \emph{active sample selection} (only adapt on trusted samples) plus \emph{anti-forgetting regularization} (Fisher/EWC-style protection of important weights).
+  In YOLOZU, constrain updates to \textbf{Norm/LoRA/selected head} parameters, and compute selection signals from detection/pose aggregates (e.g., confidence/entropy summaries across queries).
+  \item \textbf{SAR (third)}: use \emph{sharpness-aware} entropy minimization for stability in wild mixed-shift / small-batch settings.
+  Start with \textbf{LoRA-only} sharpness-aware updates to control cost/side effects, and prefer \textbf{GN/LN} normalization when possible (BN can be unstable under small-batch online adaptation).
+\end{enumerate}
+
+\section{CoTTA: operational design for YOLOZU (phase 1)}
+This section is the phase-1 CoTTA integration scope for \yolozu{}.
+The goal is to suppress long-run drift/forgetting under online test-time adaptation while keeping rollout risk low.
+
+\subsection{Update scope (safe-by-default)}
+Phase 1 restricts which parameters can change.
+
+Allowed trainable targets:
+\begin{itemize}
+  \item LoRA parameters.
+  \item normalization affine parameters (LN/GN/BN affine where used).
+\end{itemize}
+
+Explicitly disallowed in phase 1:
+\begin{itemize}
+  \item full backbone weight adaptation,
+  \item unrestricted full-model optimizer updates.
+\end{itemize}
+
+\subsection{Teacher model: EMA(student)}
+CoTTA uses a teacher defined as an exponential moving average (EMA) of the student parameters:
+\[
+\theta_{teacher} \leftarrow m\,\theta_{teacher} + (1-m)\,\theta_{student}.
+\]
+Teacher EMA updates run after each adaptation step, with configurable momentum $m$.
+Teacher parameters are never directly optimized by gradient descent.
+
+\subsection{Multi-augmentation prediction averaging}
+Phase-1 default augmentations:
+\begin{itemize}
+  \item identity,
+  \item horizontal flip.
+\end{itemize}
+
+Aggregation behavior:
+\begin{itemize}
+  \item Run the model on each augmentation branch.
+  \item Map predictions back to a common image coordinate system.
+  \item Aggregate with a deterministic (seed/config-pinned) confidence-aware averaging rule, then apply the standard postprocess/NMS.
+\end{itemize}
+
+\subsection{Stochastic restoration (safe mode)}
+Stochastic restoration is applied only to the allowed trainable targets.
+For each eligible parameter element, restore from a source snapshot with probability $p_{restore}$.
+The source snapshot defaults to the initial pre-adaptation model state for the session.
+Restoration executes on a configurable cadence (e.g., every $N$ adaptation steps).
+
+\subsection{Safety boundaries and guardrails}
+Phase-1 rollout requires guardrails to prevent runaway adaptation:
+\begin{itemize}
+  \item gradient norm clipping (\cmd{max_grad_norm}),
+  \item per-step update norm cap (\cmd{max_update_norm}),
+  \item cumulative update norm cap (\cmd{max_total_update_norm}),
+  \item divergence stop condition via loss-ratio threshold (\cmd{max_loss_ratio}).
+\end{itemize}
+
+Failure behavior should be explicit and logged:
+abort the adaptation step on hard breach, emit a diagnostics event, and restore model state according to the configured fallback policy.
+
+\subsection{Minimum configuration knobs (phase 1)}
+To keep comparisons consistent, phase-1 CoTTA should record at least:
+\begin{itemize}
+  \item \cmd{ttt.method=cotta}
+  \item \cmd{ttt.cotta.ema_momentum}
+  \item \cmd{ttt.cotta.augmentations} (initial: identity, hflip)
+  \item \cmd{ttt.cotta.aggregation} (initial default: confidence-weighted mean)
+  \item \cmd{ttt.cotta.restore_prob} and \cmd{ttt.cotta.restore_interval}
+  \item \cmd{ttt.update_filter} (must cover norm-only, lora-only, and combined safe subset)
+  \item guardrails: \cmd{ttt.max_grad_norm}, \cmd{ttt.max_update_norm}, \cmd{ttt.max_total_update_norm}, \cmd{ttt.max_loss_ratio}
+\end{itemize}
 
 \section{Guard rails (safety limits)}
 If you do not explicitly set these, defaults are applied by preset:
