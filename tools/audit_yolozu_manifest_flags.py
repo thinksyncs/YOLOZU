@@ -52,7 +52,7 @@ def main() -> int:
     manifest_flags = {
         i["flag"]
         for i in yolozu_entry.get("inputs", [])
-        if isinstance(i, dict) and i.get("flag", "").startswith("--")
+        if isinstance(i, dict) and i.get("flag", "").startswith("--") and i.get("flag") != "--help"
     }
 
     missing = sorted(runtime_flags - manifest_flags)
