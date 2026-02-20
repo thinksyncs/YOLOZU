@@ -1,0 +1,17 @@
+digraph import_deps {
+  rankdir=LR;
+  bgcolor="transparent";
+  node [shape=box, style="rounded,filled", fillcolor="#f7f7f7", color="#333333", fontname="Helvetica"]; 
+  edge [color="#555555", penwidth=1.2, arrowsize=0.8];
+  "rtdetr_pose";
+  "tests";
+  "tools";
+  "yolozu";
+  "rtdetr_pose" -> "yolozu";
+  "tests" -> "rtdetr_pose";
+  "tests" -> "tools";
+  "tests" -> "yolozu";
+  "tools" -> "rtdetr_pose";
+  "tools" -> "yolozu";
+  "yolozu" -> "rtdetr_pose";
+}
