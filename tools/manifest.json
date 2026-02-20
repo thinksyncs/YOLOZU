@@ -124,6 +124,51 @@
       ]
     },
     {
+      "id": "prepare_keypoints_dataset",
+      "entrypoint": "tools/prepare_keypoints_dataset.py",
+      "runner": "python3",
+      "summary": "Prepare keypoints dataset in one command (auto-detect YOLO Pose or COCO keypoints) and emit YOLOZU-ready dataset wrapper.",
+      "tags": ["dataset", "keypoints", "cvat", "coco", "yolo"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "requires": { "python_packages": [] },
+      "contracts": { "produces": ["dataset_descriptor"] },
+      "inputs": [
+        { "name": "source", "kind": "path", "required": true, "flag": "--source" },
+        { "name": "out", "kind": "dir", "required": true, "flag": "--out" },
+        { "name": "list_formats", "kind": "string", "required": false, "flag": "--list-formats" },
+        { "name": "format", "kind": "string", "required": false, "flag": "--format" },
+        { "name": "split", "kind": "string", "required": false, "flag": "--split" },
+        { "name": "num_keypoints", "kind": "number", "required": false, "flag": "--num-keypoints" },
+        { "name": "keypoint_names", "kind": "string", "required": false, "flag": "--keypoint-names" },
+        { "name": "annotations", "kind": "file", "required": false, "flag": "--annotations" },
+        { "name": "images_dir", "kind": "string", "required": false, "flag": "--images-dir" },
+        { "name": "out_split", "kind": "string", "required": false, "flag": "--out-split" },
+        { "name": "min_kps", "kind": "number", "required": false, "flag": "--min-kps" },
+        { "name": "max_images", "kind": "number", "required": false, "flag": "--max-images" },
+        { "name": "link_images", "kind": "string", "required": false, "flag": "--link-images" },
+        { "name": "category_id", "kind": "number", "required": false, "flag": "--category-id" },
+        { "name": "category_name", "kind": "string", "required": false, "flag": "--category-name" },
+        { "name": "class_id", "kind": "number", "required": false, "flag": "--class-id" },
+        { "name": "cvat_images_dir", "kind": "path", "required": false, "flag": "--cvat-images-dir" }
+      ],
+      "effects": {
+        "writes": [
+          { "flag": "--out", "kind": "dir", "scope": "path", "description": "Writes YOLOZU-ready dataset wrapper and/or converted labels." }
+        ],
+        "fixed_writes": []
+      },
+      "outputs": [
+        { "name": "dataset_descriptor", "kind": "file", "description": "Prepared dataset root with dataset.json for keypoints training." }
+      ],
+      "examples": [
+        {
+          "description": "Auto-detect and prepare keypoints dataset from CVAT export.",
+          "command": "python3 tools/prepare_keypoints_dataset.py --source /path/to/export --format auto --out data/keypoints_dataset"
+        }
+      ],
+      "docs": ["docs/cvat_keypoints_recovery.md"]
+    },
+    {
       "id": "prepare_coco_yolo",
       "entrypoint": "tools/prepare_coco_yolo.py",
       "runner": "python3",
@@ -1430,6 +1475,9 @@
       "inputs": [
         { "name": "predictions", "kind": "file", "required": true, "flag": "--predictions" },
         { "name": "output", "kind": "file", "required": true, "flag": "--output" },
+        { "name": "config", "kind": "file", "required": false, "flag": "--config" },
+        { "name": "enable", "kind": "string", "required": false, "flag": "--enable" },
+        { "name": "disable", "kind": "string", "required": false, "flag": "--disable" },
         { "name": "wrap", "kind": "string", "required": false, "flag": "--wrap" },
         { "name": "refine_offsets", "kind": "string", "required": false, "flag": "--refine-offsets" },
         { "name": "dataset", "kind": "dir", "required": false, "flag": "--dataset" },
@@ -1460,8 +1508,8 @@
       "outputs": [{ "name": "predictions_json", "kind": "file", "description": "Refined predictions JSON written to --output." }],
       "examples": [
         {
-          "description": "Refine offsets in-place (CPU default).",
-          "command": "python3 tools/refine_predictions_hessian.py --predictions reports/predictions.json --refine-offsets --steps 5 --output reports/predictions_refined.json --wrap"
+          "description": "Enable offsets refinement in post-processing mode.",
+          "command": "python3 tools/refine_predictions_hessian.py --predictions reports/predictions.json --output reports/predictions_refined.json --enable --refine-offsets --config configs/runtime/hessian_refine_example.yaml --wrap"
         }
       ]
     },

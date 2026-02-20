@@ -1,0 +1,19 @@
+hessian_refinement:
+  enabled: false
+  refine_offsets: true
+  wrap: true
+  device: cpu
+  steps: 5
+  damping: 0.01
+  fd_eps: 0.01
+  line_search: 3
+  line_search_decay: 0.5
+  w_reg: 0.01
+  w_depth: 1.0
+  w_mask: 0.1
+  max_step_px: 5.0
+  max_total_update_px: 50.0
+  tol_delta: 0.001
+  tol_loss: 1.0e-8
+  log_steps: false
+  dry_run: false

@@ -13,8 +13,9 @@ This chapter focuses on per-detection numerical refinement after inference.
 TTT/Tent/MIM adaptation policy is covered in Chapter~15 to avoid duplicated guidance.
 
 \section{What the Hessian solver does}
-The Hessian solver refines regression outputs (for example \cmd{log\_z}, \cmd{rot6d}, \cmd{offsets})
-per detection using Gauss--Newton style updates with Levenberg--Marquardt damping.
+The Hessian solver refines prediction values per detection using Gauss--Newton style updates with Levenberg--Marquardt damping.
+
+Current standard CLI path is engine-external post-processing on predictions JSON, with offsets refinement as the initial target.
 
 At a high level, each iteration computes residuals and Jacobian, solves a damped normal equation,
 updates parameters, and stops when convergence criteria are met.
@@ -30,34 +31,45 @@ Recommended situations:
 Avoid by default in strict real-time production because it adds latency.
 
 \section{CLI quickstart}
-Depth-only refinement:
+Enable refinement (opt-in):
 \begin{lstlisting}[language=bash]
 python tools/refine_predictions_hessian.py \
   --predictions reports/predictions.json \
   --dataset data/coco128 \
   --output reports/predictions_refined.json \
-  --refine-depth
+  --enable \
+  --refine-offsets \
+  --wrap
 \end{lstlisting}
 
-Depth + rotation with custom solver controls:
+Disable (pass-through) explicitly:
+\begin{lstlisting}[language=bash]
+python tools/refine_predictions_hessian.py \
+  --predictions reports/predictions.json \
+  --output reports/predictions_refined.json \
+  --disable \
+  --wrap
+\end{lstlisting}
+
+Enable with custom solver controls:
 \begin{lstlisting}[language=bash]
 python tools/refine_predictions_hessian.py \
   --predictions reports/predictions.json \
   --dataset data/coco128 \
   --output reports/predictions_refined.json \
-  --refine-depth \
-  --refine-rotation \
-  --max-iterations 10 \
-  --convergence-threshold 1e-5 \
+  --enable \
+  --refine-offsets \
+  --steps 10 \
   --damping 1e-2
 \end{lstlisting}
 
 \section{Core knobs}
 Commonly tuned parameters (matching \path{docs/hessian_solver.md}):
 \begin{itemize}
-  \item iteration/control: \cmd{max\_iterations}, \cmd{convergence\_threshold}, \cmd{damping}
-  \item target toggles: \cmd{refine\_depth}, \cmd{refine\_rotation}, \cmd{refine\_offsets}
-  \item residual weights: \cmd{w\_depth}, \cmd{w\_rotation}, \cmd{w\_offsets}
+  \item gate/control: \cmd{--enable}/\cmd{--disable}, \cmd{steps}, \cmd{damping}, \cmd{fd\_eps}
+  \item target toggles: \cmd{refine\_offsets} (offsets-first rollout)
+  \item residual weights: \cmd{w\_depth}, \cmd{w\_mask}, \cmd{w\_reg}
+  \item config file: \cmd{--config <yaml|json>} (CLI values override config)
 \end{itemize}
 
 \section{Position in the workflow}
@@ -69,3 +81,5 @@ A practical ordering is:
 \end{enumerate}
 
 This chapter lists the common knobs; for the full parameter surface, rely on the tool's \cmd{--help} output (kept in sync with code).
+
+TensorRT note: TRT conversion targets inference graph execution; Hessian refinement is a separate engine-external post-processing step.

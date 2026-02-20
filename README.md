@@ -7,13 +7,20 @@
 [![Python >=3.10](https://img.shields.io/badge/python-%3E%3D3.10-3776AB?logo=python&logoColor=white)](https://pypi.org/project/yolozu/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-YOLOZU supports different models and datasets through a unified format.
+YOLOZU supports different models and datasets through unified contracts and adapters.
 
 You can easily compare models across frameworks,
 from YOLO, Detectron2 and MMDetection to ONNX Runtime and TensorRT.
 
-You can train and evaluate models on the same datasets
-without changing the data format, across all platforms.
+You can train and evaluate models with mostly the same commands across platforms.
+When source dataset formats differ, YOLOZU provides adapter/prepare commands so users can keep workflow changes minimal.
+
+Keypoints dataset onboarding is available as a one-command path:
+`python3 tools/yolozu.py prepare-keypoints-dataset --source <INPUT_PATH> --format auto --out <OUTPUT_DATASET_ROOT>`
+
+Supported direct keypoints inputs: `auto`, `yolo_pose`, `coco`, `cvat_xml`.
+Not direct (convert first): `detectron2_dataset_dict`, `labelme_keypoints`.
+Format matrix/help: `python3 tools/yolozu.py prepare-keypoints-dataset --list-formats --source . --out .`
 
 Recommended deployment path (canonical): PyTorch → ONNX → TensorRT (TRT).
 
@@ -21,7 +28,7 @@ It focuses on:
 - CPU-minimum dev/tests (GPU optional)
 - A stable predictions-JSON contract for evaluation (bring-your-own inference backend)
 - Production-oriented training pipeline (RT-DETR pose) with reproducible artifacts
-- Hessian-based refinement for regression head predictions (depth, rotation, offsets)
+- Hessian-based refinement as opt-in post-processing on predictions JSON (engine外)
 
 ## Quickstart (pip users)
 
@@ -67,7 +74,8 @@ Docs index (start here): [`docs/README.md`](docs/README.md)
   - TTA: lightweight prediction-space post-transform (`--tta`).
   - TTT: pre-prediction test-time training (Tent or MIM) via `--ttt` on the **torch backend**
     (see `docs/ttt_protocol.md`).
-- Hessian solver: per-detection iterative refinement of regression outputs (depth, rotation, offsets) using Gauss-Newton optimization.
+- Hessian refinement (post-processing): per-detection iterative refinement on exported predictions JSON; default is disabled and must be opt-in.
+- TensorRT note: TRT conversion targets the inference graph only; Hessian refinement runs outside the engine as a separate post-processing step.
 - Evaluation: COCO mAP conversion/eval and scenario suite reporting.
 - Keypoints: YOLO pose-style keypoints in labels/predictions + PCK evaluation + optional COCO OKS mAP (`tools/eval_keypoints.py --oks`), plus parity/benchmark helpers. COCO/Detectron2 keypoint schema (`categories[].keypoints` / `skeleton`) is auto-ingested into wrapper metadata so training can auto-set `num_keypoints` and left/right flip pairs.
 - Semantic seg: dataset prep helpers + `tools/eval_segmentation.py` (mIoU/per-class IoU/ignore_index + optional HTML overlays).

@@ -10,6 +10,28 @@ repo_root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(repo_root))
 
 
+_DEFAULTS: dict[str, Any] = {
+    "enabled": False,
+    "wrap": False,
+    "refine_offsets": True,
+    "device": "cpu",
+    "steps": 5,
+    "damping": 1e-2,
+    "fd_eps": 1e-2,
+    "line_search": 3,
+    "line_search_decay": 0.5,
+    "w_reg": 1e-2,
+    "w_depth": 1.0,
+    "w_mask": 0.1,
+    "max_step_px": 5.0,
+    "max_total_update_px": 50.0,
+    "tol_delta": 1e-3,
+    "tol_loss": 1e-8,
+    "log_steps": False,
+    "dry_run": False,
+}
+
+
 def _now_utc() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
@@ -18,41 +40,114 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     p = argparse.ArgumentParser()
     p.add_argument("--predictions", required=True, help="Input predictions JSON.")
     p.add_argument("--output", required=True, help="Output predictions JSON.")
+    p.add_argument("--config", default=None, help="Optional YAML/JSON config for refinement settings.")
+    mode = p.add_mutually_exclusive_group()
+    mode.add_argument("--enable", action="store_true", help="Enable Hessian refinement (opt-in).")
+    mode.add_argument("--disable", action="store_true", help="Disable Hessian refinement (pass-through).")
     p.add_argument("--wrap", action="store_true", help="Wrap output as {predictions:[...], meta:{...}}.")
     p.add_argument("--refine-offsets", action="store_true", help="Refine per-detection offsets (experimental).")
     p.add_argument("--dataset", default=None, help="Optional YOLO dataset root for aux metadata (labels/*.json).")
     p.add_argument("--split", default=None, help="Optional dataset split for --dataset (e.g. val2017).")
-    p.add_argument("--device", default="cpu", help="Torch device for refinement (default: cpu).")
+    p.add_argument("--device", default=None, help="Torch device for refinement (default: cpu).")
 
-    p.add_argument("--steps", type=int, default=5, help="Max Newton steps per detection (default: 5).")
-    p.add_argument("--damping", type=float, default=1e-2, help="Levenberg-Marquardt damping (default: 1e-2).")
+    p.add_argument("--steps", type=int, default=None, help="Max Newton steps per detection (default: 5).")
+    p.add_argument("--damping", type=float, default=None, help="Levenberg-Marquardt damping (default: 1e-2).")
     p.add_argument(
         "--fd-eps",
         type=float,
-        default=1e-2,
+        default=None,
         help="Finite-difference epsilon for Hessian approximation (default: 1e-2).",
     )
-    p.add_argument("--line-search", type=int, default=3, help="Line-search attempts per step (default: 3).")
-    p.add_argument("--line-search-decay", type=float, default=0.5, help="Line-search decay (default: 0.5).")
+    p.add_argument("--line-search", type=int, default=None, help="Line-search attempts per step (default: 3).")
+    p.add_argument("--line-search-decay", type=float, default=None, help="Line-search decay (default: 0.5).")
 
-    p.add_argument("--w-reg", type=float, default=1e-2, help="L2 regularization weight for offset delta (default: 1e-2).")
-    p.add_argument("--w-depth", type=float, default=1.0, help="Depth consistency weight (default: 1.0).")
-    p.add_argument("--w-mask", type=float, default=0.1, help="Mask penalty weight (default: 0.1).")
+    p.add_argument("--w-reg", type=float, default=None, help="L2 regularization weight for offset delta (default: 1e-2).")
+    p.add_argument("--w-depth", type=float, default=None, help="Depth consistency weight (default: 1.0).")
+    p.add_argument("--w-mask", type=float, default=None, help="Mask penalty weight (default: 0.1).")
 
-    p.add_argument("--max-step-px", type=float, default=5.0, help="Max per-iteration update norm in pixels (default: 5).")
+    p.add_argument("--max-step-px", type=float, default=None, help="Max per-iteration update norm in pixels (default: 5).")
     p.add_argument(
         "--max-total-update-px",
         type=float,
-        default=50.0,
+        default=None,
         help="Max total |offset - offset0| norm in pixels (default: 50).",
     )
-    p.add_argument("--tol-delta", type=float, default=1e-3, help="Stop if update norm < tol (default: 1e-3).")
-    p.add_argument("--tol-loss", type=float, default=1e-8, help="Stop if loss improvement < tol (default: 1e-8).")
+    p.add_argument("--tol-delta", type=float, default=None, help="Stop if update norm < tol (default: 1e-3).")
+    p.add_argument("--tol-loss", type=float, default=None, help="Stop if loss improvement < tol (default: 1e-8).")
 
     p.add_argument("--log-output", default=None, help="Optional JSON log output path.")
     p.add_argument("--log-steps", action="store_true", help="Include per-iteration logs (can be large).")
     p.add_argument("--dry-run", action="store_true", help="Write schema-only output without changing values.")
+    p.set_defaults(enable=None, disable=None, wrap=None, refine_offsets=None, log_steps=None, dry_run=None)
     return p.parse_args(argv)
+
+
+def _load_config(path: Path) -> dict[str, Any]:
+    text = path.read_text(encoding="utf-8")
+    suffix = path.suffix.lower()
+    if suffix in (".yaml", ".yml"):
+        try:
+            import yaml  # type: ignore
+        except Exception as exc:
+            raise RuntimeError("PyYAML is required for --config YAML files") from exc
+        obj = yaml.safe_load(text)
+    else:
+        obj = json.loads(text)
+
+    if obj is None:
+        return {}
+    if not isinstance(obj, dict):
+        raise ValueError("config must be a JSON/YAML object")
+    section = obj.get("hessian_refinement")
+    if isinstance(section, dict):
+        return section
+    return obj
+
+
+def _resolve_runtime_args(args: argparse.Namespace) -> argparse.Namespace:
+    config: dict[str, Any] = {}
+    config_path = None
+    if args.config:
+        config_path = str(_resolve(str(args.config)))
+        config = _load_config(Path(config_path))
+
+    def pick(name: str) -> Any:
+        cli = getattr(args, name)
+        if cli is not None:
+            return cli
+        if name in config:
+            return config[name]
+        return _DEFAULTS[name]
+
+    if args.enable is True:
+        enabled = True
+    elif args.disable is True:
+        enabled = False
+    elif "enabled" in config:
+        enabled = bool(config.get("enabled"))
+    else:
+        enabled = bool(_DEFAULTS["enabled"])
+
+    args.enabled = bool(enabled)
+    args.config_path = config_path
+    args.wrap = bool(pick("wrap"))
+    args.refine_offsets = bool(pick("refine_offsets"))
+    args.device = str(pick("device"))
+    args.steps = int(pick("steps"))
+    args.damping = float(pick("damping"))
+    args.fd_eps = float(pick("fd_eps"))
+    args.line_search = int(pick("line_search"))
+    args.line_search_decay = float(pick("line_search_decay"))
+    args.w_reg = float(pick("w_reg"))
+    args.w_depth = float(pick("w_depth"))
+    args.w_mask = float(pick("w_mask"))
+    args.max_step_px = float(pick("max_step_px"))
+    args.max_total_update_px = float(pick("max_total_update_px"))
+    args.tol_delta = float(pick("tol_delta"))
+    args.tol_loss = float(pick("tol_loss"))
+    args.log_steps = bool(pick("log_steps"))
+    args.dry_run = bool(pick("dry_run"))
+    return args
 
 
 def _resolve(path_str: str) -> Path:
@@ -630,6 +725,7 @@ def _refine_entry(
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(sys.argv[1:] if argv is None else argv)
+    args = _resolve_runtime_args(args)
 
     in_path = _resolve(args.predictions)
     out_path = _resolve(args.output)
@@ -650,7 +746,7 @@ def main(argv: list[str] | None = None) -> int:
         refined.append(
             _refine_entry(
                 p,
-                refine_offsets=bool(args.refine_offsets),
+                refine_offsets=bool(args.enabled and args.refine_offsets),
                 dry_run=bool(args.dry_run),
                 dataset_index=dataset_index,
                 args=args,
@@ -664,8 +760,10 @@ def main(argv: list[str] | None = None) -> int:
             "meta": {
                 "timestamp": _now_utc(),
                 "tool": "refine_predictions_hessian",
-                "refine_offsets": bool(args.refine_offsets),
+                "enabled": bool(args.enabled),
+                "refine_offsets": bool(args.enabled and args.refine_offsets),
                 "config": {
+                    "config_path": args.config_path,
                     "dataset": args.dataset,
                     "split": args.split,
                     "device": args.device,
@@ -700,7 +798,9 @@ def main(argv: list[str] | None = None) -> int:
             "tool": "refine_predictions_hessian",
             "predictions": str(in_path),
             "output": str(out_path),
+            "enabled": bool(args.enabled),
             "config": {
+                "config_path": args.config_path,
                 "dataset": args.dataset,
                 "split": args.split,
                 "device": args.device,

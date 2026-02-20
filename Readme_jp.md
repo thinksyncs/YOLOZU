@@ -100,6 +100,18 @@ yolozu validate dataset /path/to/dataset --strict
 - YOLOX:
   - COCO JSON（`instances_*.json`）が多いので、`tools/prepare_coco_yolo.py` で YOLO形式へ一度変換するのが最短です
 
+### Keypoints 形式サポート（明示）
+
+- 直接対応: `auto`, `yolo_pose`, `coco`, `cvat_xml`
+- 直接未対応（変換してから利用）: `detectron2_dataset_dict`, `labelme_keypoints`
+- 形式一覧（CLI）:
+
+```bash
+python3 tools/yolozu.py prepare-keypoints-dataset --list-formats --source . --out .
+```
+
+詳細な復旧手順: [`docs/cvat_keypoints_recovery.md`](docs/cvat_keypoints_recovery.md)
+
 ---
 
 ## TTA / TTT（Test-Time Adaptation / Training）

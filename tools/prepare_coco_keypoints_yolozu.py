@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Convert COCO person keypoints annotations to YOLOZU YOLO-format labels.")
+    p = argparse.ArgumentParser(description="Convert COCO keypoints annotations to YOLOZU YOLO-format labels.")
     p.add_argument("--coco-root", required=True, help="COCO root containing val2017/ and annotations/.")
     p.add_argument(
         "--annotations",
@@ -18,6 +18,9 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     p.add_argument("--min-kps", type=int, default=1, help="Require at least N labeled keypoints (default: 1).")
     p.add_argument("--max-images", type=int, default=None, help="Optional cap for number of images.")
     p.add_argument("--link-images", action="store_true", help="Symlink images into out/images/<split>/ (optional).")
+    p.add_argument("--category-id", type=int, default=None, help="Target COCO category id (optional).")
+    p.add_argument("--category-name", default=None, help="Target COCO category name (optional).")
+    p.add_argument("--class-id", type=int, default=0, help="YOLO class_id to write for the target category (default: 0).")
     return p.parse_args(argv)
 
 
@@ -61,6 +64,83 @@ def _count_labeled(kps: list[float]) -> int:
     return cnt
 
 
+def _normalize_keypoint_names(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    names: list[str] = []
+    for item in value:
+        text = str(item).strip()
+        if text:
+            names.append(text)
+    return names
+
+
+def _normalize_skeleton(value: object, *, num_keypoints: int) -> list[list[int]]:
+    if not isinstance(value, list):
+        return []
+    out: list[list[int]] = []
+    seen: set[tuple[int, int]] = set()
+    for edge in value:
+        if not isinstance(edge, (list, tuple)) or len(edge) != 2:
+            continue
+        try:
+            a = int(edge[0])
+            b = int(edge[1])
+        except Exception:
+            continue
+        if a <= 0 or b <= 0 or a == b:
+            continue
+        if a > int(num_keypoints) or b > int(num_keypoints):
+            continue
+        key = (a, b) if a <= b else (b, a)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append([int(key[0]), int(key[1])])
+    return out
+
+
+def _pick_category(categories: list[dict], *, category_id: int | None, category_name: str | None) -> dict:
+    keypoint_categories: list[dict] = []
+    for cat in categories:
+        if not isinstance(cat, dict):
+            continue
+        if _normalize_keypoint_names(cat.get("keypoints")):
+            keypoint_categories.append(cat)
+
+    if not keypoint_categories:
+        raise SystemExit("no category with keypoints found in annotations categories[]")
+
+    if category_id is not None:
+        for cat in keypoint_categories:
+            try:
+                if int(cat.get("id")) == int(category_id):
+                    return cat
+            except Exception:
+                continue
+        raise SystemExit(f"category_id={category_id} not found among keypoint-enabled categories")
+
+    if isinstance(category_name, str) and category_name.strip():
+        needle = category_name.strip().lower()
+        for cat in keypoint_categories:
+            if str(cat.get("name", "")).strip().lower() == needle:
+                return cat
+        raise SystemExit(f"category_name='{category_name}' not found among keypoint-enabled categories")
+
+    for cat in keypoint_categories:
+        if str(cat.get("name", "")).strip().lower() == "person":
+            return cat
+
+    if len(keypoint_categories) == 1:
+        return keypoint_categories[0]
+
+    names = [str(cat.get("name") or cat.get("id")) for cat in keypoint_categories]
+    raise SystemExit(
+        "multiple keypoint-enabled categories found; specify --category-id or --category-name. "
+        f"Candidates: {', '.join(names)}"
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     import sys
 
@@ -92,16 +172,21 @@ def main(argv: list[str] | None = None) -> int:
     annotations = payload.get("annotations") or []
     categories = payload.get("categories") or []
 
-    person_cat_id = None
-    for cat in categories:
-        if isinstance(cat, dict) and cat.get("name") == "person":
-            try:
-                person_cat_id = int(cat.get("id"))
-            except Exception:
-                person_cat_id = None
-            break
-    if person_cat_id is None:
-        raise SystemExit("person category not found in annotations")
+    categories_dicts = [cat for cat in categories if isinstance(cat, dict)]
+    target_cat = _pick_category(
+        categories_dicts,
+        category_id=args.category_id,
+        category_name=args.category_name,
+    )
+    try:
+        target_cat_id = int(target_cat.get("id"))
+    except Exception:
+        raise SystemExit("selected category has invalid id")
+    target_cat_name = str(target_cat.get("name") or target_cat_id)
+    keypoint_names = _normalize_keypoint_names(target_cat.get("keypoints"))
+    if not keypoint_names:
+        raise SystemExit("selected category has no keypoints schema")
+    skeleton = _normalize_skeleton(target_cat.get("skeleton") or [], num_keypoints=len(keypoint_names))
 
     images_by_id: dict[int, dict] = {}
     for im in images:
@@ -117,7 +202,7 @@ def main(argv: list[str] | None = None) -> int:
         if not isinstance(ann, dict):
             continue
         try:
-            if int(ann.get("category_id")) != int(person_cat_id):
+            if int(ann.get("category_id")) != int(target_cat_id):
                 continue
         except Exception:
             continue
@@ -159,8 +244,7 @@ def main(argv: list[str] | None = None) -> int:
             kps_norm = _kps_to_norm_triplets([float(v) for v in kps], width=width, height=height)
             if not kps_norm:
                 continue
-            # class_id=0 for person (keypoints task).
-            parts = [f"{0:d}", f"{cx:.6f}", f"{cy:.6f}", f"{bw:.6f}", f"{bh:.6f}"] + [f"{v:.6f}" for v in kps_norm]
+            parts = [f"{int(args.class_id):d}", f"{cx:.6f}", f"{cy:.6f}", f"{bw:.6f}", f"{bh:.6f}"] + [f"{v:.6f}" for v in kps_norm]
             lines.append(" ".join(parts))
 
         stem = Path(file_name).stem
@@ -173,6 +257,17 @@ def main(argv: list[str] | None = None) -> int:
 
         written += 1
 
+    classes_json = {
+        "class_names": [target_cat_name],
+        "keypoint_names": keypoint_names,
+        "num_keypoints": int(len(keypoint_names)),
+        "keypoint_category_id": int(target_cat_id),
+    }
+    if skeleton:
+        classes_json["skeleton"] = skeleton
+    (out_labels / "classes.json").write_text(json.dumps(classes_json, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    (out_labels / "classes.txt").write_text(f"{target_cat_name}\n", encoding="utf-8")
+
     # Prefer dataset.json so we don't need to copy images.
     dataset_json = {
         "images_dir": str(images_dir),
@@ -180,8 +275,15 @@ def main(argv: list[str] | None = None) -> int:
         "split": out_split,
         "task": "keypoints",
         "source": str(ann_path),
-        "notes": "person-only; class_id=0; keypoints appended as x y v triplets (normalized).",
+        "category_id": int(target_cat_id),
+        "category_name": target_cat_name,
+        "class_id": int(args.class_id),
+        "keypoint_names": keypoint_names,
+        "num_keypoints": int(len(keypoint_names)),
+        "notes": "single-category keypoints; class_id is configurable; keypoints appended as x y v triplets (normalized).",
     }
+    if skeleton:
+        dataset_json["skeleton"] = skeleton
     (out_root / "dataset.json").write_text(json.dumps(dataset_json, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(out_root)
     return 0

@@ -1467,6 +1467,56 @@ def _predict_images(args: argparse.Namespace) -> int:
     return 0
 
 
+def _prepare_keypoints_dataset(args: argparse.Namespace) -> int:
+    script = repo_root / "tools" / "prepare_keypoints_dataset.py"
+    cmd: list[str] = [
+        sys.executable,
+        str(script),
+        "--source",
+        str(args.source),
+        "--out",
+        str(args.out),
+        "--format",
+        str(args.format),
+    ]
+
+    if bool(getattr(args, "list_formats", False)):
+        cmd.append("--list-formats")
+
+    if args.split:
+        cmd.extend(["--split", str(args.split)])
+    if args.num_keypoints is not None:
+        cmd.extend(["--num-keypoints", str(int(args.num_keypoints))])
+    if args.keypoint_names:
+        cmd.extend(["--keypoint-names", str(args.keypoint_names)])
+
+    if args.annotations:
+        cmd.extend(["--annotations", str(args.annotations)])
+    if args.images_dir:
+        cmd.extend(["--images-dir", str(args.images_dir)])
+    if args.out_split:
+        cmd.extend(["--out-split", str(args.out_split)])
+    if args.min_kps is not None:
+        cmd.extend(["--min-kps", str(int(args.min_kps))])
+    if args.max_images is not None:
+        cmd.extend(["--max-images", str(int(args.max_images))])
+    if bool(args.link_images):
+        cmd.append("--link-images")
+    if args.category_id is not None:
+        cmd.extend(["--category-id", str(int(args.category_id))])
+    if args.category_name:
+        cmd.extend(["--category-name", str(args.category_name)])
+    if args.class_id is not None:
+        cmd.extend(["--class-id", str(int(args.class_id))])
+    if args.cvat_images_dir:
+        cmd.extend(["--cvat-images-dir", str(args.cvat_images_dir)])
+
+    out = _subprocess_or_die(cmd)
+    if out:
+        print(out, end="" if out.endswith("\n") else "\n")
+    return 0
+
+
 def _eval_keypoints(args: argparse.Namespace) -> int:
     cmd = [
         sys.executable,
@@ -1644,6 +1694,37 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     p_pi.add_argument("--html", default="reports/predict_images.html", help="Optional HTML report output path.")
     p_pi.add_argument("--title", default="YOLOZU predict-images report", help="HTML title.")
     p_pi.set_defaults(_fn=_predict_images)
+
+    p_pkd = sub.add_parser(
+        "prepare-keypoints-dataset",
+        help="Prepare keypoints dataset in one command (auto-detect YOLO Pose or COCO keypoints).",
+    )
+    p_pkd.add_argument("--source", required=True, help="Source path (YOLO Pose root or COCO root).")
+    p_pkd.add_argument("--out", required=True, help="Output dataset root.")
+    p_pkd.add_argument(
+        "--format",
+        default="auto",
+        help="Input format (supported: auto, yolo_pose, coco, cvat_xml; use --list-formats for matrix).",
+    )
+    p_pkd.add_argument(
+        "--list-formats",
+        action="store_true",
+        help="Print supported/unsupported formats and conversion routes.",
+    )
+    p_pkd.add_argument("--split", default=None, help="Split name for YOLO Pose mode (default: auto-detect).")
+    p_pkd.add_argument("--num-keypoints", type=int, default=None, help="Optional num_keypoints metadata (YOLO Pose mode).")
+    p_pkd.add_argument("--keypoint-names", default=None, help="Optional comma-separated keypoint names (YOLO Pose mode).")
+    p_pkd.add_argument("--annotations", default="annotations/person_keypoints_val2017.json", help="COCO mode annotations path.")
+    p_pkd.add_argument("--images-dir", default="val2017", help="COCO mode images dir under source root.")
+    p_pkd.add_argument("--out-split", default="val2017", help="COCO mode output split (default: val2017).")
+    p_pkd.add_argument("--min-kps", type=int, default=1, help="COCO mode minimum labeled keypoints (default: 1).")
+    p_pkd.add_argument("--max-images", type=int, default=None, help="COCO mode optional image cap.")
+    p_pkd.add_argument("--link-images", action="store_true", help="COCO mode: symlink images into output.")
+    p_pkd.add_argument("--category-id", type=int, default=None, help="COCO mode target category id.")
+    p_pkd.add_argument("--category-name", default=None, help="COCO mode target category name.")
+    p_pkd.add_argument("--class-id", type=int, default=0, help="COCO mode class_id to emit (default: 0).")
+    p_pkd.add_argument("--cvat-images-dir", default=None, help="CVAT XML mode images root override.")
+    p_pkd.set_defaults(_fn=_prepare_keypoints_dataset)
 
     p_kp = sub.add_parser("eval-keypoints", help="Evaluate keypoint predictions (PCK + optional OKS mAP) and write a report.")
     p_kp.add_argument("--dataset", required=True, help="YOLO-format dataset root (images/ + labels/).")
