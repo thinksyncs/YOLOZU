@@ -20,7 +20,7 @@ Key conventions used across docs in this repo:
 
 Practical entry points (``real model'' path):
 \begin{itemize}
-  \item Training scaffold: \cmd{python3 rtdetr_pose/tools/train_minimal.py ...} (writes metrics and optional run artifacts).
+  \item Training scaffold: \cmd{python3 -m rtdetr_pose.train_minimal ...} (writes metrics and optional run artifacts).
   \item Export predictions: \cmd{python3 tools/export_predictions.py --adapter rtdetr_pose ... --wrap}
   \item No-torch path: use the \cmd{precomputed} adapter with a schema-valid \path{predictions.json}.
 \end{itemize}

@@ -44,6 +44,11 @@ Run-contract essentials (codified in the docs and implemented in the trainer):
     \path{runs/<run\_id>/checkpoints/last.pt}.
 \end{itemize}
 
+\noindent\textbf{Note (low-level trainer):} When invoking \cmd{python3 -m rtdetr_pose.train_minimal} directly,
+\cmd{--run-id} implies run-contract mode and requires \cmd{--config} (a YAML/JSON file such as
+\path{configs/examples/train_contract.yaml}). For quick smoke runs without the run contract,
+use \cmd{--run-dir <path>} and set \cmd{--onnx-out <path>} explicitly when needed.
+
 \section{Config resolution and strictness}
 The training entrypoint reads YAML/JSON via \cmd{--config}, then applies explicit CLI flags.
 Priority is:
