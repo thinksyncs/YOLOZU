@@ -18,6 +18,30 @@ Key conventions used across docs in this repo:
   \item Depth \cmd{z} uses the dataset's length unit (YOLOZU does not convert mm\,$\leftrightarrow$\,m).
 \end{itemize}
 
+Depth integration modes in the scaffold trainer:
+\begin{itemize}
+  \item \cmd{none}: depth disabled (compatibility default).
+  \item \cmd{sidecar}: depth is read from sidecar metadata (\cmd{depth\_path}/\cmd{depth}) and tracked via \cmd{depth\_valid}.
+  \item \cmd{fuse\_mid}: depth is fused after projector (outside backbone \([P3,P4,P5]\) swap boundary).
+\end{itemize}
+
+Metric safety rule:
+\begin{itemize}
+  \item Use \cmd{--depth-unit metric} when absolute depth costs are intended.
+  \item For \cmd{unspecified}/\cmd{relative}, absolute depth matcher terms are disabled for safety.
+\end{itemize}
+
+Example:
+\begin{lstlisting}[language=bash]
+python3 rtdetr_pose/tools/train_minimal.py \
+  --dataset-root data/coco128 \
+  --config rtdetr_pose/configs/base.json \
+  --use-matcher \
+  --depth-mode sidecar \
+  --depth-unit metric \
+  --depth-scale 1.0
+\end{lstlisting}
+
 Practical entry points (``real model'' path):
 \begin{itemize}
   \item Training scaffold: \cmd{python3 -m rtdetr_pose.train_minimal ...} (writes metrics and optional run artifacts).

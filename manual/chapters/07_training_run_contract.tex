@@ -178,6 +178,22 @@ Frequently edited defaults:
 A typical smoke entry point is exposed as a script under \path{tools/}.
 The exact command may change; search for \path{smoke} scripts in \path{tools/}.
 
+\section{Depth mode in training (scaffold)}
+The trainer supports optional depth integration with a safe default:
+\begin{itemize}
+  \item \cmd{--depth-mode none} (default): baseline path, depth disabled.
+  \item \cmd{--depth-mode sidecar}: reads per-image depth sidecars (\cmd{depth\_path}/\cmd{depth}) and propagates \cmd{depth\_valid}.
+  \item \cmd{--depth-mode fuse\_mid}: applies lightweight depth fusion after projector (outside the backbone boundary).
+\end{itemize}
+
+Safety knobs:
+\begin{itemize}
+  \item \cmd{--depth-unit \{unspecified,relative,metric\}} (default: \cmd{unspecified}).
+  \item Absolute depth matcher costs are allowed only in metric mode; non-metric modes safety-disable \cmd{cost\_z}/\cmd{cost\_t}.
+  \item \cmd{--depth-scale} applies a scalar to sidecar depth values.
+  \item \cmd{--depth-dropout} controls modality dropout probability for \cmd{fuse\_mid} training.
+\end{itemize}
+
 \section{Contracted run example}
 \begin{lstlisting}[language=bash]
 yolozu train configs/examples/train_contract.yaml --run-id exp01

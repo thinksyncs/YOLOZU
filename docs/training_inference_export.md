@@ -91,6 +91,32 @@ Common options:
 - --metrics-jsonl reports/train_metrics.jsonl
 - --metrics-csv reports/train_metrics.csv
 
+### Depth mode (none / sidecar / fuse_mid)
+
+`rtdetr_pose/tools/train_minimal.py` supports optional depth integration while preserving the backbone swap boundary (`[P3,P4,P5]`):
+
+- `--depth-mode none` (default): no depth path; baseline-compatible behavior.
+- `--depth-mode sidecar`: ingest sidecar depth (`depth_path` / `depth`) and propagate per-image `depth_valid`.
+- `--depth-mode fuse_mid`: apply lightweight depth fusion after projector (outside backbone), with optional `--depth-dropout` modality dropout.
+
+Safety and unit handling:
+
+- `--depth-unit` controls whether absolute-depth constraints are allowed (`unspecified|relative|metric`, default `unspecified`).
+- In non-metric modes, absolute-depth matcher costs are disabled for safety (`cost_z`, `cost_t`).
+- `--depth-scale` applies scaling to sidecar depth values before fusion/consumption.
+
+Example (mixed sidecar depth ingestion):
+
+```bash
+python3 rtdetr_pose/tools/train_minimal.py \
+  --dataset-root data/coco128 \
+  --config rtdetr_pose/configs/base.json \
+  --use-matcher \
+  --depth-mode sidecar \
+  --depth-unit metric \
+  --depth-scale 1.0
+```
+
 ### Config source-of-truth and key mapping
 
 `rtdetr_pose/tools/train_minimal.py` reads YAML/JSON via `--config`, then applies explicit CLI flags on top.

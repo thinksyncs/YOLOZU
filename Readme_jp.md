@@ -110,6 +110,12 @@ yolozu validate dataset /path/to/dataset --strict
 python3 tools/yolozu.py prepare-keypoints-dataset --list-formats --source . --out .
 ```
 
+- 最小CVAT XMLスモークテスト:
+
+```bash
+python3 -m pytest -q tests/test_prepare_keypoints_dataset_cvat_xml.py
+```
+
 詳細な復旧手順: [`docs/cvat_keypoints_recovery.md`](docs/cvat_keypoints_recovery.md)
 
 ---
@@ -180,6 +186,20 @@ yolozu train configs/examples/train_contract.yaml --run-id exp01 --dry-run
 - フォトメトリックAug（`--hsv-*`, `--gray-prob`, `--gaussian-noise-*`, `--blur-*`）  
   ※実画像を使う場合は `--real-images` を併用（スキャフォールドはデフォルトで合成画像）。
 - `torch.compile`（実験的）: `--torch-compile`（失敗時はデフォルトでfallback）
+
+### Depthモード（RT-DETR pose 学習スキャフォールド）
+
+`rtdetr_pose/tools/train_minimal.py` では、backbone交換境界（`[P3,P4,P5]`）を維持したまま深度を段階的に有効化できます。
+
+- `--depth-mode none`（既定）: 深度を使わない互換パス
+- `--depth-mode sidecar`: `depth_path` / `depth` のサイドカー深度を読み込み、`depth_valid` を付与
+- `--depth-mode fuse_mid`: サイドカー深度を projector 後に軽量融合（backbone外）、`--depth-dropout` で modality dropout 可能
+
+安全動作:
+
+- `--depth-unit` は `unspecified|relative|metric`（既定: `unspecified`）
+- 絶対深度コスト（`cost_z` / `cost_t`）は `metric` のときのみ有効化
+- `--depth-scale` でサイドカー深度のスケール補正を適用
 
 Run Contract仕様: [`docs/run_contract.md`](docs/run_contract.md)
 

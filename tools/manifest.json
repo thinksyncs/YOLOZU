@@ -164,6 +164,10 @@
         {
           "description": "Auto-detect and prepare keypoints dataset from CVAT export.",
           "command": "python3 tools/prepare_keypoints_dataset.py --source /path/to/export --format auto --out data/keypoints_dataset"
+        },
+        {
+          "description": "Directly prepare keypoints dataset from CVAT XML export.",
+          "command": "python3 tools/prepare_keypoints_dataset.py --source /path/to/cvat_export --format cvat_xml --out data/keypoints_dataset"
         }
       ],
       "docs": ["docs/cvat_keypoints_recovery.md"]
@@ -538,7 +542,7 @@
       "id": "yolozu",
       "entrypoint": "tools/yolozu.py",
       "runner": "python3",
-      "summary": "Unified CLI: doctor/import + export (dummy/torch/onnxrt/trt) + predict-images (folder→JSON+overlays+HTML) + eval-instance-seg + long-tail calibrate/eval + sweep wrapper + fingerprinted caching.",
+      "summary": "Unified CLI: doctor/import + export (dummy/torch/onnxrt/trt) + predict-images (folder→JSON+overlays+HTML) + eval-instance-seg + long-tail calibrate/eval + sweep wrapper + fingerprinted caching. Training docs cover depth-mode operation in the RT-DETR pose scaffold (none/sidecar/fuse_mid with safety gating).",
       "tags": ["cli", "predictions", "diagnostics", "report", "sweep", "long_tail", "import"],
       "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
       "contracts": { "produces": ["predictions_json"] },

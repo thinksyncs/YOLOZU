@@ -21,6 +21,7 @@ Keypoints dataset onboarding is available as a one-command path:
 Supported direct keypoints inputs: `auto`, `yolo_pose`, `coco`, `cvat_xml`.
 Not direct (convert first): `detectron2_dataset_dict`, `labelme_keypoints`.
 Format matrix/help: `python3 tools/yolozu.py prepare-keypoints-dataset --list-formats --source . --out .`
+Minimal CVAT XML smoke test: `python3 -m pytest -q tests/test_prepare_keypoints_dataset_cvat_xml.py`
 
 Recommended deployment path (canonical): PyTorch → ONNX → TensorRT (TRT).
 
@@ -81,6 +82,7 @@ Docs index (start here): [`docs/README.md`](docs/README.md)
 - Semantic seg: dataset prep helpers + `tools/eval_segmentation.py` (mIoU/per-class IoU/ignore_index + optional HTML overlays).
 - Instance seg: `tools/eval_instance_segmentation.py` (mask mAP from per-instance binary PNG masks + optional HTML overlays).
 - Training pipeline: RT-DETR pose trainer with run contract, metrics output, ONNX export, and optional SDFT-style self-distillation.
+- Depth-aware training path (optional): `--depth-mode {none,sidecar,fuse_mid}` with sidecar depth validity gating and safe default `none`.
 
 ## Instance segmentation (PNG masks)
 
@@ -172,6 +174,20 @@ Start here: [docs/training_inference_export.md](docs/training_inference_export.m
 Recent compatibility additions:
 - import/doctor auto-detection: `yolozu import ... --from auto`, `yolozu doctor import --config-from auto|--dataset-from auto`.
 - train shorthand preview: `yolozu train --import auto --cfg <args_or_config>` writes resolved canonical `TrainConfig`.
+
+### Depth mode (RT-DETR pose scaffold)
+
+`rtdetr_pose/tools/train_minimal.py` supports optional depth integration without breaking the backbone swap boundary (`[P3,P4,P5]`):
+
+- `--depth-mode none` (default): no depth path, baseline behavior.
+- `--depth-mode sidecar`: read per-image sidecar depth (`depth_path`/`depth`) and propagate `depth_valid`.
+- `--depth-mode fuse_mid`: sidecar + lightweight mid-fusion after projector (outside backbone boundary), with `--depth-dropout` for modality dropout.
+
+Safety defaults:
+
+- `--depth-unit` controls absolute-depth safety (`unspecified|relative|metric`, default `unspecified`).
+- Absolute depth matcher costs are only active in metric mode; non-metric modes disable `cost_z`/`cost_t` safety-sensitively.
+- `--depth-scale` applies unit scaling to sidecar depth values before use.
 
 ## Pros / Operational Notes (project-level)
 
