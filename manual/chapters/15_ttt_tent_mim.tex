@@ -17,8 +17,6 @@ Authoritative references:
   \item \path{docs/ttt_protocol.md}
   \item \path{docs/ttt_integration_plan.md}
   \item \path{docs/mim_inference.md}
-  \item \path{docs/eata_design_spec.md}
-  \item \path{docs/sar_design_spec.md}
 \end{itemize}
 
 TTT updates weights \emph{in memory} using unlabeled test data before (or during) inference \cite{sun2020ttt,wang2021tent}.
@@ -126,6 +124,139 @@ To keep comparisons consistent, phase-1 CoTTA should record at least:
   \item \cmd{ttt.cotta.aggregation} (initial default: confidence-weighted mean)
   \item \cmd{ttt.cotta.restore_prob} and \cmd{ttt.cotta.restore_interval}
   \item \cmd{ttt.update_filter} (must cover norm-only, lora-only, and combined safe subset)
+  \item guardrails: \cmd{ttt.max_grad_norm}, \cmd{ttt.max_update_norm}, \cmd{ttt.max_total_update_norm}, \cmd{ttt.max_loss_ratio}
+\end{itemize}
+
+\section{EATA: operational design for YOLOZU (phase 1)}
+This section defines a production-safe phase-1 EATA scope for detection and pose in \yolozu{}.
+The goal is to reduce unstable updates by (1) adapting only on informative samples,
+(2) limiting update scope to safe parameter subsets, and (3) adding anti-forgetting regularization.
+
+\subsection{Update scope (safe-by-default)}
+Allowed trainable targets:
+\begin{itemize}
+  \item normalization affine parameters (LN/GN/BN affine where used),
+  \item LoRA parameters,
+  \item optional detection/pose head subset (explicit allowlist only; opt-in).
+\end{itemize}
+
+Explicitly disallowed in phase 1:
+\begin{itemize}
+  \item full backbone updates,
+  \item unrestricted full-model adaptation.
+\end{itemize}
+
+Phase-1 presets should start with \cmd{norm_only} or \cmd{lora_norm_only} and keep head updates opt-in.
+
+\subsection{Active sample selection (detection/pose aware)}
+EATA adaptation steps consume only selected samples from the incoming stream.
+For each image, compute selection features from prediction outputs (examples):
+\begin{itemize}
+  \item detection confidence aggregate (e.g., \cmd{mean_topk_conf}),
+  \item detection entropy aggregate (e.g., \cmd{mean_topk_entropy}),
+  \item pose confidence aggregate (e.g., \cmd{mean_kpt_conf} when keypoints exist),
+  \item optional agreement score across light augmentation branches (phase-1 optional).
+\end{itemize}
+
+Phase-1 selection rule (conservative default): select a sample only when all are satisfied:
+\begin{itemize}
+  \item confidence lower bound: \cmd{conf \ge conf_min},
+  \item entropy is within band: \cmd{entropy_min \le entropy \le entropy_max},
+  \item valid detection count floor: \cmd{num_valid \ge min_valid_dets}.
+\end{itemize}
+
+\subsection{Anti-forgetting regularization (phase 1)}
+Phase-1 regularization anchors online updates to the pre-adaptation snapshot.
+Use a parameter-anchor penalty on the same trainable subset:
+\[
+L_{anchor} = \sum_i \lambda_i \left\| \theta_i - \theta_i^{(0)} \right\|_2^2.
+\]
+
+Total phase-1 objective is:
+\[
+L = L_{adapt} + \lambda_{anchor} L_{anchor},
+\]
+where $L_{adapt}$ is an entropy-based adaptation objective over selected samples.
+
+\subsection{Safety boundaries and guardrails}
+Reuse the standard TTT guardrails (\cmd{max\_grad\_norm}, \cmd{max\_update\_norm},
+\cmd{max\_total\_update\_norm}, \cmd{max\_loss\_ratio}) and rollback-on-stop behavior.
+
+Additional EATA-specific safety checks:
+\begin{itemize}
+  \item minimum selected-sample ratio per step (\cmd{selected_ratio_min}),
+  \item skip-step when the selected set is empty,
+  \item max consecutive skipped steps (\cmd{max_skip_streak}) to trigger early stop with warning.
+\end{itemize}
+
+\subsection{Minimum configuration knobs (phase 1)}
+Phase-1 EATA should record at least:
+\begin{itemize}
+  \item \cmd{ttt.method=eata}
+  \item \cmd{ttt.update_filter} (\cmd{norm_only}, \cmd{lora_only}, \cmd{lora_norm_only}, optional head allowlist)
+  \item thresholds: \cmd{ttt.eata.conf_min}, \cmd{ttt.eata.entropy_min}, \cmd{ttt.eata.entropy_max}, \cmd{ttt.eata.min_valid_dets}
+  \item anchor: \cmd{ttt.eata.anchor_lambda}
+  \item selection safety: \cmd{ttt.eata.selected_ratio_min}, \cmd{ttt.eata.max_skip_streak}
+  \item guardrails: \cmd{ttt.max_grad_norm}, \cmd{ttt.max_update_norm}, \cmd{ttt.max_total_update_norm}, \cmd{ttt.max_loss_ratio}
+\end{itemize}
+
+\section{SAR: operational design for YOLOZU (phase 1)}
+This section defines a production-safe phase-1 SAR rollout scope for \yolozu{}.
+The goal is to improve robustness under challenging distribution shifts by introducing sharpness-aware entropy minimization
+with controlled update scope.
+
+\subsection{Update scope (LoRA-only by default)}
+Allowed update targets:
+\begin{itemize}
+  \item LoRA parameters only (default).
+  \item optional norm affine subset in controlled experiments (not default).
+\end{itemize}
+
+Explicitly disallowed in phase 1:
+\begin{itemize}
+  \item full-backbone sharpness-aware updates,
+  \item unrestricted full-model SAM-style optimization.
+\end{itemize}
+
+\subsection{Optimization behavior (sharpness-aware entropy)}
+Phase-1 SAR uses a two-stage sharpness-aware update over the selected trainable parameters:
+\begin{enumerate}
+  \item compute gradient on the entropy objective,
+  \item perturb weights along a normalized gradient direction,
+  \item compute a second loss at the perturbed point,
+  \item apply the optimizer update on the original weights.
+\end{enumerate}
+
+Conceptually:
+\[
+\min_{\theta} \max_{\left\| \epsilon \right\| \leq \rho} L_{entropy}(\theta + \epsilon),
+\]
+with $\rho$ bounded conservatively for phase 1.
+
+\subsection{Normalization policy guidance}
+If SAR experiments require normalization updates:
+\begin{itemize}
+  \item prefer GN/LN-first configurations,
+  \item avoid BN-stat-heavy behavior in tiny/unstable batches,
+  \item keep BN running-stat side effects monitored and rollback-capable.
+\end{itemize}
+Default rollout remains LoRA-only.
+
+\subsection{Safety boundaries and expected costs}
+Expected cost profile:
+approximately $\sim$2x forward/backward cost per adaptation step versus single-step entropy update,
+plus extra memory traffic due to perturb-and-restore.
+
+Required safeguards:
+strict gradient/update caps, immediate rollback on guardrail breach, explicit stop-reason logging,
+and conservative default \cmd{steps=1} and \cmd{max_batches=1}.
+
+\subsection{Minimum configuration knobs (phase 1)}
+Phase-1 SAR should record at least:
+\begin{itemize}
+  \item \cmd{ttt.method=sar}
+  \item \cmd{ttt.update_filter} defaulting to \cmd{lora_only}
+  \item \cmd{ttt.sar.rho}, \cmd{ttt.sar.adaptive}, \cmd{ttt.sar.first_step_scale}
   \item guardrails: \cmd{ttt.max_grad_norm}, \cmd{ttt.max_update_norm}, \cmd{ttt.max_total_update_norm}, \cmd{ttt.max_loss_ratio}
 \end{itemize}
 
