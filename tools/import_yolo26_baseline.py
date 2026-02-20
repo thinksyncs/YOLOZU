@@ -157,6 +157,8 @@ def main(argv=None):
         suite_cmd.extend(["--split", args.split])
     if args.dry_run:
         suite_cmd.append("--dry-run")
+        if args.protocol != "none":
+            suite_cmd.append("--allow-protocol-mismatches")
     if args.strict:
         suite_cmd.append("--strict")
 

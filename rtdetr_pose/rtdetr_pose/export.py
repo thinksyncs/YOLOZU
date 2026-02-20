@@ -3,7 +3,7 @@ def export_onnx(
     dummy_input,
     output_path,
     *,
-    opset_version: int = 17,
+    opset_version: int = 18,
     input_name: str = "images",
     dynamic_hw: bool = False,
 ):

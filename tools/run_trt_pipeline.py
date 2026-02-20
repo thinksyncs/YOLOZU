@@ -410,6 +410,7 @@ def main(argv: list[str] | None = None) -> int:
                 cmd.extend(["--max-images", str(int(args.max_images))])
             if args.dry_run:
                 cmd.append("--dry-run")
+                cmd.append("--allow-protocol-mismatches")
             commands.append(shlex.join(cmd))
             _run(cmd)
 

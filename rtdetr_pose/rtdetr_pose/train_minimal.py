@@ -1015,7 +1015,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Optional ONNX export metadata JSON path (default: <onnx-out>.meta.json).",
     )
-    parser.add_argument("--onnx-opset", type=int, default=17, help="ONNX opset version (default: 17).")
+    parser.add_argument("--onnx-opset", type=int, default=18, help="ONNX opset version (default: 18).")
     parser.add_argument(
         "--onnx-dynamic-hw",
         action="store_true",

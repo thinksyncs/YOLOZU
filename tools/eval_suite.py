@@ -23,6 +23,11 @@ def _parse_args(argv):
         default=None,
         help="Apply canonical evaluation protocol presets (pins split/bbox_format).",
     )
+    parser.add_argument(
+        "--allow-protocol-mismatches",
+        action="store_true",
+        help="Do not fail the process on fixed-condition protocol mismatches (still recorded in output).",
+    )
     parser.add_argument("--dataset", default="data/coco128", help="YOLO-format COCO root (images/ + labels/).")
     parser.add_argument(
         "--split",
@@ -383,7 +388,7 @@ def main(argv=None):
             }
         )
 
-    if protocol and protocol_mismatches:
+    if protocol and protocol_mismatches and not args.allow_protocol_mismatches:
         joined = "\n".join(protocol_mismatches)
         raise SystemExit(f"fixed-condition protocol validation failed:\n{joined}")
 

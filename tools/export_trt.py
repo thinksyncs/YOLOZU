@@ -52,7 +52,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         default=None,
         help="Where to write ONNX export metadata JSON (default: <onnx>.meta.json).",
     )
-    p.add_argument("--opset", type=int, default=17, help="ONNX opset version (default: 17).")
+    p.add_argument("--opset", type=int, default=18, help="ONNX opset version (default: 18).")
     p.add_argument("--input-name", default="images", help="ONNX input tensor name (default: images).")
     p.add_argument("--dynamic-hw", action="store_true", help="Export ONNX with dynamic height/width axes.")
 
