@@ -71,6 +71,8 @@ exported ONNX (+ meta)};
 \section{Python import dependency graph (internal)}
 The following graph is auto-extracted from Python \cmd{import} statements. It is intentionally restricted to internal modules and summarized at the package level to keep the PDF readable.
 
+Arrow semantics: an edge $A \to B$ means \textbf{$A$ imports $B$} (i.e., $A$ depends on $B$).
+
 \begin{figure}[h]
 \centering
 \input{figures/import_deps_packages.tikz}
