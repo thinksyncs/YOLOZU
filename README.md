@@ -7,13 +7,13 @@
 [![Python >=3.10](https://img.shields.io/badge/python-%3E%3D3.10-3776AB?logo=python&logoColor=white)](https://pypi.org/project/yolozu/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-Pronunciation: Yaoyorozu (yorozu). Official ASCII name: YOLOZU.
+YOLOZU supports different models and datasets through a unified format.
 
-YOLOZU is an Apache-2.0-only, **contract-first evaluation + tooling harness** for:
-- real-time monocular RGB **detection**
-- monocular **depth + 6DoF pose** heads (RT-DETR-based training stack)
-- **semantic segmentation** utilities (dataset prep + mIoU evaluation)
-- **instance segmentation** utilities (PNG-mask contract + mask mAP evaluation)
+You can easily compare models across frameworks,
+from YOLO, Detectron2 and MMDetection to ONNX Runtime and TensorRT.
+
+You can train and evaluate models on the same datasets
+without changing the data format, across all platforms.
 
 Recommended deployment path (canonical): PyTorch → ONNX → TensorRT (TRT).
 
@@ -43,7 +43,7 @@ python3 -m pip install 'yolozu[full]'
 
 Docs index (start here): [`docs/README.md`](docs/README.md)
 
-## Why YOLOZU (what’s “sellable”)
+## Why YOLOZU (what’s “
 
 - **Bring-your-own inference + contract-first evaluation**: run inference in PyTorch / ONNXRuntime / TensorRT / C++ / Rust
   → export the same `predictions.json` → compare apples-to-apples.
