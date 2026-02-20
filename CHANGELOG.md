@@ -13,10 +13,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Trainer now emits FRACAL stats from training records via `--fracal-stats-out`; with `--run-contract`, default output is `runs/<run-id>/reports/fracal_stats_bbox.json`.
 - Added alternative calibration methods in `yolozu calibrate`: Logit Adjustment (`--method la --tau`) and NorCal (`--method norcal --gamma`) for side-by-side comparison with FRACAL.
 - Added temperature scaling in `yolozu calibrate` (`--method temperature --temperature`, optional `--fit-temperature` with `--temperature-grid`).
+- RT-DETR pose scaffold now supports depth integration modes `--depth-mode {none,sidecar,fuse_mid}` with safe default `none`.
+- Added sidecar depth ingestion (`depth_path`/`depth`) with per-image `depth_valid` gating and NaN/Inf-safe fallback.
+- Added projector-post mid-fusion path (`fuse_mid`) with optional modality dropout via `--depth-dropout`, while preserving the backbone `[P3,P4,P5]` swap boundary.
+- Added depth safety controls: `--depth-unit {unspecified,relative,metric}` and `--depth-scale`; absolute-depth matcher terms are disabled outside metric mode.
+- Documented depth-mode operation and safety semantics across manifest/readme/docs/manual surfaces.
 
 ### Tests
 - Added regression coverage for FRACAL stats reuse and instance-segmentation calibration behavior.
 - Added run-contract default-path coverage for FRACAL stats artifact output.
+- Added depth-mode acceptance tests for no-depth no-op, mixed depth/no-depth batch collation, and `fuse_mid` forward stability.
 
 ## [0.1.2] - 2026-02-17
 
