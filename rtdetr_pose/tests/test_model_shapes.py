@@ -49,6 +49,8 @@ class TestModelShapes(unittest.TestCase):
             stem_channels=16,
             backbone_channels=[32, 64, 128],
             stage_blocks=[1, 1, 1],
+            depth_mode="none",
+            depth_dropout=0.0,
         )
         model = build_model(cfg)
         x = torch.zeros(2, 3, 64, 64)

@@ -235,6 +235,8 @@ class HybridEncoder(nn.Module):
         dim_feedforward=None,
         use_level_embed=True,
         activation="silu",
+        depth_mode="none",
+        depth_dropout=0.0,
     ):
         super().__init__()
         self.projector = BackboneProjector(in_channels=in_channels, d_model=hidden_dim)
@@ -244,6 +246,15 @@ class HybridEncoder(nn.Module):
             activation=activation,
         )
         self.num_layers = num_layers
+        self.depth_mode = str(depth_mode or "none").strip().lower()
+        self.depth_dropout = max(0.0, min(1.0, float(depth_dropout)))
+        self.depth_proj = None
+        self.depth_gate = None
+        if self.depth_mode == "fuse_mid":
+            self.depth_proj = nn.ModuleList(
+                [ConvNormAct(1, hidden_dim, kernel_size=3, padding=1, activation=activation) for _ in range(3)]
+            )
+            self.depth_gate = nn.ModuleList([nn.Conv2d(hidden_dim, 1, kernel_size=1) for _ in range(3)])
         self.use_level_embed = bool(use_level_embed)
         self.level_embed = None
         if self.use_level_embed:
@@ -261,8 +272,33 @@ class HybridEncoder(nn.Module):
         else:
             self.encoder = None
 
-    def forward(self, features, pos_embed):
+    def forward(self, features, pos_embed, depth=None, depth_valid=None):
         features = self.projector(features)
+        if self.depth_mode == "fuse_mid" and self.depth_proj is not None and self.depth_gate is not None:
+            if depth is not None and isinstance(depth, torch.Tensor) and depth.ndim == 4 and int(depth.shape[1]) == 1:
+                depth_tensor = torch.nan_to_num(depth, nan=0.0, posinf=0.0, neginf=0.0)
+                finite_valid = torch.isfinite(depth).all(dim=(1, 2, 3))
+                if depth_valid is not None and isinstance(depth_valid, torch.Tensor):
+                    valid_mask = finite_valid & depth_valid.to(device=depth.device, dtype=torch.bool)
+                else:
+                    valid_mask = finite_valid
+                if self.training and self.depth_dropout > 0.0:
+                    keep = torch.rand((depth.shape[0],), device=depth.device) >= float(self.depth_dropout)
+                    valid_mask = valid_mask & keep
+
+                fused_features = []
+                for idx, feat in enumerate(features):
+                    dep = F.interpolate(
+                        depth_tensor,
+                        size=feat.shape[-2:],
+                        mode="bilinear",
+                        align_corners=False,
+                    )
+                    dep_feat = self.depth_proj[idx](dep)
+                    gate = torch.sigmoid(self.depth_gate[idx](dep_feat))
+                    gate = gate * valid_mask.view(-1, 1, 1, 1).to(dtype=gate.dtype)
+                    fused_features.append(feat + gate * dep_feat)
+                features = fused_features
         features = self.fpn(features)
         memories = []
         pos_list = []
@@ -432,6 +468,8 @@ class RTDETRPose(nn.Module):
         use_level_embed=True,
         enable_mim=False,
         mim_geom_channels=2,
+        depth_mode="none",
+        depth_dropout=0.0,
         backbone_activation="silu",
         head_activation="silu",
     ):
@@ -454,6 +492,8 @@ class RTDETRPose(nn.Module):
             dim_feedforward=encoder_dim_feedforward,
             use_level_embed=use_level_embed,
             activation=head_activation,
+            depth_mode=depth_mode,
+            depth_dropout=depth_dropout,
         )
         self.decoder = RTDETRDecoder(
             hidden_dim=hidden_dim,
@@ -481,7 +521,7 @@ class RTDETRPose(nn.Module):
             )
             self.decoder_mim = DecoderMIM(hidden_dim=hidden_dim, activation=head_activation)
 
-    def forward(self, x, geom_input=None, feature_mask=None, return_mim=False):
+    def forward(self, x, geom_input=None, feature_mask=None, return_mim=False, depth=None, depth_valid=None):
         """Forward pass with optional masked reconstruction branch.
         
         Args:
@@ -502,7 +542,7 @@ class RTDETRPose(nn.Module):
             _, _, height, width = feat.shape
             pos = self.position(height, width, feat.device, feat.dtype).repeat(batch, 1, 1)
             pos_embed.append(pos)
-        memory, encoder_feats = self.encoder(feats, pos_embed)
+        memory, encoder_feats = self.encoder(feats, pos_embed, depth=depth, depth_valid=depth_valid)
         queries = self.query_embed.weight.unsqueeze(0).repeat(batch, 1, 1)
         tgt = torch.zeros_like(queries) + queries
         dec = self.decoder(tgt, memory)

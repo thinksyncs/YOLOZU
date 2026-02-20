@@ -142,6 +142,8 @@ def build_model(cfg: ModelConfig) -> RTDETRPose:
         num_keypoints=int(getattr(cfg, "num_keypoints", 0) or 0),
         enable_mim=bool(getattr(cfg, "enable_mim", False)),
         mim_geom_channels=int(getattr(cfg, "mim_geom_channels", 2) or 2),
+        depth_mode=str(getattr(cfg, "depth_mode", "none") or "none"),
+        depth_dropout=float(getattr(cfg, "depth_dropout", 0.0) or 0.0),
         hidden_dim=d_model,
         num_queries=int(getattr(cfg, "num_queries", 300)),
         use_uncertainty=bool(getattr(cfg, "use_uncertainty", False)),

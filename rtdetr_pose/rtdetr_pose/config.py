@@ -18,6 +18,8 @@ class ModelConfig:
     num_keypoints: int = 0
     enable_mim: bool = False
     mim_geom_channels: int = 2
+    depth_mode: str = "none"
+    depth_dropout: float = 0.0
     hidden_dim: int = 256
     num_queries: int = 300
     use_uncertainty: bool = False

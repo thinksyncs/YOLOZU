@@ -728,6 +728,30 @@ def build_parser() -> argparse.ArgumentParser:
         help="Allow loading mask/depth arrays from paths (.json/.npy) for z-from-dobj; default keeps lazy paths",
     )
     parser.add_argument(
+        "--depth-mode",
+        choices=("none", "sidecar", "fuse_mid"),
+        default="none",
+        help="Depth handling mode: none (default), sidecar (read depth_path metadata), or fuse_mid (mid-fusion with depth sidecar).",
+    )
+    parser.add_argument(
+        "--depth-unit",
+        choices=("unspecified", "relative", "metric"),
+        default="unspecified",
+        help="Depth unit semantics for safety gating (default: unspecified).",
+    )
+    parser.add_argument(
+        "--depth-scale",
+        type=float,
+        default=1.0,
+        help="Scale factor applied to sidecar depth values (default: 1.0).",
+    )
+    parser.add_argument(
+        "--depth-dropout",
+        type=float,
+        default=0.0,
+        help="Modality dropout probability for depth when --depth-mode=fuse_mid (default: 0.0).",
+    )
+    parser.add_argument(
         "--enable-mim",
         action=argparse.BooleanOptionalAction,
         default=False,
@@ -2239,6 +2263,9 @@ class ManifestDataset(Dataset):
         synthetic_pose=False,
         z_from_dobj=False,
         load_aux=False,
+        depth_mode="none",
+        depth_unit="unspecified",
+        depth_scale=1.0,
         real_images=False,
         multiscale=False,
         scale_min=1.0,
@@ -2306,6 +2333,9 @@ class ManifestDataset(Dataset):
         self.synthetic_pose = bool(synthetic_pose)
         self.z_from_dobj = bool(z_from_dobj)
         self.load_aux = bool(load_aux)
+        self.depth_mode = str(depth_mode or "none").strip().lower()
+        self.depth_unit = str(depth_unit or "unspecified").strip().lower()
+        self.depth_scale = float(depth_scale)
         self.mim_mask_prob = float(mim_mask_prob)
         self.mim_mask_size = int(mim_mask_size)
         self.mim_mask_value = float(mim_mask_value)
@@ -2522,6 +2552,86 @@ class ManifestDataset(Dataset):
                 return loaded
         return None
 
+    def _load_depth_sidecar(self, value, target_size: int, flip: bool):
+        if self.depth_mode == "none" or value is None:
+            return None, False
+
+        depth = None
+        if isinstance(value, torch.Tensor):
+            depth = value.detach().to(dtype=torch.float32, device="cpu")
+        elif isinstance(value, (list, tuple)):
+            try:
+                depth = torch.tensor(value, dtype=torch.float32)
+            except Exception:
+                depth = None
+        elif isinstance(value, str) and value:
+            path = Path(value)
+            if not path.is_absolute():
+                cand = (workspace_root / path).resolve()
+                if cand.exists():
+                    path = cand
+                else:
+                    cand2 = (workspace_root.parent / path).resolve()
+                    if cand2.exists():
+                        path = cand2
+            if path.exists():
+                suffix = path.suffix.lower()
+                if suffix == ".json":
+                    try:
+                        loaded = json.loads(path.read_text(encoding="utf-8"))
+                        depth = torch.tensor(loaded, dtype=torch.float32)
+                    except Exception:
+                        depth = None
+                elif suffix in (".npy", ".npz"):
+                    try:
+                        import numpy as np
+
+                        loaded = np.load(path, allow_pickle=False)
+                        if hasattr(loaded, "files"):
+                            if loaded.files:
+                                depth = torch.from_numpy(loaded[loaded.files[0]]).to(dtype=torch.float32)
+                        else:
+                            depth = torch.from_numpy(loaded).to(dtype=torch.float32)
+                    except Exception:
+                        depth = None
+                else:
+                    try:
+                        from PIL import Image
+                        import numpy as np
+
+                        arr = np.asarray(Image.open(path), dtype=np.float32)
+                        depth = torch.from_numpy(arr).to(dtype=torch.float32)
+                    except Exception:
+                        depth = None
+
+        if depth is None:
+            return None, False
+        if depth.ndim == 3:
+            if int(depth.shape[0]) in (1, 3, 4) and int(depth.shape[1]) > 4 and int(depth.shape[2]) > 4:
+                depth = depth[0]
+            else:
+                depth = depth[..., 0]
+        if depth.ndim != 2:
+            return None, False
+
+        depth = depth.contiguous()
+        if target_size > 0 and (int(depth.shape[0]) != int(target_size) or int(depth.shape[1]) != int(target_size)):
+            depth = torch.nn.functional.interpolate(
+                depth.unsqueeze(0).unsqueeze(0),
+                size=(int(target_size), int(target_size)),
+                mode="bilinear",
+                align_corners=False,
+            ).squeeze(0).squeeze(0)
+        if flip:
+            depth = torch.flip(depth, dims=(1,))
+
+        depth = depth * float(self.depth_scale)
+        finite_any = bool(torch.isfinite(depth).any().item())
+        depth = torch.nan_to_num(depth, nan=0.0, posinf=0.0, neginf=0.0)
+        positive_any = bool((depth > 0).any().item())
+        valid = bool(finite_any and positive_any)
+        return depth.unsqueeze(0), valid
+
     def __len__(self):
         return len(self.records)
 
@@ -2592,6 +2702,14 @@ class ManifestDataset(Dataset):
             if prob >= 1.0 or bool(torch.rand((), generator=gen) < prob):
                 image = image + torch.randn_like(image, generator=gen) * float(self.gaussian_noise_std)
                 image = torch.clamp(image, 0.0, 1.0)
+
+        depth_tensor = None
+        depth_valid = False
+        if self.depth_mode != "none":
+            depth_source = record.get("depth_path")
+            if depth_source is None:
+                depth_source = record.get("depth")
+            depth_tensor, depth_valid = self._load_depth_sidecar(depth_source, target_size=target_size, flip=flip)
 
         image_raw = None
         mim_mask_ratio = None
@@ -3027,11 +3145,15 @@ class ManifestDataset(Dataset):
                 **({"gt_D_obj": d_tensor} if d_tensor is not None else {}),
                 **({"K_gt": K_gt} if K_gt is not None else {}),
                 "image_hw": image_hw,
+                "depth_valid": torch.tensor(bool(depth_valid), dtype=torch.bool),
             }
             derpp_teacher = self._load_derpp_teacher(record.get(self.derpp_teacher_key))
             if derpp_teacher is not None:
                 targets["derpp_teacher"] = derpp_teacher
             out = {"image": image, "targets": targets}
+            if depth_tensor is not None:
+                out["depth"] = depth_tensor
+            out["depth_valid"] = bool(depth_valid)
             if image_raw is not None and mim_mask_ratio is not None:
                 out["image_raw"] = image_raw
                 out["mim_mask_ratio"] = float(mim_mask_ratio)
@@ -3058,6 +3180,10 @@ class ManifestDataset(Dataset):
         if derpp_teacher is not None:
             targets["derpp_teacher"] = derpp_teacher
         out = {"image": image, "targets": targets}
+        if depth_tensor is not None:
+            out["depth"] = depth_tensor
+        if self.depth_mode != "none":
+            out["depth_valid"] = bool(depth_valid)
         if image_raw is not None and mim_mask_ratio is not None:
             out["image_raw"] = image_raw
             out["mim_mask_ratio"] = float(mim_mask_ratio)
@@ -3119,6 +3245,22 @@ def collate(batch):
             except Exception:
                 ratios.append(0.0)
         extra["mim_mask_ratio"] = torch.tensor(ratios, dtype=torch.float32)
+    if any(("depth" in item) or ("depth_valid" in item) for item in batch):
+        depth_rows = []
+        depth_valid_rows = []
+        for item in batch:
+            depth_item = item.get("depth")
+            if isinstance(depth_item, torch.Tensor) and depth_item.ndim == 3 and int(depth_item.shape[0]) == 1:
+                depth_rows.append(depth_item.to(dtype=torch.float32))
+                try:
+                    depth_valid_rows.append(bool(item.get("depth_valid", True)))
+                except Exception:
+                    depth_valid_rows.append(True)
+            else:
+                depth_rows.append(torch.zeros((1, int(images.shape[-2]), int(images.shape[-1])), dtype=torch.float32))
+                depth_valid_rows.append(False)
+        extra["depth"] = torch.stack(depth_rows, dim=0)
+        extra["depth_valid"] = torch.tensor(depth_valid_rows, dtype=torch.bool)
 
     if not targets or "gt_labels" not in targets[0]:
         return images, targets
@@ -3163,6 +3305,16 @@ def collate(batch):
         if any(key in tgt for tgt in targets):
             padded[key] = _pad_field(targets, key, max_len, pad_value=pad_value, dtype=dtype)
 
+    if any("depth_valid" in tgt for tgt in targets):
+        depth_valid_list = []
+        for tgt in targets:
+            value = tgt.get("depth_valid")
+            if isinstance(value, torch.Tensor):
+                depth_valid_list.append(bool(value.to(dtype=torch.bool).item()))
+            else:
+                depth_valid_list.append(False)
+        padded["depth_valid"] = torch.tensor(depth_valid_list, dtype=torch.bool)
+
     out = {"per_sample": targets, "padded": padded, **extra}
     return images, out
 
@@ -3181,6 +3333,11 @@ def main(argv: list[str] | None = None) -> int:
         if torchao_quant in ("none", "off", "false", "0"):
             args.torchao_quant = "int4wo"
         args.lora_freeze_base = True
+
+    args.depth_mode = str(getattr(args, "depth_mode", "none") or "none").strip().lower()
+    args.depth_unit = str(getattr(args, "depth_unit", "unspecified") or "unspecified").strip().lower()
+    args.depth_scale = float(getattr(args, "depth_scale", 1.0) or 1.0)
+    args.depth_dropout = max(0.0, min(1.0, float(getattr(args, "depth_dropout", 0.0) or 0.0)))
 
     args, run_contract = apply_run_contract_defaults(args)
     args, run_dir = apply_run_dir_defaults(args)
@@ -3309,11 +3466,6 @@ def main(argv: list[str] | None = None) -> int:
         except Exception:
             out_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
 
-    if is_main and getattr(args, "run_meta_out", None):
-        out_path = Path(str(args.run_meta_out))
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_text(json.dumps(run_record, indent=2, sort_keys=True), encoding="utf-8")
-
     if args.dataset_root:
         dataset_root = Path(args.dataset_root)
     else:
@@ -3424,6 +3576,18 @@ def main(argv: list[str] | None = None) -> int:
             "dataset_stats "
             + " ".join(f"{key}={value}" for key, value in sorted(stats.items()))
         )
+        depth_mode = str(getattr(args, "depth_mode", "none") or "none").strip().lower()
+        depth_unit = str(getattr(args, "depth_unit", "unspecified") or "unspecified").strip().lower()
+        depth_used = bool(depth_mode != "none" and int(stats.get("depth", 0)) > 0)
+        run_record["depth_used"] = bool(depth_used)
+        run_record["depth_unit"] = depth_unit
+        run_record["depth_scale"] = float(getattr(args, "depth_scale", 1.0) or 1.0)
+        run_record["depth_mode"] = depth_mode
+
+    if is_main and getattr(args, "run_meta_out", None):
+        out_path = Path(str(args.run_meta_out))
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(json.dumps(run_record, indent=2, sort_keys=True), encoding="utf-8")
 
     if is_main and getattr(args, "fracal_stats_out", None):
         stats_path = Path(str(args.fracal_stats_out))
@@ -3483,6 +3647,9 @@ def main(argv: list[str] | None = None) -> int:
         synthetic_pose=args.synthetic_pose,
         z_from_dobj=args.z_from_dobj,
         load_aux=args.load_aux,
+        depth_mode=args.depth_mode,
+        depth_unit=args.depth_unit,
+        depth_scale=args.depth_scale,
         real_images=args.real_images,
         multiscale=args.multiscale,
         scale_min=args.scale_min,
@@ -3558,6 +3725,16 @@ def main(argv: list[str] | None = None) -> int:
                 model_cfg.mim_geom_channels = int(getattr(model_cfg, "mim_geom_channels", 2) or 2)
             except Exception:
                 pass
+        if getattr(model_cfg, "depth_mode", None) is not None:
+            try:
+                model_cfg.depth_mode = str(args.depth_mode)
+            except Exception:
+                pass
+        if getattr(model_cfg, "depth_dropout", None) is not None:
+            try:
+                model_cfg.depth_dropout = float(args.depth_dropout)
+            except Exception:
+                pass
         model = build_model(model_cfg)
     else:
         model = RTDETRPose(
@@ -3570,6 +3747,8 @@ def main(argv: list[str] | None = None) -> int:
             use_uncertainty=bool(args.use_uncertainty),
             enable_mim=bool(args.enable_mim),
             mim_geom_channels=2,
+            depth_mode=str(args.depth_mode),
+            depth_dropout=float(args.depth_dropout),
         )
 
     if loss_cfg is not None:
@@ -3582,6 +3761,22 @@ def main(argv: list[str] | None = None) -> int:
     else:
         losses_fn = Losses(task_aligner=args.task_aligner)
     base_loss_weights = dict(getattr(losses_fn, "weights", {}) or {})
+    absolute_depth_enabled = bool(str(args.depth_mode) != "none" and str(args.depth_unit) == "metric")
+    if not absolute_depth_enabled:
+        if float(getattr(args, "cost_z", 0.0) or 0.0) != 0.0 or float(getattr(args, "cost_t", 0.0) or 0.0) != 0.0:
+            if is_main:
+                print(
+                    "depth_safety "
+                    "disabled=cost_z,cost_t "
+                    f"depth_mode={args.depth_mode} depth_unit={args.depth_unit}",
+                    file=sys.stderr,
+                )
+        args.cost_z = 0.0
+        args.cost_t = 0.0
+        if "z" in base_loss_weights:
+            base_loss_weights["z"] = 0.0
+        if "t" in base_loss_weights:
+            base_loss_weights["t"] = 0.0
 
     device_str = str(args.device).strip() if args.device is not None else "cpu"
     if device_str.startswith("cuda") and not torch.cuda.is_available():
@@ -3893,6 +4088,9 @@ def main(argv: list[str] | None = None) -> int:
             synthetic_pose=False,
             z_from_dobj=False,
             load_aux=False,
+            depth_mode=args.depth_mode,
+            depth_unit=args.depth_unit,
+            depth_scale=args.depth_scale,
             real_images=bool(args.real_images),
             multiscale=False,
             scale_min=1.0,
@@ -3983,7 +4181,16 @@ def main(argv: list[str] | None = None) -> int:
         with torch.no_grad():
             for v_images, v_targets in val_loader:
                 v_images = v_images.to(device)
-                v_out = model(v_images)
+                v_depth = None
+                v_depth_valid = None
+                if isinstance(v_targets, dict):
+                    vd = v_targets.get("depth")
+                    vv = v_targets.get("depth_valid")
+                    if isinstance(vd, torch.Tensor):
+                        v_depth = vd.to(device)
+                    if isinstance(vv, torch.Tensor):
+                        v_depth_valid = vv.to(device=device, dtype=torch.bool)
+                v_out = model(v_images, depth=v_depth, depth_valid=v_depth_valid)
                 image_paths: list[str] = []
                 if isinstance(v_targets, list):
                     image_paths = [
@@ -4120,6 +4327,15 @@ def main(argv: list[str] | None = None) -> int:
             per_sample_targets = targets.get("per_sample") if isinstance(targets, dict) else targets
             if not isinstance(per_sample_targets, list):
                 per_sample_targets = None
+            depth_batch = None
+            depth_valid_batch = None
+            if isinstance(targets, dict):
+                depth_val = targets.get("depth")
+                if isinstance(depth_val, torch.Tensor):
+                    depth_batch = depth_val.to(device)
+                valid_val = targets.get("depth_valid")
+                if isinstance(valid_val, torch.Tensor):
+                    depth_valid_batch = valid_val.to(device=device, dtype=torch.bool)
 
             sync_step = step_in_window == int(window_size) - 1
             skip_backward = False
@@ -4208,6 +4424,8 @@ def main(argv: list[str] | None = None) -> int:
                         geom_input=geom_batch,
                         feature_mask=mask_batch,
                         return_mim=bool(mim_active),
+                        depth=depth_batch,
+                        depth_valid=depth_valid_batch,
                     )
 
                     sdft_total = None
@@ -4215,7 +4433,7 @@ def main(argv: list[str] | None = None) -> int:
                     if teacher_model is not None and sdft_cfg is not None and float(sdft_cfg.weight) != 0.0:
                         with torch.no_grad():
                             with autocast:
-                                teacher_out = teacher_model(images)
+                                teacher_out = teacher_model(images, depth=depth_batch, depth_valid=depth_valid_batch)
                         student_out_sdft = out
                         teacher_out_sdft = teacher_out
                         if (
