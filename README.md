@@ -356,8 +356,8 @@ python3 -m unittest -q
 | Validate dataset layout | `yolozu validate dataset /path/to/yolo --strict` | `python3 tools/validate_dataset.py /path/to/yolo --strict` |
 | Validate predictions JSON | `yolozu validate predictions reports/predictions.json --strict` | `python3 tools/validate_predictions.py reports/predictions.json --strict` |
 | COCOeval mAP | `yolozu eval-coco --dataset /path/to/yolo --predictions reports/predictions.json` (requires `yolozu[coco]`) | `python3 tools/eval_coco.py ...` |
-| Long-tail post-hoc + report | `yolozu calibrate --method fracal --task bbox --dataset /path/to/yolo --predictions reports/predictions.json --stats-out reports/fracal_stats_bbox.json --output reports/predictions_calibrated.json && yolozu eval-long-tail --dataset /path/to/yolo --predictions reports/predictions_calibrated.json --output reports/long_tail_eval.json` | (same via `python3 tools/yolozu.py ...`) |
-| Long-tail train recipe (decoupled + plugins) | `yolozu long-tail-recipe --dataset /path/to/yolo --output reports/long_tail_recipe.json --rebalance-sampler class_balanced --loss-plugin focal --logit-adjustment-tau 1.0 --lort-tau 0.3` | (same via `python3 tools/yolozu.py ...`) |
+| Long-tail post-hoc + report | `yolozu calibrate --method fracal ... --output reports/predictions_calibrated.json && yolozu eval-long-tail ... --output reports/long_tail_eval.json` | (same via `python3 tools/yolozu.py ...`) |
+| Long-tail train recipe (decoupled + plugins) | `yolozu long-tail-recipe --dataset /path/to/yolo --output reports/long_tail_recipe.json ...` | (same via `python3 tools/yolozu.py ...`) |
 | Instance-seg eval (PNG masks) | `yolozu eval-instance-seg --dataset /path --predictions preds.json --output reports/instance_seg_eval.json` | `python3 tools/eval_instance_segmentation.py ...` |
 | ONNXRuntime CPU export | `yolozu onnxrt export ...` (requires `yolozu[onnxrt]`) | `python3 tools/export_predictions_onnxrt.py ...` |
 | Training pipeline | `yolozu train configs/examples/train_contract.yaml --run-id exp01` (writes `runs/<run-id>/reports/fracal_stats_bbox.json` by default, requires `yolozu[train]`) | `python3 rtdetr_pose/tools/train_minimal.py ...` |
