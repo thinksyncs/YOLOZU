@@ -17,8 +17,17 @@ REPORT="reports/smoke_coco_eval_dry_run.json"
 if ! "${YOLOZU_BIN[@]}" doctor --output -; then
   echo "doctor reported environment issues; continuing smoke checks"
 fi
-"${YOLOZU_BIN[@]}" validate dataset "$DATASET"
-"${YOLOZU_BIN[@]}" validate predictions "$PREDICTIONS" --strict
+
+# Prefer flag-style forms documented in smoke examples, with positional fallback
+# for CLI variants that still require positional arguments.
+if ! "${YOLOZU_BIN[@]}" validate dataset --dataset "$DATASET" --strict 2>/dev/null; then
+  "${YOLOZU_BIN[@]}" validate dataset "$DATASET" --strict
+fi
+
+if ! "${YOLOZU_BIN[@]}" validate predictions --predictions "$PREDICTIONS" --strict 2>/dev/null; then
+  "${YOLOZU_BIN[@]}" validate predictions "$PREDICTIONS" --strict
+fi
+
 "${YOLOZU_BIN[@]}" eval-coco \
   --dataset "$DATASET" \
   --split val \

@@ -5,6 +5,22 @@ import shutil
 from pathlib import Path
 
 
+def _sanitize_bbox(cx: float, cy: float, w: float, h: float) -> tuple[float, float, float, float] | None:
+    cx = max(0.0, min(1.0, cx))
+    cy = max(0.0, min(1.0, cy))
+    w = max(0.0, min(1.0, w))
+    h = max(0.0, min(1.0, h))
+
+    max_w = min(2.0 * cx, 2.0 * (1.0 - cx))
+    max_h = min(2.0 * cy, 2.0 * (1.0 - cy))
+    w = min(w, max_w)
+    h = min(h, max_h)
+
+    if w <= 0.0 or h <= 0.0:
+        return None
+    return cx, cy, w, h
+
+
 def main() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     source_root = repo_root / "data" / "coco128"
@@ -33,9 +49,9 @@ def main() -> None:
         image_dst = smoke_images / image_src.name
         label_dst = smoke_labels / label_src.name
         shutil.copy2(image_src, image_dst)
-        shutil.copy2(label_src, label_dst)
 
         detections: list[dict[str, object]] = []
+        label_lines: list[str] = []
         for line in label_src.read_text(encoding="utf-8").splitlines():
             stripped = line.strip()
             if not stripped:
@@ -45,6 +61,11 @@ def main() -> None:
                 continue
             class_id = int(float(parts[0]))
             cx, cy, w, h = (float(parts[1]), float(parts[2]), float(parts[3]), float(parts[4]))
+            sanitized = _sanitize_bbox(cx, cy, w, h)
+            if sanitized is None:
+                continue
+            cx, cy, w, h = sanitized
+            label_lines.append(f"{class_id} {cx:.6f} {cy:.6f} {w:.6f} {h:.6f}")
             detections.append(
                 {
                     "class_id": class_id,
@@ -52,6 +73,8 @@ def main() -> None:
                     "bbox": {"cx": cx, "cy": cy, "w": w, "h": h},
                 }
             )
+
+        label_dst.write_text("\n".join(label_lines) + "\n", encoding="utf-8")
 
         predictions.append({"image": image_dst.name, "detections": detections})
 
