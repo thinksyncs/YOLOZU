@@ -2,6 +2,15 @@
 
 This folder contains a **direct TeX** (hand-written LaTeX) manual for YOLOZU.
 
+Smoke-first verification path (repo checkout):
+
+```bash
+bash scripts/smoke.sh
+```
+
+This validates the committed offline assets under `data/smoke` and writes
+`reports/smoke_coco_eval_dry_run.json`.
+
 ## Build
 
 Requirements:

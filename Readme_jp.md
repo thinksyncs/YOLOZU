@@ -3,7 +3,8 @@
 English README: [`README.md`](README.md)
 
 YOLOZU は Apache-2.0 の **contract-first evaluation + tooling harness** です。  
-推論バックエンド（PyTorch / ONNXRuntime / TensorRT / C++ / Rust など）は自由に選び、**同一の `predictions.json` 契約**に落として評価・比較できることを最重視します。
+推論バックエンド（PyTorch / ONNXRuntime / TensorRT / C++ / Rust など）は自由に選び、
+**同一の `predictions.json` 契約**に落として評価・比較できることを最重視します。
 
 対象:
 - リアルタイム単眼 RGB **検出**
@@ -15,13 +16,26 @@ YOLOZU は Apache-2.0 の **contract-first evaluation + tooling harness** です
 
 ---
 
-## Quickstart（pip 利用者）
+## Quickstart（コピペ1行 / repo checkout）
+
+```bash
+bash scripts/smoke.sh
+```
+
+この 1 行で以下を順に実行します（ネットワーク不要）:
+- `yolozu doctor --output -`
+- `yolozu validate dataset data/smoke`
+- `yolozu validate predictions data/smoke/predictions/predictions_dummy.json --strict`
+- `yolozu eval-coco --dataset data/smoke --split val \
+  --predictions data/smoke/predictions/predictions_dummy.json --dry-run`
+
+出力: `reports/smoke_coco_eval_dry_run.json`
+
+pip だけで始める場合:
 
 ```bash
 python3 -m pip install yolozu
 yolozu doctor --output -
-yolozu predict-images --backend dummy --input-dir /path/to/images
-yolozu demo instance-seg
 ```
 
 追加機能（必要なものだけ）:
@@ -45,7 +59,8 @@ python3 -m pip install 'yolozu[full]'
 - **Safe TTT（test-time training）**  
   Tent / MIM のプリセット・ガード・リセットポリシーを用意（`docs/ttt_protocol.md`）。
 - **再現性/運用性（Run Contract）**  
-  `yolozu train` の run contract で、成果物の置き場・run_meta・resume・export/parity を固定（`docs/run_contract.md`）。
+  `yolozu train` の run contract で、成果物の置き場・run_meta・resume・
+  export/parity を固定（`docs/run_contract.md`）。
 
 ---
 
@@ -68,7 +83,9 @@ python3 -m pip install 'yolozu[full]'
 
 ## 予測JSON（評価契約）
 
-評価の中心は `predictions.json` です（スキーマ: [`schemas/predictions.schema.json`](schemas/predictions.schema.json) / 解説: [`docs/predictions_schema.md`](docs/predictions_schema.md)）。
+評価の中心は `predictions.json` です
+（スキーマ: [`schemas/predictions.schema.json`](schemas/predictions.schema.json)
+/ 解説: [`docs/predictions_schema.md`](docs/predictions_schema.md)）。
 
 - どのバックエンドでも **同じスキーマ**で出力
 - 変換・評価・差分（parity）を統一
@@ -89,16 +106,18 @@ python3 -m pip install 'yolozu[full]'
 
 検証:
 ```bash
-yolozu validate dataset /path/to/dataset --strict
+yolozu validate dataset data/smoke --strict
 ```
 
 ### 互換（YOLOv8 / YOLO11 / YOLOX）
 
 - Ultralytics YOLOv8 / YOLO11:
   - `images/train` + `labels/train`（および `images/val` + `labels/val`）ならそのままOK
-  - Ultralytics の `data.yaml` も `--dataset` に渡せます（`path:` + `train:`/`val:` が `images/<split>` を指す想定）
+  - Ultralytics の `data.yaml` も `--dataset` に渡せます
+    （`path:` + `train:`/`val:` が `images/<split>` を指す想定）
 - YOLOX:
-  - COCO JSON（`instances_*.json`）が多いので、`tools/prepare_coco_yolo.py` で YOLO形式へ一度変換するのが最短です
+  - COCO JSON（`instances_*.json`）が多いので、
+    `tools/prepare_coco_yolo.py` で YOLO形式へ一度変換するのが最短です
 
 ### Keypoints 形式サポート（明示）
 
@@ -130,8 +149,8 @@ TTTは repo 側のエクスポータで使うのが基本です（`docs/ttt_prot
 ```bash
 python3 tools/yolozu.py export \
   --backend torch \
-  --dataset /path/to/yolo-dataset \
-  --checkpoint /path/to/checkpoint.pt \
+  --dataset data/smoke \
+  --checkpoint runs/smoke/checkpoints/best.pt \
   --device cuda \
   --ttt --ttt-preset safe --ttt-reset sample \
   --ttt-log-out reports/ttt_log_safe.json \
@@ -150,12 +169,11 @@ python3 tools/yolozu.py export \
 ### 最短（ソースチェックアウト）
 ```bash
 python3 -m pip install -r requirements-test.txt
-bash tools/fetch_coco128.sh
 python3 rtdetr_pose/tools/train_minimal.py \
-  --dataset-root data/coco128 \
+  --dataset-root data/smoke \
   --config rtdetr_pose/configs/base.json \
   --max-steps 50 \
-  --run-dir runs/train_minimal_smoke
+  --run-dir runs/smoke
 ```
 
 ### 反復運用（Run Contract 推奨）
@@ -183,17 +201,21 @@ yolozu train configs/examples/train_contract.yaml --run-id exp01 --dry-run
 - Validation cadence（epoch/step）+ early stop
 
 拡張（任意）:
-- フォトメトリックAug（`--hsv-*`, `--gray-prob`, `--gaussian-noise-*`, `--blur-*`）  
-  ※実画像を使う場合は `--real-images` を併用（スキャフォールドはデフォルトで合成画像）。
+- フォトメトリックAug
+  （`--hsv-*`, `--gray-prob`, `--gaussian-noise-*`, `--blur-*`）  
+  ※実画像を使う場合は `--real-images` を併用
+  （スキャフォールドはデフォルトで合成画像）。
 - `torch.compile`（実験的）: `--torch-compile`（失敗時はデフォルトでfallback）
 
 ### Depthモード（RT-DETR pose 学習スキャフォールド）
 
-`rtdetr_pose/tools/train_minimal.py` では、backbone交換境界（`[P3,P4,P5]`）を維持したまま深度を段階的に有効化できます。
+`rtdetr_pose/tools/train_minimal.py` では、backbone交換境界（`[P3,P4,P5]`）を
+維持したまま深度を段階的に有効化できます。
 
 - `--depth-mode none`（既定）: 深度を使わない互換パス
 - `--depth-mode sidecar`: `depth_path` / `depth` のサイドカー深度を読み込み、`depth_valid` を付与
-- `--depth-mode fuse_mid`: サイドカー深度を projector 後に軽量融合（backbone外）、`--depth-dropout` で modality dropout 可能
+- `--depth-mode fuse_mid`: サイドカー深度を projector 後に軽量融合
+  （backbone外）、`--depth-dropout` で modality dropout 可能
 
 安全動作:
 
