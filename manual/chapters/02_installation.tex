@@ -9,7 +9,7 @@ Python 3.10 or newer is mandatory. Optional extras vary based on the selected ba
 }
 
 \section{Python Requirements}
-\yolozu{} is designed to target Python 3.10 and subsequent versions.
+\yolozu{} targets Python 3.10 and newer.
 
 \section{Pip Installation (User Path)}
 For standard usage, the recommended installation procedure is:
@@ -19,7 +19,7 @@ yolozu --help
 yolozu doctor --output -
 \end{lstlisting}
 
-Optional extras allow you to install only the necessary dependencies for your specific workflow:
+Optional extras let you install only the dependencies you need for a given workflow:
 \begin{lstlisting}[language=bash]
 python3 -m pip install 'yolozu[demo]'    # PyTorch demonstration utilities
 python3 -m pip install 'yolozu[onnxrt]'  # ONNX Runtime tooling
@@ -33,7 +33,7 @@ If you are operating directly within the repository (e.g., utilizing the trainin
 \begin{lstlisting}[language=bash]
 python3 -m pip install -r requirements-test.txt
 python3 -m pip install -e .
-pytest -q
+python3 -m pytest -q
 \end{lstlisting}
 
 
@@ -43,5 +43,6 @@ The canonical deployment pipeline follows this progression:
 PyTorch \(\to\) ONNX \(\to\) TensorRT
 \end{quote}
 
-On macOS, you can typically execute CPU-bound tooling (such as validation, evaluation, and export via ONNX Runtime CPU). Conversely, TensorRT execution paths are predominantly Linux/NVIDIA-centric.
-TensorRT workflows are detailed comprehensively in the Real-Time vs. Batch Inference chapter. The canonical pipeline strictly adheres to the PyTorch $\rightarrow$ ONNX $\rightarrow$TensorRT sequence, incorporating mandatory parity checks at each stage.
+On macOS, you can typically run CPU-bound tooling (validation, evaluation, and ONNX Runtime CPU export). In contrast, TensorRT execution is generally Linux/NVIDIA-centric.
+TensorRT workflows are covered in the Real-Time vs. Batch Inference chapter. The canonical pipeline strictly follows PyTorch $\rightarrow$ ONNX $\rightarrow$ TensorRT and includes parity checks at each stage.
+%
