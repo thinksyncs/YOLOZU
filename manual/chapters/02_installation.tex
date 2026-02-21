@@ -1,46 +1,47 @@
 \chapter{Installation and Setup}
 
 \ChapterMeta{
-This chapter walks you through setting up a working \yolozu{} environment and verifying it with quick sanity checks.
+This chapter guides you through establishing a functional \yolozu{} environment and validating it via preliminary sanity checks.
 }{
-It produces a reproducible toolchain and makes backend availability explicit.
+It ensures the creation of a reproducible toolchain while explicitly detailing backend availability and dependencies.
 }{
-It requires Python 3.10 or newer, and optional extras depend on your backend. TensorRT workflows typically require Linux with an NVIDIA GPU.
+Python 3.10 or newer is mandatory. Optional extras vary based on the selected backend; notably, TensorRT workflows typically necessitate a Linux environment equipped with an NVIDIA GPU.
 }
 
-\section{Python requirements}
-\yolozu{} targets Python 3.10+.
+\section{Python Requirements}
+\yolozu{} is designed to target Python 3.10 and subsequent versions.
 
-\section{pip install (user path)}
-For most users:
+\section{Pip Installation (User Path)}
+For standard usage, the recommended installation procedure is:
 \begin{lstlisting}[language=bash]
 python3 -m pip install yolozu
 yolozu --help
 yolozu doctor --output -
 \end{lstlisting}
 
-Optional extras (install only what you need):
+Optional extras allow you to install only the necessary dependencies for your specific workflow:
 \begin{lstlisting}[language=bash]
-python3 -m pip install 'yolozu[demo]'    # torch demos
+python3 -m pip install 'yolozu[demo]'    # PyTorch demonstration utilities
 python3 -m pip install 'yolozu[onnxrt]'  # ONNX Runtime tooling
 python3 -m pip install 'yolozu[coco]'    # COCOeval support
-python3 -m pip install 'yolozu[full]'
+python3 -m pip install 'yolozu[full]'    # Comprehensive installation
 \end{lstlisting}
 
-\section{Source checkout (repo path)}
-If you are working in the repository (training stack, power-user scripts):
+
+\section{Source Checkout (Repository Path)}
+If you are operating directly within the repository (e.g., utilizing the training stack or power-user scripts), follow this procedure:
 \begin{lstlisting}[language=bash]
 python3 -m pip install -r requirements-test.txt
 python3 -m pip install -e .
 pytest -q
 \end{lstlisting}
 
-\section{Recommended deployment flow}
-A canonical deployment flow is:
+
+\section{Recommended Deployment Flow}
+The canonical deployment pipeline follows this progression:
 \begin{quote}
 PyTorch \(\to\) ONNX \(\to\) TensorRT
 \end{quote}
 
-On macOS, you can typically run CPU tooling (validation/eval/export via ONNX Runtime CPU), while
-TensorRT paths are usually Linux/NVIDIA-centric.
-TensorRT workflows are summarized in the Real-time vs Batch Inference chapter; the canonical pipeline is PyTorch $\rightarrow$ ONNX $\rightarrow$ TensorRT with parity checks.
+On macOS, you can typically execute CPU-bound tooling (such as validation, evaluation, and export via ONNX Runtime CPU). Conversely, TensorRT execution paths are predominantly Linux/NVIDIA-centric.
+TensorRT workflows are detailed comprehensively in the Real-Time vs. Batch Inference chapter. The canonical pipeline strictly adheres to the PyTorch $\rightarrow$ ONNX $\rightarrow$TensorRT sequence, incorporating mandatory parity checks at each stage.

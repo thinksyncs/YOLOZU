@@ -1,24 +1,23 @@
 \chapter{Score Calibration and Long-tail Adjustments}
 
 \ChapterMeta{
-This chapter describes post-hoc calibration and long-tail adjustments that transform confidence scores while preserving geometry.
+This chapter describes post-hoc score calibration and long-tail adjustments that transform confidence scores while strictly preserving the underlying geometric predictions.
 }{
-It can improve thresholding behavior and long-tail metrics without retraining, while keeping the transform reproducible via stats artifacts.
+These methods can improve thresholding behavior and long-tail metrics without retraining, while keeping the transformation reproducible via saved statistics artifacts.
 }{
-It requires a dataset and a predictions artifact; method-specific parameters apply, and outputs should typically be written as separate calibrated artifacts.
+It requires a dataset and a predictions artifact. Method-specific parameters apply, and calibrated outputs should be written as separate artifacts.
 }
 
-\section{When calibration helps}
-If your model is accurate but systematically miscalibrated (scores are too high/low), or if
-long-tail classes are under-confident, post-hoc calibration can improve thresholding behavior and
-long-tail metrics \textit{without retraining}.
+\section{When calibration is beneficial}
+Calibration is useful when your model is accurate but systematically miscalibrated (for example, consistently overconfident or underconfident), or when long-tail classes have suppressed confidence.
+In these cases, post-hoc calibration can improve operating points (threshold choice) and class balance \emph{without the cost of retraining}.
 
 \section{The calibrate command}
-\yolozu{} supports multiple methods under a unified interface.
-Conceptually, calibration modifies \textbf{confidence scores} while leaving geometry (bbox/mask/keypoints) unchanged.
-The CLI writes both the calibrated predictions artifact and a small stats/report JSON so the transform is reproducible.
+\yolozu{} provides a unified CLI for several calibration methods.
+Conceptually, calibration modifies only \textbf{confidence scores}; the geometric outputs (bounding boxes, masks, keypoints, and pose fields) are left unchanged.
+The command writes (1) a calibrated predictions artifact and (2) a small JSON statistics report to make the transformation reproducible.
 
-Example (FRACAL, bbox):
+Example: fit FRACAL statistics for bounding boxes and write calibrated outputs:
 \begin{lstlisting}[language=bash]
 yolozu calibrate \
   --method fracal \
@@ -29,7 +28,7 @@ yolozu calibrate \
   --stats-out reports/fracal_stats_bbox.json
 \end{lstlisting}
 
-Reuse stats later:
+Example: reuse previously computed statistics:
 \begin{lstlisting}[language=bash]
 yolozu calibrate \
   --method fracal \
@@ -40,25 +39,25 @@ yolozu calibrate \
   --stats-in reports/fracal_stats_bbox.json
 \end{lstlisting}
 
-\section{Supported methods (high level)}
+\section{Supported methods (high-level overview)}
 \begin{itemize}
-  \item \textbf{FRACAL}: frequency-aware calibration using class count statistics (repo method; compare alongside standard calibration baselines).
-  \item \textbf{LA (logit adjustment)}: apply a class-prior logit shift (parameter \cmd{--tau}) \cite{menon2021longtail}.
-  \item \textbf{NorCal}: frequency-based adjustment (parameter \cmd{--gamma}).
-  \item \textbf{Temperature scaling}: global temperature \cmd{--temperature}, with optional fitting for certain tasks \cite{guo2017calibration}.
+  \item \textbf{FRACAL}: frequency-aware calibration based on class count statistics (the primary in-repo method; recommended for comparisons against standard baselines).
+  \item \textbf{LA (Logit Adjustment)}: class-prior logit shift controlled by \cmd{--tau} \cite{menon2021longtail}.
+  \item \textbf{NorCal}: frequency-based adjustment controlled by \cmd{--gamma}.
+  \item \textbf{Temperature scaling}: global temperature scalar via \cmd{--temperature}, with optional fitting for supported tasks \cite{guo2017calibration}.
 \end{itemize}
 
-\section{Tasks}
+\section{Task-specific behavior}
 Calibration is task-aware:
 \begin{itemize}
-  \item \textbf{bbox}: adjusts detection scores.
-  \item \textbf{seg}: adjusts instance segmentation scores (masks are unchanged).
-  \item \textbf{pose}: adjusts detection scores; keypoints are preserved (no geometric change).
+  \item \textbf{bbox}: adjusts detection confidence scores.
+  \item \textbf{seg}: adjusts instance scores while leaving the binary masks unchanged.
+  \item \textbf{pose}: adjusts detection scores while preserving keypoint coordinates and pose geometry.
 \end{itemize}
 
-\section{Operational tips}
+\section{Operational best practices}
 \begin{itemize}
-  \item Prefer keeping calibrated outputs as separate artifacts.
-  \item Record the method and parameters (the CLI writes a report).
-  \item Compare methods side-by-side on the same predictions.
+  \item Keep calibrated outputs as separate artifacts; do not overwrite your baseline predictions.
+  \item Record the method name and key parameters (the CLI report is designed to capture this).
+  \item Compare methods on the same baseline predictions and the same evaluation split to avoid confounding changes.
 \end{itemize}

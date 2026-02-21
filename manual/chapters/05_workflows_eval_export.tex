@@ -1,145 +1,110 @@
 \chapter{Workflows: Evaluate and Export}
 
 \ChapterMeta{
-This chapter provides canonical workflows to evaluate existing artifacts, export predictions from a backend, and run convenient folder inference.
+This chapter outlines the canonical workflows for evaluating existing artifacts, exporting predictions from a backend, and executing convenient folder-level inference.
 }{
-It standardizes how \path{predictions.json} and reports are produced so results are comparable and automatable.
+It standardizes the generation of \path{predictions.json} and evaluation reports, ensuring that results remain strictly comparable and highly automatable.
 }{
-You need a dataset root and one or more predictions artifacts; backend-specific steps may require extra dependencies.
+You will require a dataset root and one or more prediction artifacts; backend-specific operations may necessitate additional dependencies.
 }
 
 \section{Workflow A: Evaluate existing predictions.json}
-If you already have \path{predictions.json} from any inference backend:
+If you have already generated a \path{predictions.json} artifact from any inference backend, you can evaluate it directly:
 \begin{lstlisting}[language=bash]
-python3 tools/eval_suite.py \
-  --dataset /path/to/yolo-dataset \
-  --predictions-glob '/path/to/predictions.json'
+python3 tools/eval_suite.py   --dataset /path/to/yolo-dataset   --predictions-glob '/path/to/predictions.json'
 \end{lstlisting}
 
-This is the most common integration path for external inference systems.
+This represents the most common integration pathway for external inference systems.
 
 \section{Workflow B: Run inference and export predictions}
-Depending on your environment:
+Depending on your deployment environment, several backends are available:
 \begin{itemize}
-  \item Torch backend (research): export predictions from a checkpoint.
-  \item ONNX Runtime: CPU-friendly export and parity checks.
-  \item TensorRT: pinned Linux/NVIDIA pipeline for maximum throughput.
+  \item \textbf{Torch backend (research):} Exports predictions directly from a training checkpoint.
+  \item \textbf{ONNX Runtime:} Facilitates CPU-friendly exports and rigorous parity checks.
+  \item \textbf{TensorRT:} Provides a pinned Linux/NVIDIA pipeline optimized for maximum throughput.
 \end{itemize}
 
-Repo wrapper example (conceptual):
+A conceptual example using the repository wrapper:
 \begin{lstlisting}[language=bash]
-python3 tools/yolozu.py export \
-  --backend onnxrt \
-  --dataset /path/to/yolo-dataset \
-  --split val \
-  --onnx /path/to/model.onnx \
-  --out reports/predictions.json
+python3 tools/yolozu.py export   --backend onnxrt   --dataset /path/to/yolo-dataset   --split val   --onnx /path/to/model.onnx   --out reports/predictions.json
 \end{lstlisting}
 
-See:\\
+For further details, consult:\
 \path{docs/training_inference_export.md} and \path{docs/external_inference.md}.
 
 \section{Workflow C: Folder inference (pip CLI)}
-A convenient user-facing path is:
+A highly convenient, user-facing approach for batch inference is:
 \begin{lstlisting}[language=bash]
-yolozu predict-images \
-  --backend dummy \
-  --input-dir /path/to/images \
-  --output reports/predict_images.json \
-  --overlays-dir reports/predict_images_overlays \
-  --html reports/predict_images.html
+yolozu predict-images   --backend dummy   --input-dir /path/to/images   --output reports/predict_images.json   --overlays-dir reports/predict_images_overlays   --html reports/predict_images.html
 \end{lstlisting}
 
-This writes a predictions artifact plus optional overlays/HTML to a run directory.
+This command generates a standardized predictions artifact, alongside optional visual overlays and an HTML summary, within a designated run directory.
 
 \section{Post-result display and reporting}
-After inference/evaluation, YOLOZU provides both machine-readable and human-readable outputs.
+Following inference or evaluation, YOLOZU generates both machine-readable artifacts and human-readable summaries.
 
 \begin{longtable}{@{}p{0.34\textwidth}p{0.30\textwidth}p{0.30\textwidth}@{}}
 \toprule
-\textbf{Command family} & \textbf{Typical output} & \textbf{Usage} \\
+\textbf{Command family} & \textbf{Typical output} & \textbf{Usage} \
 \midrule
-\cmd{yolozu predict-images} & \path{reports/predict_images.json} & normalized predictions artifact \\
-\cmd{yolozu predict-images} & \path{reports/predict_images.html} & visual summary page \\
-\cmd{yolozu predict-images} & \path{reports/predict_images_overlays/} & per-image overlays \\
-\cmd{python3 tools/eval_suite.py} & \path{reports/eval_suite.json} & protocol-pinned comparison report \\
-\cmd{python3 tools/hpo_sweep.py} & \path{reports/hpo_sweep.jsonl} & trial-level raw history \\
-\cmd{python3 tools/hpo_sweep.py} & \path{reports/hpo_sweep.csv}, \path{reports/hpo_sweep.md} & leaderboard/table view \\
-\cmd{yolozu eval-instance-seg} & \path{reports/instance_seg_eval.json} & instance-seg metrics \\
-\cmd{yolozu eval-instance-seg} & \path{reports/instance_seg_eval.html} & HTML report with optional overlays \\
+\cmd{yolozu predict-images} & \path{reports/predict_images.json} & Normalized predictions artifact \
+\cmd{yolozu predict-images} & \path{reports/predict_images.html} & Visual summary page \
+\cmd{yolozu predict-images} & \path{reports/predict_images_overlays/} & Per-image visual overlays \
+\cmd{python3 tools/eval_suite.py} & \path{reports/eval_suite.json} & Protocol-pinned comparison report \
+\cmd{python3 tools/hpo_sweep.py} & \path{reports/hpo_sweep.jsonl} & Trial-level raw history \
+\cmd{python3 tools/hpo_sweep.py} & \path{reports/hpo_sweep.csv}, \path{reports/hpo_sweep.md} & Leaderboard and table views \
+\cmd{yolozu eval-instance-seg} & \path{reports/instance_seg_eval.json} & Instance segmentation metrics \
+\cmd{yolozu eval-instance-seg} & \path{reports/instance_seg_eval.html} & HTML report with optional overlays \
 \bottomrule
 \end{longtable}
 
 \subsection{Recommended result inspection sequence}
 \begin{enumerate}
-  \item Validate schema:
+  \item \textbf{Validate the schema:}
   \begin{lstlisting}[language=bash]
 yolozu validate predictions reports/predict_images.json --strict
   \end{lstlisting}
-  \item Open HTML report for quick qualitative checks.
-  \item Inspect JSON/CSV/MD for quantitative comparisons in CI and papers.
+  \item \textbf{Review the HTML report} to perform rapid qualitative assessments.
+  \item \textbf{Inspect the JSON/CSV/MD artifacts} for rigorous quantitative comparisons suitable for CI pipelines and academic publications.
 \end{enumerate}
 
-Example for instance segmentation with HTML/overlay outputs:
+An example workflow for instance segmentation, incorporating HTML and overlay outputs:
 \begin{lstlisting}[language=bash]
-yolozu eval-instance-seg \
-  --dataset examples/instance_seg_demo/dataset \
-  --split val2017 \
-  --predictions examples/instance_seg_demo/predictions/instance_seg_predictions.json \
-  --pred-root examples/instance_seg_demo/predictions \
-  --classes examples/instance_seg_demo/classes.txt \
-  --output reports/instance_seg_eval.json \
-  --html reports/instance_seg_eval.html \
-  --overlays-dir reports/instance_seg_overlays \
-  --max-overlays 10
+yolozu eval-instance-seg   --dataset examples/instance_seg_demo/dataset   --split val2017   --predictions examples/instance_seg_demo/predictions/instance_seg_predictions.json   --pred-root examples/instance_seg_demo/predictions   --classes examples/instance_seg_demo/classes.txt   --output reports/instance_seg_eval.json   --html reports/instance_seg_eval.html   --overlays-dir reports/instance_seg_overlays   --max-overlays 10
 \end{lstlisting}
 
-\section{Schema validation as a gate}
-Always validate predictions artifacts before evaluation:
+\section{Schema validation as a quality gate}
+It is imperative to validate prediction artifacts prior to evaluation:
 \begin{lstlisting}[language=bash]
 python3 tools/validate_predictions.py /path/to/predictions.json --strict
 \end{lstlisting}
 
-This prevents silent evaluation errors due to malformed outputs.
+This practice proactively prevents silent evaluation failures caused by malformed outputs.
 
 \section{Workflow D: Migrate datasets and predictions}
-YOLOZU includes migration helpers that produce small wrapper artifacts (or converters) so you can reuse common ecosystem datasets.
-The key idea is to keep the original dataset untouched and instead generate small, versionable wrappers/conversions.
+YOLOZU provides migration utilities that generate lightweight wrapper artifacts or converters, enabling seamless integration with prevalent ecosystem datasets. The core philosophy is to preserve the original dataset immutability while generating version-controlled wrappers.
 
 \subsection{Ultralytics / YOLO (YOLOv8/YOLO11)}
-Generate a \path{dataset.json} wrapper from \path{data.yaml}:
+To generate a \path{dataset.json} wrapper from an existing \path{data.yaml}:
 \begin{lstlisting}[language=bash]
-yolozu migrate dataset \
-  --from ultralytics \
-  --data /path/to/data.yaml \
-  --output data/ultralytics_wrapper
+yolozu migrate dataset   --from ultralytics   --data /path/to/data.yaml   --output data/ultralytics_wrapper
 \end{lstlisting}
 
-Validate:
+Validate the resulting wrapper:
 \begin{lstlisting}[language=bash]
 yolozu validate dataset data/ultralytics_wrapper
 \end{lstlisting}
 
 \subsection{COCO JSON datasets (YOLOX / Detectron2 / MMDetection)}
-Convert COCO instances JSON into YOLO label txt files and write a wrapper:
+To convert COCO instances JSON into YOLO-formatted label text files and generate a corresponding wrapper:
 \begin{lstlisting}[language=bash]
-yolozu migrate dataset \
-  --from coco \
-  --coco-root /path/to/coco_like_root \
-  --split val2017 \
-  --output data/coco_yolo_like \
-  --mode manifest
+yolozu migrate dataset   --from coco   --coco-root /path/to/coco_like_root   --split val2017   --output data/coco_yolo_like   --mode manifest
 \end{lstlisting}
 
 \subsection{COCO results (inference outputs) \texorpdfstring{$\rightarrow$}{->} predictions.json}
-Convert COCO-style detection results into the YOLOZU predictions contract:
+To convert COCO-style detection results into the standardized YOLOZU predictions contract:
 \begin{lstlisting}[language=bash]
-yolozu migrate predictions \
-  --from coco-results \
-  --results /path/to/coco_results.json \
-  --instances /path/to/instances_val2017.json \
-  --output reports/predictions.json \
-  --force
+yolozu migrate predictions   --from coco-results   --results /path/to/coco_results.json   --instances /path/to/instances_val2017.json   --output reports/predictions.json   --force
 
 yolozu validate predictions reports/predictions.json --strict
 \end{lstlisting}

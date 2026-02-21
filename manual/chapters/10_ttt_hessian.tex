@@ -1,85 +1,67 @@
 \chapter{Hessian-based Refinement (Practical)}
 
 \ChapterMeta{
-This chapter introduces per-detection numerical refinement using a Hessian-based Gauss--Newton style solver after inference.
+This chapter introduces per-detection numerical refinement utilizing a Hessian-based Gauss--Newton style solver, applied post-inference.
 }{
-It can reduce errors on difficult samples in offline analysis and controlled studies by applying iterative local corrections.
+This technique can significantly mitigate errors on challenging samples during offline analysis and controlled studies by applying iterative, localized corrections.
 }{
-It is best suited for offline and batch workflows where extra compute is acceptable; it requires predictions and dataset context and uses convergence and damping parameters.
+It is optimally suited for offline and batch processing workflows where additional computational overhead is permissible. It requires both predictions and dataset context, and relies on configurable convergence and damping parameters.
 }
 
-\section{Scope and relation to TTT}
-This chapter focuses on per-detection numerical refinement after inference.
-TTT/Tent/MIM adaptation policy is covered in Chapter~15 to avoid duplicated guidance.
+\section{Scope and relation to Test-Time Training (TTT)}
+This chapter is strictly focused on per-detection numerical refinement executed after the primary inference phase. TTT, Tent, and MIM adaptation policies are comprehensively covered in Chapter~15 to prevent redundant guidance.
 
-\section{What the Hessian solver does}
-The Hessian solver refines prediction values per detection using Gauss--Newton style updates with Levenberg--Marquardt damping.
+\section{Mechanics of the Hessian solver}
+The Hessian solver refines prediction values on a per-detection basis, employing Gauss--Newton style updates stabilized by Levenberg--Marquardt damping.
 
-Current standard CLI path is engine-external post-processing on predictions JSON, with offsets refinement as the initial target.
+The current standard CLI implementation operates as an engine-external post-processing step applied directly to predictions JSON artifacts, with bounding box offset refinement serving as the initial target.
 
-At a high level, each iteration computes residuals and Jacobian, solves a damped normal equation,
-updates parameters, and stops when convergence criteria are met.
+At a high level, each iteration computes the residuals and the Jacobian matrix, solves a damped normal equation, updates the parameters, and terminates once predefined convergence criteria are satisfied.
 
-\section{When to use it}
-Recommended situations:
+\section{Optimal use cases}
+Recommended applications include:
 \begin{itemize}
-  \item offline validation/analysis where GT supervision or geometric constraints are available,
-  \item targeted error reduction on difficult samples,
-  \item post-inference refinement studies after global calibration.
+  \item Offline validation and analysis scenarios where Ground Truth (GT) supervision or strict geometric constraints are accessible.
+  \item Targeted error reduction specifically focused on highly difficult or anomalous samples.
+  \item Post-inference refinement studies conducted subsequent to global calibration efforts.
 \end{itemize}
 
-Avoid by default in strict real-time production because it adds latency.
+It is strongly advised to avoid this technique by default in strict, real-time production environments due to the inherent latency overhead it introduces.
 
 \section{CLI quickstart}
-Enable refinement (opt-in):
+To enable refinement (opt-in behavior):
 \begin{lstlisting}[language=bash]
-python tools/refine_predictions_hessian.py \
-  --predictions reports/predictions.json \
-  --dataset data/coco128 \
-  --output reports/predictions_refined.json \
-  --enable \
-  --refine-offsets \
-  --wrap
+python tools/refine_predictions_hessian.py   --predictions reports/predictions.json   --dataset data/coco128   --output reports/predictions_refined.json   --enable   --refine-offsets   --wrap
 \end{lstlisting}
 
-Disable (pass-through) explicitly:
+To explicitly disable refinement (pass-through behavior):
 \begin{lstlisting}[language=bash]
-python tools/refine_predictions_hessian.py \
-  --predictions reports/predictions.json \
-  --output reports/predictions_refined.json \
-  --disable \
-  --wrap
+python tools/refine_predictions_hessian.py   --predictions reports/predictions.json   --output reports/predictions_refined.json   --disable   --wrap
 \end{lstlisting}
 
-Enable with custom solver controls:
+To enable refinement with customized solver parameters:
 \begin{lstlisting}[language=bash]
-python tools/refine_predictions_hessian.py \
-  --predictions reports/predictions.json \
-  --dataset data/coco128 \
-  --output reports/predictions_refined.json \
-  --enable \
-  --refine-offsets \
-  --steps 10 \
-  --damping 1e-2
+python tools/refine_predictions_hessian.py   --predictions reports/predictions.json   --dataset data/coco128   --output reports/predictions_refined.json   --enable   --refine-offsets   --steps 10   --damping 1e-2
 \end{lstlisting}
 
-\section{Core knobs}
-Commonly tuned parameters (matching \path{docs/hessian_solver.md}):
+\section{Core configuration parameters}
+Commonly tuned parameters (which correspond to the documentation in \path{docs/hessian_solver.md}):
 \begin{itemize}
-  \item gate/control: \cmd{--enable}/\cmd{--disable}, \cmd{steps}, \cmd{damping}, \cmd{fd_eps}
-  \item target toggles: \cmd{refine_offsets} (offsets-first rollout)
-  \item residual weights: \cmd{w_depth}, \cmd{w_mask}, \cmd{w_reg}
-  \item config file: \cmd{--config <yaml|json>} (CLI values override config)
+  \item \textbf{Gate/Control}: \cmd{--enable}/\cmd{--disable}, \cmd{steps}, \cmd{damping}, \cmd{fd_eps}
+  \item \textbf{Target toggles}: \cmd{refine_offsets} (prioritizing offsets-first rollout)
+  \item \textbf{Residual weights}: \cmd{w_depth}, \cmd{w_mask}, \cmd{w_reg}
+  \item \textbf{Configuration file}: \cmd{--config <yaml|json>} (Note: CLI arguments will override config file values)
 \end{itemize}
 
-\section{Position in the workflow}
-A practical ordering is:
+\section{Integration within the broader workflow}
+A highly practical operational sequence is:
 \begin{enumerate}
-  \item train model,
-  \item optionally run dataset-wide calibration (global scale/intrinsics),
-  \item apply Hessian refinement only where per-detection correction is needed.
+  \item Train the core model.
+  \item Optionally execute dataset-wide calibration (addressing global scale and intrinsics).
+  \item Apply Hessian refinement exclusively in scenarios where per-detection correction is demonstrably required.
 \end{enumerate}
 
-This chapter lists the common knobs; for the full parameter surface, rely on the tool's \cmd{--help} output (kept in sync with code).
+This chapter highlights the most frequently utilized parameters; for an exhaustive detailing of the parameter surface, please consult the tool's \cmd{--help} output, which is rigorously maintained in sync with the codebase.
 
-TensorRT note: TRT conversion targets inference graph execution; Hessian refinement is a separate engine-external post-processing step.
+
+oindent\textbf{TensorRT Note:} TensorRT conversion strictly targets the inference graph execution. Hessian refinement functions as a completely separate, engine-external post-processing operation.

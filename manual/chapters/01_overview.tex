@@ -1,54 +1,56 @@
 \chapter{Overview}
 
 \ChapterMeta{
-This chapter introduces \yolozu{}'s contract-first evaluation approach, key repository entry points, and the two CLI surfaces.
+This chapter introduces \yolozu{}'s contract-first evaluation paradigm, delineates the primary repository entry points, and clarifies the distinction between its two Command Line Interface (CLI) surfaces.
 }{
-It helps you choose the right workflow quickly and avoid confusion about where commands and artifacts live.
+
+It is designed to expedite workflow selection and eliminate ambiguity regarding command execution and artifact management.
 }{
-No prerequisites beyond reading; rely on \cmd{--help} for the CLI you are using and treat JSON artifacts as the stable interface.
+No prerequisites are required beyond reading. Rely on the \cmd{--help} flag for the specific CLI in use, and treat JSON artifacts as the definitive, stable interface.
 }
 
-\section{What \yolozu{} is}
-\yolozu{} is a \textbf{contract-first evaluation harness}.
-The core idea is: \textit{run inference anywhere}, export a stable \path{predictions.json},
-then evaluate consistently.
+\section{What \yolozu{} Is}
+\yolozu{} operates as a \textbf{contract-first evaluation harness}.
+The foundational philosophy is straightforward: \textit{execute inference in any environment}, export a standardized \path{predictions.json} artifact, and subsequently perform consistent, reproducible evaluations.
 
-\section{AI-first design intent}
-This repository is organized as an \textbf{AI-first} codebase.
-In practice, that means:
+
+\section{AI-First Design Intent}
+This repository is architected as an \textbf{AI-first} codebase.
+In practical terms, this implies:
 \begin{itemize}
-  \item AI agents should be able to \textbf{use} the code safely via stable command surfaces and contracts.
-  \item AI agents should be able to \textbf{extend} workflows (new experiments, new scripts, new reports) without breaking interfaces.
-  \item JSON schemas and machine-readable registries are treated as first-class interfaces, not optional metadata.
+  \item AI agents must be capable of \textbf{utilizing} the codebase safely via stable command surfaces and well-defined contracts.
+  \item AI agents must be able to \textbf{extend} workflows (e.g., introducing new experiments, scripts, or reports) without violating existing interfaces.
+  \item JSON schemas and machine-readable registries are treated as first-class interfaces, rather than optional metadata.
 \end{itemize}
 
-Operational guidance (used by both humans and agentic workflows): make artifacts first-class, validate contracts early, and keep evaluation protocols pinned.
+Operational guidance for both human operators and agentic workflows dictates that artifacts must be treated as first-class entities, contracts must be validated early in the pipeline, and evaluation protocols must remain strictly pinned.
 
-Key goals (high-level):
+High-level objectives include:
 \begin{itemize}
-  \item Stable, versioned JSON artifacts (predictions, reports, run metadata).
-  \item CPU-minimum development and tests; GPU is optional for training/inference.
-  \item Backend-agnostic workflows (PyTorch / ONNX Runtime / TensorRT / custom C++/Rust).
-  \item Easy migration: accept common dataset ecosystems (Ultralytics/YOLO, COCO JSON) via small wrapper artifacts, without modifying your original dataset.
-  \item Production-oriented run contract for training (artifact paths, resume, export).
-  \item Apache-2.0-only operational posture (no non-Apache dependencies in shipped code paths).
+  \item Generating stable, versioned JSON artifacts (encompassing predictions, evaluation reports, and run metadata).
+  \item Ensuring CPU-minimum compatibility for development and testing; GPU acceleration remains optional for training and inference.
+  \item Facilitating backend-agnostic workflows (supporting PyTorch, ONNX Runtime, TensorRT, and custom C++/Rust implementations).
+  \item Streamlining migration by accepting prevalent dataset ecosystems (e.g., Ultralytics/YOLO formats, COCO JSON) via lightweight wrapper artifacts, thereby preserving the integrity of original datasets.
+  \item Enforcing a production-oriented run contract for training operations, which standardizes artifact paths, resumption capabilities, and model exports.
+  \item Maintaining a strict Apache-2.0 operational posture, ensuring no non-Apache dependencies are present in shipped code paths.
 \end{itemize}
 
-\section{How to navigate the repository}
-The main entry points are:
+
+\section{Navigating the Repository}
+The primary entry points for navigating the project are:
 \begin{itemize}
-  \item \path{README.md}: quick overview and a few canonical commands.
-  \item \path{docs/README.md}: docs index organized by \textit{what you want to do}.
-  \item \path{docs/yolozu_spec.md}: feature summary/spec.
-  \item \path{tools/}: power-user scripts and the repository wrapper CLI.
+  \item \path{README.md}: Provides a concise overview and essential canonical commands.
+  \item \path{docs/README.md}: Serves as the documentation index, organized by \textit{task objective}.
+  \item \path{docs/yolozu_spec.md}: Contains the comprehensive feature summary and technical specification.
+  \item \path{tools/}: Houses power-user scripts and the repository's wrapper CLI.
 \end{itemize}
 
-\section{Two CLIs: pip vs repo}
-\yolozu{} typically exposes two command surfaces:
+
+\section{Dual CLI Surfaces: Pip vs. Repository}
+\yolozu{} exposes two distinct command surfaces to accommodate different user needs:
 \begin{itemize}
-  \item \textbf{pip CLI}: \cmd{yolozu ...} (install-safe, user-facing commands)
-  \item \textbf{repo CLI}: \cmd{python3 tools/yolozu.py ...} (research/eval workflows)
+  \item \textbf{Pip CLI}: Invoked via \cmd{yolozu ...}, this is the install-safe, user-facing command interface.
+  \item \textbf{Repository CLI}: Invoked via \cmd{python3 tools/yolozu.py ...}, this interface is tailored for research, evaluation, and advanced workflows.
 \end{itemize}
 
-They share concepts and contracts. This manual uses whichever is most common for the workflow
-being discussed.
+Both CLIs share underlying concepts and data contracts. This manual references whichever CLI is most appropriate for the specific workflow under discussion.

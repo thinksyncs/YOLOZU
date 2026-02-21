@@ -1,82 +1,74 @@
 \chapter{Training and the Run Contract}
 
 \ChapterMeta{
-This chapter explains the training stack focus and the run contract: stable artifact layout, strict config resolution, and standardized resume.
+This chapter elucidates the architecture of the training stack and the principles of the run contract, emphasizing stable artifact layouts, strict configuration resolution, and standardized resumption protocols.
 }{
-It enables reproducibility, parity checks, and consistent comparisons across machines and branches by making run outputs predictable.
+Adhering to the run contract ensures rigorous reproducibility, facilitates parity checks, and enables consistent comparisons across disparate machines and branches by rendering run outputs entirely predictable.
 }{
-It assumes you are using run-contract mode (for example \cmd{--run-id} or \cmd{--run-contract}) and respecting strict config keys; training dependencies apply.
+It assumes operation within run-contract mode (e.g., utilizing \cmd{--run-id} or \cmd{--run-contract}) and mandates strict adherence to configuration keys; standard training dependencies apply.
 }
 
 \section{RT-DETR pose training stack}
-The repository includes an RT-DETR-based training pipeline under \path{rtdetr_pose/}.
-The important property is not the exact model, but the \textbf{run contract}: stable artifact paths
-and resumable runs.
+The repository incorporates an RT-DETR-based training pipeline located under \path{rtdetr_pose/}. The critical aspect of this architecture is not the specific model implementation, but rather the \textbf{run contract}: a formalized guarantee of stable artifact paths and seamlessly resumable training runs.
 
-\section{Run contract: why it matters}
-A run directory typically contains:
+\section{The Run Contract: Rationale and implementation}
+A standardized run directory typically encompasses:
 \begin{itemize}
-  \item checkpoints (e.g., \path{runs/<run-id>/checkpoints/best.pt}),
-  \item exports (e.g., ONNX),
-  \item predictions and evaluation reports,
-  \item calibration stats artifacts (when enabled).
+  \item Checkpoints (e.g., \path{runs/<run-id>/checkpoints/best.pt})
+  \item Exported models (e.g., ONNX formats)
+  \item Predictions and comprehensive evaluation reports
+  \item Calibration statistics artifacts (when explicitly enabled)
 \end{itemize}
 
-This makes it easy to:
+This structured approach significantly streamlines:
 \begin{itemize}
-  \item reproduce results,
-  \item run parity checks,
-  \item compare across branches/machines.
+  \item The reproduction of experimental results
+  \item The execution of rigorous parity checks
+  \item Systematic comparisons across different Git branches or compute nodes
 \end{itemize}
 
-Run-contract essentials (codified in the docs and implemented in the trainer):
+Core tenets of the run contract (codified within the documentation and enforced by the trainer):
 \begin{itemize}
-  \item Enable with \cmd{--run-contract} or \cmd{--run-id <id>}.
-  \item Contract mode requires explicit config keys and rejects unknown keys in strict mode.
-  \item Fixed artifact layout under \path{runs/<run_id>/}:
+  \item Activation via the \cmd{--run-contract} or \cmd{--run-id <id>} flags.
+  \item Contract mode mandates explicit configuration keys and strictly rejects unrecognized keys to prevent silent configuration drift.
+  \item A deterministic artifact layout under \path{runs/<run_id>/}:
     \begin{itemize}
       \item \path{checkpoints/last.pt}, \path{checkpoints/best.pt}
       \item \path{reports/train_metrics.jsonl}, \path{reports/val_metrics.jsonl}
       \item \path{reports/config_resolved.yaml}, \path{reports/run_meta.json}
     \end{itemize}
-  \item Export/parity artifacts are produced in contracted runs by default:\
+  \item Export and parity artifacts are generated automatically in contracted runs:\
     \path{exports/model.onnx}, \path{exports/model.onnx.meta.json},\
     \path{reports/onnx_parity.json}.
-  \item Full-state resume is standardized with \cmd{--resume} from
-    \path{runs/<run_id>/checkpoints/last.pt}.
+  \item Full-state resumption is standardized using the \cmd{--resume} flag, defaulting to \path{runs/<run_id>/checkpoints/last.pt}.
 \end{itemize}
 
-\noindent\textbf{Note (low-level trainer):} When invoking \cmd{python3 -m rtdetr_pose.train_minimal} directly,
-\cmd{--run-id} implies run-contract mode and requires \cmd{--config} (a YAML/JSON file such as
-\path{configs/examples/train_contract.yaml}). For quick smoke runs without the run contract,
-use \cmd{--run-dir <path>} and set \cmd{--onnx-out <path>} explicitly when needed.
 
-\section{Config resolution and strictness}
-The training entrypoint reads YAML/JSON via \cmd{--config}, then applies explicit CLI flags.
-Priority is:
+oindent\textbf{Note (low-level trainer):} When invoking \cmd{python3 -m rtdetr_pose.train_minimal} directly, specifying \cmd{--run-id} implicitly activates run-contract mode and necessitates a \cmd{--config} argument (a YAML/JSON file such as \path{configs/examples/train_contract.yaml}). For rapid smoke tests bypassing the run contract, utilize \cmd{--run-dir <path>} and explicitly define \cmd{--onnx-out <path>} if required.
+
+\section{Configuration resolution and strictness}
+The training entry point ingests YAML/JSON configurations via \cmd{--config}, subsequently applying explicit CLI overrides. The resolution hierarchy is strictly defined as:
 \begin{center}
 \textbf{CLI flags \(>\) config file \(>\) built-in defaults}
 \end{center}
 
-Config keys must use argparse destination names (example: \cmd{--weight-decay} maps to
-\texttt{weight\_decay}). In run-contract mode (\texttt{run\_contract} or \texttt{run\_id} present),
-unknown keys are rejected to prevent silent config drift.
+Configuration keys must correspond exactly to their argparse destination names (e.g., \cmd{--weight-decay} maps to \texttt{weight\_decay}). In run-contract mode (triggered by \texttt{run\_contract} or \texttt{run\_id}), any unrecognized keys are immediately rejected, thereby eliminating the risk of silent configuration drift.
 
 \section{YAML workflows: train / resume / test}
-The same project can be operated with YAML files for both training and test scenarios.
+A unified project structure supports YAML-driven execution for both training and testing scenarios.
 
 \begin{longtable}{@{}p{0.18\textwidth}p{0.30\textwidth}p{0.46\textwidth}@{}}
 \toprule
-\textbf{Workflow} & \textbf{Primary config} & \textbf{Reference command} \\
+\textbf{Workflow} & \textbf{Primary config} & \textbf{Reference command} \
 \midrule
-Train (scaffold) & \path{configs/examples/train_setting.yaml} & \cmd{yolozu train <train_setting.yaml>} \\
-Train (contract) & \path{configs/examples/train_contract.yaml} & \cmd{yolozu train <train_contract.yaml> --run-id <id>} \\
-Resume (full state) & same as contract & \cmd{yolozu train <train_contract.yaml> --run-id <id> --resume} \\
-Test (scenario runner) & \path{configs/examples/test_setting.yaml} & \cmd{yolozu test <test_setting.yaml> [test_args...]} \\
+Train (scaffold) & \path{configs/examples/train_setting.yaml} & \cmd{yolozu train <train_setting.yaml>} \
+Train (contract) & \path{configs/examples/train_contract.yaml} & \cmd{yolozu train <train_contract.yaml> --run-id <id>} \
+Resume (full state) & Same as contract & \cmd{yolozu train <train_contract.yaml> --run-id <id> --resume} \
+Test (scenario runner) & \path{configs/examples/test_setting.yaml} & \cmd{yolozu test <test_setting.yaml> [test_args...]} \
 \bottomrule
 \end{longtable}
 
-Example commands:
+Example execution commands:
 \begin{lstlisting}[language=bash]
 yolozu train configs/examples/train_setting.yaml
 yolozu train configs/examples/train_contract.yaml --run-id exp01
@@ -84,183 +76,173 @@ yolozu train configs/examples/train_contract.yaml --run-id exp01 --resume
 yolozu test configs/examples/test_setting.yaml --adapter precomputed --predictions reports/predictions.json
 \end{lstlisting}
 
-\noindent For \cmd{yolozu test}, YAML keys are translated to \cmd{--key value} arguments
-(booleans become flags), then extra CLI args override as needed.
+
+oindent For \cmd{yolozu test}, YAML keys are dynamically translated into \cmd{--key value} arguments (with booleans converted to flags), allowing subsequent CLI arguments to override them as necessary.
 
 \section{Solver (optimizer) parameters and defaults}
-Supported optimizers are \texttt{adamw} (default) and \texttt{sgd}.
+The supported optimizers are \texttt{adamw} (the default) and \texttt{sgd}.
 
 \begin{longtable}{@{}p{0.40\textwidth}p{0.10\textwidth}p{0.12\textwidth}p{0.30\textwidth}@{}}
 \toprule
-\textbf{CLI / config key} & \textbf{Type} & \textbf{Default} & \textbf{Notes} \\
+\textbf{CLI / config key} & \textbf{Type} & \textbf{Default} & \textbf{Notes} \
 \midrule
-\cmd{--optimizer} / \texttt{optimizer} & str & \texttt{adamw} & \texttt{adamw}, \texttt{sgd} \\
-\cmd{--lr} / \texttt{lr} & float & \texttt{1e-4} & base learning rate \\
-\cmd{--weight-decay} / \texttt{weight\_decay} & float & \texttt{0.01} & base weight decay \\
-\cmd{--momentum} / \texttt{momentum} & float & \texttt{0.9} & SGD only \\
-\cmd{--nesterov} / \texttt{nesterov} & bool & \texttt{false} & SGD only \\
-\cmd{--use-param-groups} / \texttt{use\_param\_groups} & bool & \texttt{false} & separate backbone/head groups \\
-\cmd{--backbone-lr-mult} / \texttt{backbone\_lr\_mult} & float & \texttt{1.0} & LR multiplier \\
-\cmd{--head-lr-mult} / \texttt{head\_lr\_mult} & float & \texttt{1.0} & LR multiplier \\
-\cmd{--backbone-wd-mult} / \texttt{backbone\_wd\_mult} & float & \texttt{1.0} & WD multiplier \\
-\cmd{--head-wd-mult} / \texttt{head\_wd\_mult} & float & \texttt{1.0} & WD multiplier \\
-\cmd{--wd-exclude-bias} / \texttt{wd\_exclude\_bias} & bool & \texttt{true} & bias decay = 0 \\
-\cmd{--wd-exclude-norm} / \texttt{wd\_exclude\_norm} & bool & \texttt{true} & norm decay = 0 \\
+\cmd{--optimizer} / \texttt{optimizer} & str & \texttt{adamw} & \texttt{adamw}, \texttt{sgd} \
+\cmd{--lr} / \texttt{lr} & float & \texttt{1e-4} & Base learning rate \
+\cmd{--weight-decay} / \texttt{weight\_decay} & float & \texttt{0.01} & Base weight decay \
+\cmd{--momentum} / \texttt{momentum} & float & \texttt{0.9} & Applicable to SGD only \
+\cmd{--nesterov} / \texttt{nesterov} & bool & \texttt{false} & Applicable to SGD only \
+\cmd{--use-param-groups} / \texttt{use\_param\_groups} & bool & \texttt{false} & Enables separate backbone/head parameter groups \
+\cmd{--backbone-lr-mult} / \texttt{backbone\_lr\_mult} & float & \texttt{1.0} & Learning rate multiplier for the backbone \
+\cmd{--head-lr-mult} / \texttt{head\_lr\_mult} & float & \texttt{1.0} & Learning rate multiplier for the head \
+\cmd{--backbone-wd-mult} / \texttt{backbone\_wd\_mult} & float & \texttt{1.0} & Weight decay multiplier for the backbone \
+\cmd{--head-wd-mult} / \texttt{head\_wd\_mult} & float & \texttt{1.0} & Weight decay multiplier for the head \
+\cmd{--wd-exclude-bias} / \texttt{wd\_exclude\_bias} & bool & \texttt{true} & Sets bias decay to 0 \
+\cmd{--wd-exclude-norm} / \texttt{wd\_exclude\_norm} & bool & \texttt{true} & Sets normalization decay to 0 \
 \bottomrule
 \end{longtable}
 
 \section{LR scheduling parameters and defaults}
-Supported scheduler values are \texttt{none} (default), \texttt{cosine}, \texttt{onecycle}, and \texttt{multistep}.
+Supported learning rate scheduler configurations include \texttt{none} (default), \texttt{cosine}, \texttt{onecycle}, and \texttt{multistep}.
 
 \begin{longtable}{@{}p{0.40\textwidth}p{0.10\textwidth}p{0.12\textwidth}p{0.30\textwidth}@{}}
 \toprule
-\textbf{CLI / config key} & \textbf{Type} & \textbf{Default} & \textbf{Notes} \\
+\textbf{CLI / config key} & \textbf{Type} & \textbf{Default} & \textbf{Notes} \
 \midrule
-\cmd{--scheduler} / \texttt{scheduler} & str & \texttt{none} & \texttt{none}, \texttt{cosine}, \texttt{onecycle}, \texttt{multistep} \\
-\cmd{--min-lr} / \texttt{min\_lr} & float & \texttt{0.0} & cosine \texttt{eta\_min} \\
-\cmd{--scheduler-milestones} / \texttt{scheduler\_milestones} & str/list & \texttt{""} & comma list for multistep \\
-\cmd{--scheduler-gamma} / \texttt{scheduler\_gamma} & float & \texttt{0.1} & multistep decay factor \\
-\cmd{--lr-warmup-steps} / \texttt{lr\_warmup\_steps} & int & \texttt{0} & linear warmup steps \\
-\cmd{--lr-warmup-init} / \texttt{lr\_warmup\_init} & float & \texttt{0.0} & warmup initial LR \\
+\cmd{--scheduler} / \texttt{scheduler} & str & \texttt{none} & \texttt{none}, \texttt{cosine}, \texttt{onecycle}, \texttt{multistep} \
+\cmd{--min-lr} / \texttt{min\_lr} & float & \texttt{0.0} & Corresponds to cosine \texttt{eta\_min} \
+\cmd{--scheduler-milestones} / \texttt{scheduler\_milestones} & str/list & \texttt{""} & Comma-separated list for multistep scheduling \
+\cmd{--scheduler-gamma} / \texttt{scheduler\_gamma} & float & \texttt{0.1} & Decay factor for multistep scheduling \
+\cmd{--lr-warmup-steps} / \texttt{lr\_warmup\_steps} & int & \texttt{0} & Number of linear warmup steps \
+\cmd{--lr-warmup-init} / \texttt{lr\_warmup\_init} & float & \texttt{0.0} & Initial learning rate during warmup \
 \bottomrule
 \end{longtable}
 
-\noindent\textbf{Note:} \texttt{linear} is not a supported scheduler value in current code.
+
+oindent\textbf{Note:} The \texttt{linear} scheduler is not supported in the current codebase.
 
 \section{LoRA / QLoRA parameters and defaults}
-LoRA is enabled when \texttt{lora\_r > 0}.
+Low-Rank Adaptation (LoRA) is activated when \texttt{lora\_r > 0}.
 
 \begin{longtable}{@{}p{0.40\textwidth}p{0.10\textwidth}p{0.12\textwidth}p{0.30\textwidth}@{}}
 \toprule
-\textbf{CLI / config key} & \textbf{Type} & \textbf{Default} & \textbf{Notes} \\
+\textbf{CLI / config key} & \textbf{Type} & \textbf{Default} & \textbf{Notes} \
 \midrule
-\cmd{--lora-r} / \texttt{lora\_r} & int & \texttt{0} & \texttt{>0} enables LoRA \\
-\cmd{--lora-alpha} / \texttt{lora\_alpha} & float/null & \texttt{null} & null means \(\alpha=r\) \\
-\cmd{--lora-dropout} / \texttt{lora\_dropout} & float & \texttt{0.0} & LoRA input dropout \\
-\cmd{--lora-target} / \texttt{lora\_target} & str & \texttt{head} & \texttt{head}, \texttt{all\_linear}, \texttt{all\_conv1x1}, \texttt{all\_linear\_conv1x1} \\
-\cmd{--lora-freeze-base} / \texttt{lora\_freeze\_base} & bool & \texttt{true} & LoRA-only training \\
-\cmd{--lora-train-bias} / \texttt{lora\_train\_bias} & str & \texttt{none} & \texttt{none}, \texttt{all} \\
-\cmd{--torchao-quant} / \texttt{torchao\_quant} & str & \texttt{none} & \texttt{none}, \texttt{int8wo}, \texttt{int4wo} \\
-\cmd{--torchao-required} / \texttt{torchao\_required} & bool & \texttt{false} & fail if quant backend missing \\
-\cmd{--qlora} / \texttt{qlora} & bool & \texttt{false} & requires LoRA, enforces int4wo + freeze \\
+\cmd{--lora-r} / \texttt{lora\_r} & int & \texttt{0} & Values \texttt{>0} enable LoRA \
+\cmd{--lora-alpha} / \texttt{lora\_alpha} & float/null & \texttt{null} & A null value implies \(\alpha=r\) \
+\cmd{--lora-dropout} / \texttt{lora\_dropout} & float & \texttt{0.0} & Specifies LoRA input dropout \
+\cmd{--lora-target} / \texttt{lora\_target} & str & \texttt{head} & Options: \texttt{head}, \texttt{all\_linear}, \texttt{all\_conv1x1}, \texttt{all\_linear\_conv1x1} \
+\cmd{--lora-freeze-base} / \texttt{lora\_freeze\_base} & bool & \texttt{true} & Restricts training exclusively to LoRA parameters \
+\cmd{--lora-train-bias} / \texttt{lora\_train\_bias} & str & \texttt{none} & Options: \texttt{none}, \texttt{all} \
+\cmd{--torchao-quant} / \texttt{torchao\_quant} & str & \texttt{none} & Options: \texttt{none}, \texttt{int8wo}, \texttt{int4wo} \
+\cmd{--torchao-required} / \texttt{torchao\_required} & bool & \texttt{false} & Triggers a failure if the quantization backend is absent \
+\cmd{--qlora} / \texttt{qlora} & bool & \texttt{false} & Requires LoRA; strictly enforces int4wo quantization and base freezing \
 \bottomrule
 \end{longtable}
 
-\section{Default config list (practical minimum)}
-The canonical default list is maintained in:
+\section{Default configuration list (practical minimum)}
+The canonical default configurations are maintained within:
 \begin{itemize}
   \item \path{configs/examples/train_setting.yaml}
   \item \path{configs/examples/train_contract.yaml}
   \item \path{configs/examples/test_setting.yaml}
 \end{itemize}
 
-Frequently edited defaults:
+Frequently modified default parameters include:
 \begin{longtable}{@{}p{0.34\textwidth}p{0.20\textwidth}p{0.40\textwidth}@{}}
 \toprule
-\textbf{Config key} & \textbf{Default} & \textbf{Meaning} \\
+\textbf{Config key} & \textbf{Default} & \textbf{Meaning} \
 \midrule
-\texttt{optimizer} & \texttt{adamw} & optimizer family \\
-\texttt{lr} & \texttt{1e-4} & base LR \\
-\texttt{weight\_decay} & \texttt{0.01} & base WD \\
-\texttt{scheduler} & \texttt{none} & LR scheduler mode \\
-\texttt{lr\_warmup\_steps} & \texttt{0} & warmup disabled by default \\
-\texttt{lora\_r} & \texttt{0} & LoRA disabled by default \\
-\texttt{gradient\_accumulation\_steps} & \texttt{1} & no accumulation \\
-\texttt{clip\_grad\_norm} & \texttt{0.0} & clipping disabled \\
-\texttt{use\_ema} & \texttt{false} & EMA disabled \\
-\texttt{amp} & \texttt{none} & AMP disabled \\
-\texttt{metrics\_jsonl} & \path{reports/train_metrics.jsonl} & train metric stream \\
-\texttt{metrics\_csv} & \path{reports/train_metrics.csv} & tabular metrics \\
-\texttt{export\_onnx} & \texttt{true} & ONNX export enabled \\
-\texttt{onnx\_out} & \path{reports/rtdetr_pose.onnx} & ONNX output path \\
+\texttt{optimizer} & \texttt{adamw} & Optimizer family \
+\texttt{lr} & \texttt{1e-4} & Base learning rate \
+\texttt{weight\_decay} & \texttt{0.01} & Base weight decay \
+\texttt{scheduler} & \texttt{none} & Learning rate scheduler mode \
+\texttt{lr\_warmup\_steps} & \texttt{0} & Warmup is disabled by default \
+\texttt{lora\_r} & \texttt{0} & LoRA is disabled by default \
+\texttt{gradient\_accumulation\_steps} & \texttt{1} & Gradient accumulation is disabled \
+\texttt{clip\_grad\_norm} & \texttt{0.0} & Gradient clipping is disabled \
+\texttt{use\_ema} & \texttt{false} & Exponential Moving Average (EMA) is disabled \
+\texttt{amp} & \texttt{none} & Automatic Mixed Precision (AMP) is disabled \
+\texttt{metrics\_jsonl} & \path{reports/train_metrics.jsonl} & Output stream for training metrics \
+\texttt{metrics\_csv} & \path{reports/train_metrics.csv} & Tabular format for metrics \
+\texttt{export\_onnx} & \texttt{true} & ONNX export is enabled \
+\texttt{onnx\_out} & \path{reports/rtdetr_pose.onnx} & Designated ONNX output path \
 \bottomrule
 \end{longtable}
 
 \section{Smoke training}
-A typical smoke entry point is exposed as a script under \path{tools/}.
-The exact command may change; search for \path{smoke} scripts in \path{tools/}.
+A standard smoke test entry point is provided as a script within the \path{tools/} directory. As the exact command may evolve, please search for \path{smoke} scripts within \path{tools/} for the most current usage.
 
 \section{Depth mode in training (scaffold)}
-The trainer supports optional depth integration with a safe default:
+The trainer incorporates optional depth integration, configured with a conservative default:
 \begin{itemize}
-  \item \cmd{--depth-mode none} (default): baseline path, depth disabled.
-  \item \cmd{--depth-mode sidecar}: reads per-image depth sidecars (\cmd{depth_path}/\cmd{depth}) and propagates \cmd{depth_valid}.
-  \item \cmd{--depth-mode fuse_mid}: applies lightweight depth fusion after projector (outside the backbone boundary).
+  \item \cmd{--depth-mode none} (default): Executes the baseline pathway with depth processing disabled.
+  \item \cmd{--depth-mode sidecar}: Ingests per-image depth sidecars (\cmd{depth_path}/\cmd{depth}) and propagates the \cmd{depth_valid} flag.
+  \item \cmd{--depth-mode fuse_mid}: Implements lightweight depth fusion subsequent to the projector (external to the backbone boundary).
 \end{itemize}
 
-Safety knobs:
+Safety controls:
 \begin{itemize}
   \item \cmd{--depth-unit \{unspecified,relative,metric\}} (default: \cmd{unspecified}).
-  \item Absolute depth matcher costs are allowed only in metric mode; non-metric modes safety-disable \cmd{cost_z}/\cmd{cost_t}.
-  \item \cmd{--depth-scale} applies a scalar to sidecar depth values.
-  \item \cmd{--depth-dropout} controls modality dropout probability for \cmd{fuse_mid} training.
+  \item Absolute depth matcher costs are strictly permitted only in metric mode; non-metric modes automatically disable \cmd{cost_z}/\cmd{cost_t} for safety.
+  \item \cmd{--depth-scale} applies a scalar multiplier to sidecar depth values.
+  \item \cmd{--depth-dropout} regulates the modality dropout probability during \cmd{fuse_mid} training.
 \end{itemize}
 
 \section{Contracted run example}
 \begin{lstlisting}[language=bash]
 yolozu train configs/examples/train_contract.yaml --run-id exp01
 
-# Resume from runs/exp01/checkpoints/last.pt
+# Resume training from runs/exp01/checkpoints/last.pt
 yolozu train configs/examples/train_contract.yaml --run-id exp01 --resume
 \end{lstlisting}
 
-\section{Backbone change (model architecture switch)}
-Backbone-related settings are not primarily controlled by solver flags; they come from
-the model config file referenced by \texttt{model\_config} in the training YAML.
+\section{Backbone modification (model architecture switch)}
+Backbone-specific configurations are not primarily governed by solver flags; rather, they are derived from the model configuration file specified by \texttt{model\_config} in the training YAML.
 
-Detailed backbone contract notes and examples are maintained in
-\path{docs/backbones.md}.
+Comprehensive notes and examples regarding the backbone contract are maintained in \path{docs/backbones.md}.
 
-Backbone output contract is fixed to three feature maps:
-\texttt{[P3, P4, P5]} with strides \texttt{[8,16,32]}.
-Each level is projected to transformer \texttt{d\_model} by independent 1x1 convs.
+The backbone output contract strictly mandates three feature maps: \texttt{[P3, P4, P5]} with corresponding strides of \texttt{[8, 16, 32]}. Each level is independently projected to the transformer's \texttt{d\_model} dimension via 1x1 convolutions.
 
-Supported backbone names in current code include:
-\texttt{cspresnet}, \texttt{tiny\_cnn}, \texttt{cspdarknet\_s},
-\texttt{resnet50}, and \texttt{convnext\_tiny}.
+Supported backbone architectures in the current codebase include:
+\texttt{cspresnet}, \texttt{tiny\_cnn}, \texttt{cspdarknet\_s}, \texttt{resnet50}, and \texttt{convnext\_tiny}.
 
-Legacy compatibility fields (for example \texttt{backbone\_name},
-\texttt{backbone\_channels}) are still accepted, but the preferred form is
-\texttt{model.backbone.*} plus \texttt{model.projector.d\_model}.
+While legacy compatibility fields (e.g., \texttt{backbone\_name}, \texttt{backbone\_channels}) remain functional, the strongly preferred convention utilizes \texttt{model.backbone.*} in conjunction with \texttt{model.projector.d\_model}.
 
 \begin{longtable}{@{}p{0.28\textwidth}p{0.24\textwidth}p{0.42\textwidth}@{}}
 \toprule
-\textbf{Where} & \textbf{Key} & \textbf{Role} \\
+\textbf{Location} & \textbf{Key} & \textbf{Role} \
 \midrule
-train YAML & \texttt{model\_config} & points to model JSON (example: \path{rtdetr_pose/configs/base.json}) \\
-model JSON (\texttt{model.backbone.*}) & \texttt{name} & backbone family (e.g. \texttt{cspresnet}, \texttt{cspdarknet\_s}, \texttt{resnet50}, \texttt{convnext\_tiny}) \\
-model JSON (\texttt{model.backbone.*}) & \texttt{norm} & normalization type (\texttt{bn|syncbn|frozenbn|gn}) \\
-model JSON (\texttt{model.backbone.*}) & \texttt{args} & optional backbone-specific constructor args \\
-model JSON (\texttt{model.projector.*}) & \texttt{d\_model} & projection/output channel size for transformer input \\
-solver YAML/CLI & \texttt{backbone\_lr\_mult} & LR multiplier for backbone params \\
-solver YAML/CLI & \texttt{backbone\_wd\_mult} & WD multiplier for backbone params \\
+Train YAML & \texttt{model\_config} & References the model JSON (e.g., \path{rtdetr_pose/configs/base.json}) \
+Model JSON (\texttt{model.backbone.*}) & \texttt{name} & Specifies the backbone family (e.g., \texttt{cspresnet}, \texttt{cspdarknet\_s}, \texttt{resnet50}, \texttt{convnext\_tiny}) \
+Model JSON (\texttt{model.backbone.*}) & \texttt{norm} & Defines the normalization type (\texttt{bn|syncbn|frozenbn|gn}) \
+Model JSON (\texttt{model.backbone.*}) & \texttt{args} & Optional, backbone-specific constructor arguments \
+Model JSON (\texttt{model.projector.*}) & \texttt{d\_model} & Sets the projection/output channel size for transformer input \
+Solver YAML/CLI & \texttt{backbone\_lr\_mult} & Learning rate multiplier applied to backbone parameters \
+Solver YAML/CLI & \texttt{backbone\_wd\_mult} & Weight decay multiplier applied to backbone parameters \
 \bottomrule
 \end{longtable}
 
-Normalization guidance:
+Normalization guidelines:
 \begin{itemize}
-  \item \texttt{bn}: default for standard single-node training.
-  \item \texttt{syncbn}: useful in multi-GPU runs with small per-rank batch.
-  \item \texttt{frozenbn}: stable when batch statistics should not drift.
-  \item \texttt{gn}: batch-size-independent fallback.
+  \item \texttt{bn}: The standard default for single-node training.
+  \item \texttt{syncbn}: Highly recommended for multi-GPU environments utilizing small per-rank batch sizes.
+  \item \texttt{frozenbn}: Provides stability when batch statistics must remain static.
+  \item \texttt{gn}: A robust, batch-size-independent alternative.
 \end{itemize}
 
-Recommended procedure:
+Recommended workflow for backbone modification:
 \begin{enumerate}
-  \item Copy \path{rtdetr_pose/configs/base.json} to a project-local model JSON.
-  \item Edit \texttt{model.backbone.name} and \texttt{model.backbone.args}.
-  \item Set \texttt{model.projector.d\_model} to the intended transformer hidden size.
-  \item Point training YAML \texttt{model\_config} to the new JSON.
-  \item Start with smoke settings (small \texttt{image\_size}/\texttt{max\_steps}), then scale.
+  \item Duplicate \path{rtdetr_pose/configs/base.json} to create a project-local model JSON file.
+  \item Modify \texttt{model.backbone.name} and \texttt{model.backbone.args} as required.
+  \item Configure \texttt{model.projector.d\_model} to match the intended transformer hidden size.
+  \item Update the training YAML's \texttt{model\_config} to reference the newly created JSON file.
+  \item Initiate a smoke test with minimal settings (e.g., reduced \texttt{image\_size} and \texttt{max\_steps}) before scaling up.
 \end{enumerate}
 
-Example:
+Example implementation:
 \begin{lstlisting}[language=bash]
 cp rtdetr_pose/configs/base.json rtdetr_pose/configs/my_backbone.json
-# edit model.backbone.name / model.backbone.args / model.projector.d_model
+# Edit model.backbone.name, model.backbone.args, and model.projector.d_model accordingly
 
-yolozu train configs/examples/train_setting.yaml \
-  --model-config rtdetr_pose/configs/my_backbone.json \
-  --use-param-groups \
-  --backbone-lr-mult 0.1
+yolozu train configs/examples/train_setting.yaml   --model-config rtdetr_pose/configs/my_backbone.json   --use-param-groups   --backbone-lr-mult 0.1
 \end{lstlisting}

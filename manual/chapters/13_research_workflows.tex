@@ -1,127 +1,103 @@
 \chapter{Research Workflows (End-to-end Loops)}
 
 \ChapterMeta{
-This chapter describes end-to-end research loops and the supporting helpers for subsets, sweeps, and benchmarks.
+This chapter delineates end-to-end research loops and introduces the supporting utilities designed for managing subsets, executing sweeps, and conducting benchmarks.
 }{
-It creates repeatable experiments with an artifact-first discipline so results can be compared and regressed reliably.
+It establishes a framework for repeatable experiments grounded in an artifact-first discipline, ensuring that results can be reliably compared and regressed over time.
 }{
-It assumes you are using stable JSON artifacts and, when applicable, protocol presets; keep subsets deterministic to make comparisons fair.
+It assumes the utilization of stable JSON artifacts and, where applicable, protocol presets. Maintaining deterministic subsets is crucial for ensuring fair and valid comparisons.
 }
 
 \section{The research loop in \yolozu{}}
-A typical loop is:
+A canonical research iteration proceeds as follows:
 \begin{enumerate}
-  \item Build or obtain a model (train or external).
-  \item Export predictions into the stable JSON contract.
-  \item Validate contracts (fail fast).
-  \item Evaluate under a pinned protocol (suite reports).
-  \item Compare backends (parity) and compare runs (history JSONL/CSV/MD).
-  \item (Optional) post-hoc calibration, re-evaluate.
-  \item (Optional) sweep parameters and benchmark latency.
+  \item Build or acquire a model (either via internal training or external sourcing).
+  \item Export predictions adhering strictly to the stable JSON contract.
+  \item Validate all contracts immediately (adopting a fail-fast methodology).
+  \item Evaluate the artifacts under a pinned protocol (generating suite reports).
+  \item Conduct backend parity checks and compare historical runs (utilizing JSONL/CSV/MD histories).
+  \item (Optional) Apply post-hoc calibration and subsequently re-evaluate.
+  \item (Optional) Execute hyperparameter sweeps and benchmark latency metrics.
 \end{enumerate}
 
-The key discipline is: \textbf{make artifacts first-class}. A run should produce JSON files that
-let you reproduce and compare.
+The foundational discipline is: \textbf{treat artifacts as first-class entities}. Every run must generate JSON files that facilitate seamless reproduction and rigorous comparison.
 
-\section{Freeze a subset dataset for ablations}
-For fast ablations you often want a deterministic subset of a dataset.
-\yolozu{} provides a helper:
+\section{Freezing a dataset subset for ablations}
+Rapid ablation studies frequently require a deterministic subset of a larger dataset. \yolozu{} provides a dedicated utility for this purpose:
 \begin{lstlisting}[language=bash]
-python3 tools/make_subset_dataset.py \
-  --dataset data/coco128 \
-  --split train2017 \
-  --n 50 \
-  --seed 0 \
-  --out reports/coco128_50
+python3 tools/make_subset_dataset.py   --dataset data/coco128   --split train2017   --n 50   --seed 0   --out reports/coco128_50
 \end{lstlisting}
 
-This produces:
+This command generates:
 \begin{itemize}
-  \item a subset dataset directory,
-  \item a frozen image list (for reproducible sampling),
-  \item a subset metadata JSON (for provenance).
+  \item A dedicated subset dataset directory.
+  \item A frozen image list (guaranteeing reproducible sampling).
+  \item A subset metadata JSON file (ensuring clear provenance).
 \end{itemize}
 
 \section{Protocol-pinned evaluation (YOLO26 example)}
-Protocols pin evaluation settings so numbers are comparable over time.
-For YOLO26, the protocol is defined by \path{protocols/yolo26_eval.json} (the tool reads it and records it into suite reports).
+Protocols rigidly pin evaluation settings to guarantee that metrics remain comparable across extended timeframes. For YOLO26, the protocol is explicitly defined within \path{protocols/yolo26_eval.json} (the evaluation tool ingests this file and embeds its parameters into the final suite reports).
 
-Run a suite over many prediction artifacts:
+To execute a suite evaluation across multiple prediction artifacts:
 \begin{lstlisting}[language=bash]
-python3 tools/eval_suite.py \
-  --protocol yolo26 \
-  --dataset /path/to/yolo-dataset \
-  --predictions-glob '/path/to/pred_*.json' \
-  --output reports/eval_suite.json
+python3 tools/eval_suite.py   --protocol yolo26   --dataset /path/to/yolo-dataset   --predictions-glob '/path/to/pred_*.json'   --output reports/eval_suite.json
 \end{lstlisting}
 
-The report includes protocol metadata (split, bbox format, etc.), which is essential for
-research comparisons.
+The resulting report incorporates protocol metadata (e.g., split definitions, bounding box formats), which is absolutely essential for valid research comparisons.
 
-\section{Validate contracts as a research gate}
-Before spending time interpreting metrics, validate artifacts:
+\section{Validating contracts as a research quality gate}
+Before investing time in metric interpretation, you must validate your artifacts:
 \begin{lstlisting}[language=bash]
 python3 tools/validate_dataset.py --dataset /path/to/yolo --strict
 python3 tools/validate_predictions.py /path/to/predictions.json --strict
 \end{lstlisting}
 
-This is especially important when you export predictions from external pipelines.
+This step is particularly critical when ingesting predictions exported from external pipelines.
 
-\section{Backend parity (torch vs onnxrt vs trt)}
-When comparing inference backends, first ensure the outputs are aligned.
-Use parity tooling to compare two \path{predictions.json} artifacts and flag systematic mismatches (preprocess, coordinate formats, numerics).
+\section{Backend parity (Torch vs. ONNX Runtime vs. TensorRT)}
+When evaluating different inference backends, establishing output alignment is the mandatory first step. Utilize the parity tooling to compare two \path{predictions.json} artifacts and identify systematic discrepancies (e.g., variations in preprocessing, coordinate formatting, or underlying numerics).
 
 Conceptual usage:
 \begin{lstlisting}[language=bash]
-yolozu parity \
-  --reference reports/pred_torch.json \
-  --candidate reports/pred_onnxrt.json
+yolozu parity   --reference reports/pred_torch.json   --candidate reports/pred_onnxrt.json
 \end{lstlisting}
 
-\section{Sweeps (hyperparameter search harness)}
-Research frequently needs parameter sweeps even outside the main training loop.
-The sweep harness executes external commands, collects metrics, and writes tables.
+\section{Sweeps (Hyperparameter search harness)}
+Research workflows frequently necessitate parameter sweeps that operate independently of the primary training loop. The sweep harness executes external commands, aggregates metrics, and generates comprehensive summary tables.
 
 Quick start:
 \begin{lstlisting}[language=bash]
 python3 tools/hpo_sweep.py --config docs/hpo_sweep_example.json --resume
 \end{lstlisting}
 
-Outputs (by default):
+Default outputs include:
 \begin{itemize}
   \item \path{reports/hpo_sweep.jsonl}
   \item \path{reports/hpo_sweep.csv}
   \item \path{reports/hpo_sweep.md}
 \end{itemize}
 
-Use \cmd{--resume} to make sweeps incremental and robust to interruptions.
+Employ the \cmd{--resume} flag to render sweeps incremental and highly resilient to unexpected interruptions.
 
-Important config fields (from \path{docs/hpo_sweep.md}):
+Critical configuration fields (detailed in \path{docs/hpo_sweep.md}):
 \begin{itemize}
-  \item required: \cmd{base_cmd}, and either \cmd{param_grid} or \cmd{param_list}
-  \item optional: \cmd{run_dir}, \cmd{metrics.path}, \cmd{metrics.keys}
-  \item optional outputs: \cmd{result_jsonl}, \cmd{result_csv}, \cmd{result_md}
-  \item optional runtime controls: \cmd{env}, \cmd{shell}
+  \item \textbf{Required}: \cmd{base_cmd}, alongside either \cmd{param_grid} or \cmd{param_list}.
+  \item \textbf{Optional}: \cmd{run_dir}, \cmd{metrics.path}, \cmd{metrics.keys}.
+  \item \textbf{Optional outputs}: \cmd{result_jsonl}, \cmd{result_csv}, \cmd{result_md}.
+  \item \textbf{Optional runtime controls}: \cmd{env}, \cmd{shell}.
 \end{itemize}
 
-The harness is framework-agnostic: it does not assume a specific training stack.
+The harness is intentionally framework-agnostic; it makes no assumptions regarding the underlying training stack.
 
 \section{Prediction distillation workflow}
-\yolozu{} includes a lightweight distillation helper at
-\path{tools/distill_predictions.py}.
+\yolozu{} incorporates a streamlined distillation utility located at \path{tools/distill_predictions.py}.
 
 Canonical usage:
 \begin{lstlisting}[language=bash]
-python3 tools/distill_predictions.py \
-  --student reports/predictions_student.json \
-  --teacher reports/predictions_teacher.json \
-  --dataset data/coco128 \
-  --output reports/predictions_distilled.json \
-  --output-report reports/distill_report.json \
-  --add-missing
+python3 tools/distill_predictions.py   --student reports/predictions_student.json   --teacher reports/predictions_teacher.json   --dataset data/coco128   --output reports/predictions_distilled.json   --output-report reports/distill_report.json   --add-missing
 \end{lstlisting}
 
-Distillation config keys include:
+Key distillation configuration parameters include:
 \begin{itemize}
   \item \cmd{enabled}
   \item \cmd{iou_threshold}
@@ -130,43 +106,31 @@ Distillation config keys include:
   \item \cmd{add_score_scale}
 \end{itemize}
 
-Notes:
+Important notes:
 \begin{itemize}
-  \item The helper blends teacher predictions into student predictions and emits a small distillation report JSON.
-  \item Some quick comparisons use a lightweight \cmd{yolozu.simple_map} proxy on a fixed subset (fast CPU feedback), and you should follow up with the full evaluator when reporting results.
+  \item The utility intelligently blends teacher predictions into the student's output and generates a concise distillation report JSON.
+  \item For rapid, preliminary comparisons, you may utilize the lightweight \cmd{yolozu.simple_map} proxy on a fixed subset (providing fast CPU-bound feedback). However, you must invariably follow up with the full evaluator when formally reporting results.
 \end{itemize}
 
-In research loops, this is useful for quick teacher-student ablations using fixed subsets and
-the same downstream evaluation protocol.
+Within research loops, this tool is highly effective for conducting rapid teacher-student ablations utilizing fixed subsets and a consistent downstream evaluation protocol.
 
-\section{Latency/FPS benchmarks with history (JSONL)}
-Benchmark reports are also artifacts.
-The latency harness emits a stable JSON report and can append to a JSONL history:
+\section{Latency/FPS benchmarks with historical tracking (JSONL)}
+Benchmark reports must be treated as formal artifacts. The latency harness generates a stable JSON report and can append results to a JSONL history file:
 \begin{lstlisting}[language=bash]
-python3 tools/benchmark_latency.py \
-  --iterations 200 \
-  --warmup 20 \
-  --output reports/benchmark_latency.json \
-  --history reports/benchmark_latency.jsonl \
-  --notes 'baseline on target HW'
+python3 tools/benchmark_latency.py   --iterations 200   --warmup 20   --output reports/benchmark_latency.json   --history reports/benchmark_latency.jsonl   --notes 'baseline on target HW'
 \end{lstlisting}
 
-This pattern (single JSON + JSONL history) is useful for tracking regressions across commits and
-hardware.
+This dual-output pattern (a single JSON report coupled with a JSONL history) is invaluable for systematically tracking performance regressions across successive commits and varying hardware configurations.
 
-\section{Run contract artifacts (training research)}
-If you use the in-repo trainer, prefer the contracted run mode for consistent artifacts.
-This is summarized in Chapter~7 (Training run contract).
+\section{Run contract artifacts (Training research)}
+When utilizing the in-repository trainer, it is strongly recommended to employ the contracted run mode to ensure the generation of consistent artifacts. This methodology is comprehensively detailed in Chapter~7 (Training and the Run Contract).
 
 Minimal example:
 \begin{lstlisting}[language=bash]
 yolozu train configs/examples/train_contract.yaml --run-id exp01
 \end{lstlisting}
 
-Contracted outputs live under \path{runs/exp01/} and include checkpoints, metrics JSONL, ONNX
-exports, and parity reports.
+Contracted outputs are systematically organized under \path{runs/exp01/} and encompass checkpoints, metrics JSONL files, ONNX exports, and parity reports.
 
 \section{Notes on long-tail calibration experiments}
-Post-hoc calibration is often a research axis. Use \cmd{yolozu calibrate} to generate calibrated
-prediction artifacts and compare methods side-by-side.
-This is summarized in Chapter~6 (Score calibration and long-tail adjustments).
+Post-hoc calibration frequently serves as a primary research axis. Utilize \cmd{yolozu calibrate} to generate calibrated prediction artifacts, enabling rigorous side-by-side comparisons of different methodologies. This process is thoroughly summarized in Chapter~6 (Score Calibration and Long-tail Adjustments).

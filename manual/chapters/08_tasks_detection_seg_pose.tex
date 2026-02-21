@@ -1,22 +1,20 @@
 \chapter{Tasks: Detection, Segmentation, Keypoints}
 
 \ChapterMeta{
-This chapter defines the supported task families and their expected prediction shapes.
+This chapter delineates the supported task families and rigorously defines their expected prediction schemas.
 }{
-It prevents schema mismatches and helps ensure the right evaluator is used for each task, improving metric correctness and debuggability.
+Adhering to these specifications prevents schema mismatches and guarantees the application of the correct evaluator for each task, thereby enhancing metric accuracy and streamlining the debugging process.
 }{
-It assumes task-specific fields are present (for example PNG masks for instance segmentation, and keypoint arrays for pose); validate artifacts early with the provided tools.
+It assumes the presence of task-specific data fields (e.g., PNG masks for instance segmentation, and keypoint arrays for pose estimation); it is highly recommended to validate artifacts early using the provided utility tools.
 }
 
 \section{Bounding-box detection}
-BBox detection is the baseline task: per-image detections with class IDs, boxes, and scores.
-Evaluation is typically COCO-style mAP or protocol-pinned metrics.
+Bounding-box detection serves as the foundational task, generating per-image detections characterized by class IDs, bounding box coordinates, and confidence scores. Evaluation is predominantly conducted using COCO-style mean Average Precision (mAP) or other protocol-pinned metrics.
 
 \section{Instance segmentation (PNG masks)}
-\yolozu{} evaluates instance segmentation using \textbf{per-instance binary PNG masks}.
-This avoids complex RLE/polygon tooling.
+\yolozu{} evaluates instance segmentation utilizing \textbf{per-instance binary PNG masks}. This approach deliberately circumvents the complexities associated with Run-Length Encoding (RLE) or polygon-based tooling.
 
-Minimal predictions shape:
+The minimal required prediction schema is structured as follows:
 \begin{lstlisting}[language=json]
 [
   {
@@ -28,51 +26,32 @@ Minimal predictions shape:
 ]
 \end{lstlisting}
 
-Validate:
+To validate the schema:
 \begin{lstlisting}[language=bash]
-python3 tools/validate_instance_segmentation_predictions.py \
-  reports/instance_seg_predictions.json
+python3 tools/validate_instance_segmentation_predictions.py   reports/instance_seg_predictions.json
 \end{lstlisting}
 
-Evaluate with overlays/HTML:
+To execute evaluation and generate visual overlays and HTML reports:
 \begin{lstlisting}[language=bash]
-python3 tools/eval_instance_segmentation.py \
-  --dataset /path/to/dataset \
-  --split val \
-  --predictions /path/to/predictions.json \
-  --pred-root /path/to/pred-root \
-  --classes /path/to/classes.txt \
-  --html reports/instance_seg_eval.html \
-  --overlays-dir reports/instance_seg_overlays \
-  --max-overlays 10
+python3 tools/eval_instance_segmentation.py   --dataset /path/to/dataset   --split val   --predictions /path/to/predictions.json   --pred-root /path/to/pred-root   --classes /path/to/classes.txt   --html reports/instance_seg_eval.html   --overlays-dir reports/instance_seg_overlays   --max-overlays 10
 \end{lstlisting}
 
 \section{Semantic segmentation}
-Semantic segmentation utilities include dataset preparation helpers and mIoU evaluation.
-Semantic segmentation evaluation reports mIoU (and per-class IoU); instance segmentation evaluation reports COCO-style mask mAP.
-Use \path{tools/eval_segmentation.py} for semantic seg and \path{tools/eval_instance_segmentation.py} for instance seg.
+The semantic segmentation suite provides robust dataset preparation utilities and mean Intersection over Union (mIoU) evaluation capabilities. While semantic segmentation evaluation yields mIoU (alongside per-class IoU), instance segmentation evaluation outputs COCO-style mask mAP. Ensure you utilize \path{tools/eval_segmentation.py} for semantic segmentation tasks and \path{tools/eval_instance_segmentation.py} for instance segmentation.
 
-\section{Keypoints / pose}
-\yolozu{} supports YOLO pose-style keypoints in labels and predictions, plus evaluation utilities.
-Depending on your workflow, you may use PCK evaluation and/or COCO OKS mAP.
+\section{Keypoints / pose estimation}
+\yolozu{} fully supports YOLO pose-style keypoints within both labels and predictions, complemented by dedicated evaluation utilities. Depending on your specific workflow requirements, you may employ Percentage of Correct Keypoints (PCK) evaluation, COCO Object Keypoint Similarity (OKS) mAP, or both.
 
-Dataset preparation is available via one command:
+Dataset preparation is streamlined into a single command:
 \begin{lstlisting}[language=bash]
-python3 tools/yolozu.py prepare-keypoints-dataset \
-  --source /path/to/export \
-  --format auto \
-  --out /path/to/keypoints_dataset
+python3 tools/yolozu.py prepare-keypoints-dataset   --source /path/to/export   --format auto   --out /path/to/keypoints_dataset
 \end{lstlisting}
 
-Supported direct inputs: \cmd{auto}, \cmd{yolo_pose}, \cmd{coco}, \cmd{cvat_xml}.
-For CVAT XML, pass either an XML file or a directory containing \path{annotations.xml};
-when image root inference is ambiguous, set \cmd{--cvat-images-dir} explicitly.
+Supported direct input formats include: \cmd{auto}, \cmd{yolo_pose}, \cmd{coco}, and \cmd{cvat_xml}. When processing CVAT XML, you may provide either a specific XML file or a directory containing an \path{annotations.xml} file. If the image root inference is ambiguous, explicitly define it using the \cmd{--cvat-images-dir} parameter.
 
-Minimal CVAT XML smoke test:
+A minimal smoke test for CVAT XML processing:
 \begin{lstlisting}[language=bash]
 python3 -m pytest -q tests/test_prepare_keypoints_dataset_cvat_xml.py
 \end{lstlisting}
 
-Keypoint evaluation entry points include scripts under \path{tools/} (for example, keypoints eval
-helpers).
-See the repository documentation for the authoritative schema and usage.
+Keypoint evaluation entry points are accessible via scripts located in the \path{tools/} directory (e.g., keypoint evaluation helpers). Please consult the repository documentation for the authoritative schema definitions and comprehensive usage instructions.

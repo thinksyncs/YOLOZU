@@ -1,100 +1,97 @@
 \chapter{CLI Reference (Practical)}
 
 \ChapterMeta{
-This chapter summarizes the most common commands and shows how to discover the full CLI surface via \cmd{--help}.
+This chapter provides a concise summary of the most frequently utilized commands and demonstrates how to explore the complete Command Line Interface (CLI) surface via the \cmd{--help} flag.
 }{
-It reduces time to first run and clarifies which commands are install-safe versus repo-only.
+It is designed to minimize the time to first execution and to clearly delineate which commands are install-safe versus those restricted to repository-only workflows.
 }{
-Use \cmd{yolozu --help} for the pip CLI or \cmd{python3 tools/yolozu.py --help} for the repo wrapper; details change over time so \cmd{--help} is the source of truth.
+Utilize \cmd{yolozu --help} for the pip-installed CLI, or \cmd{python3 tools/yolozu.py --help} for the repository wrapper. Because implementation details evolve, the \cmd{--help} output remains the definitive source of truth.
 }
 
-\section{Philosophy}
-The CLI surface is intentionally split:
+\section{Design Philosophy}
+The CLI surface is intentionally bifurcated to serve distinct user profiles:
 \begin{itemize}
-  \item \cmd{yolozu}: end-user safe CLI (installed via pip).
-  \item \cmd{python3 tools/yolozu.py}: repository wrapper for research/eval pipelines.
+  \item \cmd{yolozu}: The end-user safe CLI, installed globally or virtually via pip.
+  \item \cmd{python3 tools/yolozu.py}: The repository wrapper, specifically tailored for research and evaluation pipelines.
 \end{itemize}
 
-This chapter documents the \textit{high-traffic commands} and how to discover the rest.
+This chapter documents the \textit{high-traffic commands} and outlines the methodology for discovering the broader command set.
 
 \section{Discoverability}
-Always start with:\\
+As a best practice, always initiate discovery with:\\
 \cmd{yolozu --help} and \cmd{yolozu <command> --help}.\\
-For repo workflows: \cmd{python3 tools/yolozu.py --help}.
+For repository-specific workflows, utilize: \cmd{python3 tools/yolozu.py --help}.
 
-\section{Common commands}
-\begin{longtable}{@{}p{0.40\textwidth}p{0.55\textwidth}@{}}
+\section{Common Commands}
+\begin{longtable}{@{}p{0.40\textwidth}p{0.55\textwidth}@{=}
 \toprule
 \textbf{Command} & \textbf{Purpose} \\
 \midrule
-\cmd{yolozu doctor} & Environment diagnostics (deps/GPU/backend availability). \\
-\cmd{yolozu train} & YAML/JSON config-driven RT-DETR training (supports run contract and resume). \\
-\cmd{yolozu test} & YAML/JSON scenario runner (dummy/precomputed/rtdetr\_pose adapters). \\
-\cmd{yolozu predict-images} & Folder inference \(\to\) predictions + overlays + HTML. \\
-\cmd{yolozu eval-coco} & COCO mAP evaluation from predictions.json (when COCO tooling installed). \\
-\cmd{yolozu parity} & Compare two predictions artifacts (backend drift checks). \\
-\cmd{yolozu calibrate} & Score calibration / long-tail post-hoc adjustments. \\
-\cmd{python3 tools/eval_suite.py} & Suite evaluation; protocol-pinned reporting and comparisons. \\
-\cmd{python3 tools/hpo_sweep.py} & Execute parameter sweeps and aggregate metrics (CSV/MD/JSONL). \\
-\cmd{python3 tools/benchmark_latency.py} & Latency/FPS harness with JSONL history for regressions. \\
-\cmd{python3 tools/validate_tool_manifest.py} & Validate the machine-readable registry (tools/manifest.json). \\
+\cmd{yolozu doctor} & Executes environment diagnostics (verifying dependencies, GPU status, and backend availability). \\
+\cmd{yolozu train} & Initiates YAML/JSON config-driven RT-DETR training (fully supporting the run contract and resumption capabilities). \\
+\cmd{yolozu test} & Executes the YAML/JSON scenario runner (compatible with dummy, precomputed, and rtdetr\_pose adapters). \\
+\cmd{yolozu predict-images} & Performs folder-level inference, generating predictions, visual overlays, and an HTML summary. \\
+\cmd{yolozu eval-coco} & Conducts COCO mAP evaluation derived from \path{predictions.json} (requires COCO tooling to be installed). \\
+\cmd{yolozu parity} & Compares two distinct predictions artifacts to detect backend drift or discrepancies. \\
+\cmd{yolozu calibrate} & Applies score calibration and long-tail post-hoc adjustments. \\
+\cmd{python3 tools/eval_suite.py} & Executes suite evaluation, providing protocol-pinned reporting and cross-run comparisons. \\
+\cmd{python3 tools/hpo_sweep.py} & Orchestrates hyperparameter sweeps and aggregates metrics into CSV, MD, or JSONL formats. \\
+\cmd{python3 tools/benchmark_latency.py} & Runs the latency/FPS benchmark harness, maintaining a JSONL history to track performance regressions. \\
+\cmd{python3 tools/validate_tool_manifest.py} & Validates the structural integrity of the machine-readable registry (\path{tools/manifest.json}). \\
 \bottomrule
 \end{longtable}
 
-\section{YAML config-driven usage (train/test/resume)}
-\yolozu{} supports passing a YAML/JSON file as the first positional argument.
-Internally, \cmd{yolozu train} forwards \cmd{--config <file>} to
-\path{rtdetr_pose.train_minimal}, and \cmd{yolozu test} converts YAML keys to
-\path{yolozu.scenarios_cli} arguments.
+\section{YAML Config-Driven Usage (Train/Test/Resume)}
+\yolozu{} supports the ingestion of a YAML or JSON configuration file as its primary positional argument.
+Internally, \cmd{yolozu train} delegates the \cmd{--config <file>} argument to \path{rtdetr_pose.train_minimal}, whereas \cmd{yolozu test} maps YAML keys directly to \path{yolozu.scenarios_cli} arguments.
 
-\begin{longtable}{@{}p{0.18\textwidth}p{0.30\textwidth}p{0.46\textwidth}@{}}
+<begin{longtable}{@{}p{0.18\textwidth}p{0.30\textwidth}p{0.46\textwidth}@{=}
 \toprule
-\textbf{Case} & \textbf{YAML file} & \textbf{Command pattern} \\
+\textbf{Use Case} & \textbf{YAML File} & \textbf{Command Pattern} \\
 \midrule
-Train (default) & \path{configs/examples/train_setting.yaml} & \cmd{yolozu train <train_setting.yaml>} \\
-Train (contract) & \path{configs/examples/train_contract.yaml} & \cmd{yolozu train <train_contract.yaml> --run-id <id>} \\
-Resume & same as train contract & \cmd{yolozu train <train_contract.yaml> --run-id <id> --resume} \\
-Test (scenario) & \path{configs/examples/test_setting.yaml} & \cmd{yolozu test <test_setting.yaml> [test_args...]} \\
+Train (Default) & \path{configs/examples/train_setting.yaml} & \cmd{yolozu train <train_setting.yaml>} \\
+Train (Contract) & \path{configs/examples/train_contract.yaml} & \cmd{yolozu train <train_contract.yaml> --run-id <id>} \\
+Resume & Same as Train (Contract) & \cmd{yolozu train <train_contract.yaml> --run-id <id> --resume} \\
+Test (Scenario) & \path{configs/examples/test_setting.yaml} & \cmd{yolozu test <test_setting.yaml> [test_args...]} \\
 \bottomrule
 \end{longtable}
 
-Concrete examples:
-\begin{lstlisting}[language=bash]
+Concrete execution examples:
+\begin{lstlisting][language=bash]
 yolozu train configs/examples/train_setting.yaml
 yolozu train configs/examples/train_contract.yaml --run-id exp01
 yolozu train configs/examples/train_contract.yaml --run-id exp01 --resume
 yolozu test configs/examples/test_setting.yaml --adapter precomputed --predictions reports/predictions.json
 \end{lstlisting}
 
-Backbone swaps are controlled by model config JSON (not by changing adapter commands directly):
+Backbone substitutions are governed exclusively by the model configuration JSON, rather than by modifying adapter commands directly:
 \begin{lstlisting}[language=bash]
 yolozu train configs/examples/train_setting.yaml \
   --model-config rtdetr_pose/configs/base.json
 \end{lstlisting}
 
-For backbone contract and supported names, see \path{docs/backbones.md}.
+For comprehensive details regarding the backbone contract and supported architectures, refer to \path{docs/backbones.md}.
 
-\subsection{Test YAML and override rule}
-The default test YAML is intentionally minimal (adapter/dataset/split/max\_images), and runtime-specific
-options are typically passed as CLI overrides:
-\begin{lstlisting}[language=bash]
+\subsection{Test YAML and the Override Rule}
+The default test YAML configuration is intentionally minimalist (typically specifying only the adapter, dataset, split, and max\_images). Runtime-specific parameters are conventionally supplied as CLI overrides:
+\begin{lstlisting][language=bash]
 yolozu test configs/examples/test_setting.yaml \
   --adapter rtdetr_pose \
-  --config rtdetr_pose/configs/base.json \
+  --config rtetr_pose/configs/base.json \
   --checkpoint /path/to/checkpoint.pt \
   --dataset data/coco128 \
   --max-images 50
 \end{lstlisting}
 
-\noindent This mirrors the documented real-model flow in \path{docs/real_model_interface.md}.
+\noindent This paradigm directly mirrors the documented real-model workflow detailed in \path{docs/real_model_interface.md}.
 
-\section{Repository power tools}
-Many task-specific scripts live under \path{tools/}. Examples include:
+\section{Repository Power Tools}
+A multitude of task-specific scripts are housed within the \path{tools/} directory. Notable examples include:
 \begin{itemize}
   \item \path{tools/validate_predictions.py}
   \item \path{tools/eval_instance_segmentation.py}
   \item \path{tools/eval_segmentation.py}
-  \item \path{tools/export_predictions.py} (adapter-based export)
+  \item \path{tools/export_predictions.py} (Facilitates adapter-based export)
 \end{itemize}
 
-For a comprehensive list, consult \path{tools/manifest.json} (machine-readable) and the docs index (human-readable).
+For an exhaustive inventory, consult \path{tools/manifest.json} (for machine-readable metadata) and the documentation index (for human-readable guidance).

@@ -1,66 +1,65 @@
 \chapter{Core Concepts and Contracts}
 
 \ChapterMeta{
-This chapter explains the core contracts (schemas) and the dataset and predictions migration approach used throughout the repository.
+This chapter elucidates the core contracts (schemas) and the dataset and prediction migration methodologies employed throughout the repository.
 }{
-It keeps evaluation stable across backends and over time by making inputs and outputs explicit and versionable.
+
+It ensures evaluation stability across diverse backends and over time by mandating explicit, versionable inputs and outputs.
 }{
-It assumes you follow the documented schemas and treat generated wrapper artifacts (for example \path{dataset.json}) as part of the workflow.
+
+This documentation assumes adherence to the specified schemas and treats generated wrapper artifacts (e.g., \path{dataset.json}) as integral components of the workflow.
 }
 
-\section{Contract-first evaluation}
-The contracts (schemas) are the product. They let you:
+\section{Contract-First Evaluation}
+The contracts (schemas) are the foundational product of this repository. They empower you to:
 \begin{itemize}
-  \item compare different inference backends fairly,
-  \item reproduce evaluations later,
-  \item keep tooling stable even as models evolve.
+  \item Conduct equitable comparisons across disparate inference backends.
+  \item Guarantee the reproducibility of evaluations over time.
+  \item Maintain tooling stability, even as underlying models undergo architectural evolution.
 \end{itemize}
 
-Core contracts:
+Core contracts include:
 \begin{itemize}
-  \item Predictions schema: \path{docs/predictions_schema.md}
-  \item Adapter contract: \path{docs/adapter_contract.md}
-  \item Training run contract: \path{docs/run_contract.md}
+  \item \textbf{Predictions Schema}: \path{docs/predictions_schema.md}
+  \item \textbf{Adapter Contract}: \path{docs/adapter_contract.md}
+  \item \textbf{Training Run Contract}: \path{docs/run_contract.md}
 \end{itemize}
 
 \section{Datasets}
-Many tools expect a YOLO-style dataset layout (images/labels/splits) plus optional metadata.
+The majority of tools anticipate a YOLO-style dataset hierarchy (comprising \path{images/}, \path{labels/}, and splits), supplemented by optional metadata.
 
-\subsection{Easy migration (use datasets ``as-is'')}
-YOLOZU is designed so that common training ecosystems can be evaluated with minimal friction.
-The core idea is to avoid rewriting datasets by hand and instead generate small \textbf{descriptor artifacts}.
+\subsection{Frictionless Migration (Utilizing Datasets "As-Is")}
+\yolozu{} is engineered to evaluate prevalent training ecosystems with minimal friction. The central paradigm is to circumvent manual dataset restructuring by generating lightweight \textbf{descriptor artifacts}.
 
-In practice, migration commands produce:
+In practice, migration commands yield:
 \begin{itemize}
-  \item a small \path{dataset.json} wrapper (points at existing images/labels), and/or
-  \item converted label files (e.g., COCO JSON $\rightarrow$ YOLO label txts) plus a wrapper.
+  \item A concise \path{dataset.json} wrapper (which references existing images and labels), and/or
+  \item Converted label files (e.g., translating COCO JSON to YOLO text labels) accompanied by a wrapper.
 \end{itemize}
 
-The goal is to keep source datasets untouched and make evaluation inputs explicit and versionable.
+The overarching objective is to preserve the integrity of source datasets while rendering evaluation inputs explicit and versionable.
 
-\subsection{Ultralytics datasets (YOLOv8/YOLO11)}
-If your dataset is already described by an Ultralytics-style \path{data.yaml} (pointing at \path{images/<split>/} and \path{labels/<split>/}),
-YOLOZU can generate a lightweight \path{dataset.json} wrapper while keeping the original dataset untouched.
+\subsection{Ultralytics Datasets (YOLOv8/YOLO11)}
+If your dataset is already defined by an Ultralytics-style \path{data.yaml} (referencing \path{images/<split>/} and \path{labels/<split>/}), \yolozu{} can generate a lightweight \path{dataset.json} wrapper, leaving the original dataset entirely unmodified.
 
-For the exact command and validation steps, see Chapter~5 (Workflow~D: Migrate datasets and predictions).
+For precise command syntax and validation procedures, refer to Chapter~5 (Workflow~D: Migrate Datasets and Predictions).
 
-\subsection{COCO JSON datasets (migration)}
-Many ecosystems use COCO-style \path{instances_*.json} for detection.
-YOLOZU consumes YOLO-style label txts, so the supported migration path is:
-COCO JSON $\rightarrow$ YOLO labels + \path{dataset.json} wrapper.
+\subsection{COCO JSON Datasets (Migration)}
+Numerous ecosystems rely on COCO-style \path{instances_*.json} files for object detection. Because \yolozu{} consumes YOLO-style text labels, the supported migration trajectory is:
+COCO JSON $%rightarrow$ YOLO labels + \path{dataset.json} wrapper.
 
-For the concrete conversion command, see Chapter~5 (Workflow~D: Migrate datasets and predictions).
+For the specific conversion command, consult Chapter~5 (Workflow~D: Migrate Datasets and Predictions).
 
-\subsection{Importing predictions from other ecosystems}
-Detectron2/MMDetection/YOLOX often export COCO detection results.
-Typical fields are:
+\subsection{Importing Predictions from External Ecosystems}
+Frameworks such as Detectron2, MMDetection, and VOLOX frequently export detection results in COCO format. Typical fields include:
 \begin{itemize}
   \item \cmd{image_id}
   \item \cmd{category_id}
-  \item \cmd{bbox}
+  \item \cmd{box}
   \item \cmd{score}
 \end{itemize}
-YOLOZU can convert those into \path{predictions.json}:
+
+\yolozu{} seamlessly converts these outputs into a compliant \path{predictions.json}:
 \begin{lstlisting}[language=bash]
 yolozu migrate predictions \
   --from coco-results \
@@ -70,39 +69,37 @@ yolozu migrate predictions \
   --force
 \end{lstlisting}
 
-Then validate and evaluate normally.
+Following conversion, proceed with standard validation and evaluation.
 
 \section{Predictions JSON}
-A predictions artifact is typically a JSON array of per-image objects.
-The exact shape depends on task (bbox/seg/pose), but the guiding principles are:
+A predictions artifact typically manifests as a JSON array containing per-image objects. While the precise structure varies by task (e.g., bounding box, segmentation, pose estimation), the guiding principles remain constant:
 \begin{itemize}
-  \item Stable keys and types (schema-validated).
-  \item Paths are relative and relocatable when possible.
-  \item Metadata is written alongside results (run ID, git SHA, environment).
+  \item \textbf{Stability}: Keys and data types are strictly schema-validated.
+  \item \textbf{Portability}: File paths are relative and relocatable wherever feasible.
+  \item \textbf{Traceability}: Metadata (such as run ID, Git SHA, and environment details) is embedded alongside the results.
 \end{itemize}
 
-Validate a predictions artifact strictly:
+To rigorously validate a predictions artifact:
 \begin{lstlisting}[language=bash]
 python3 tools/validate_predictions.py /path/to/predictions.json --strict
 \end{lstlisting}
 
-\section{Adapters (bring-your-own inference)}
-An adapter is a thin interface layer between some inference implementation and \yolozu{}'s
-contracts.
-If you can produce \path{predictions.json}, you can evaluate.
-In practice, this means:
+\section{Adapters (Bring-Your-Own Inference)}
+An adapter functions as a thin interface layer bridging a specific inference implementation and \yolozu{}'s standardized contracts. If your system can generate a compliant \path{predictions.json}, it can be evaluated.
+
+In practical terms, this entails:
 \begin{itemize}
-  \item input: dataset records provide an \cmd{image} path (and optional label/sidecar metadata),
-  \item output: per-image \cmd{detections} with \cmd{class_id}, \cmd{score}, \cmd{bbox} (typically \cmd{cxcywh_norm}), plus task-specific optional fields,
-  \item validation: always run \cmd{tools/validate_predictions.py --strict} before evaluation.
+  \item \textbf{Input}: Dataset records supply an \cmd{image} path (and optional label/sidecar metadata).
+  \item \textbf{Output}: Per-image \cmd{tetections} must include \cmd{class_id}, \cmd{score}, and \cmd{box} (typically formatted as \cmd{cxcywh_norm}), alongside any task-specific optional fields.
+  \item \textbf{Validation}: It is imperative to execute \cmd{tools/validate_predictions.py --strict} prior to evaluation.
 \end{itemize}
 
-\section{Reports and reproducibility}
-Most workflows are designed to emit:
+\section{Reports and Reproducibility}
+The majority of workflows are architected to emit:
 \begin{itemize}
-  \item machine-readable JSON reports,
-  \item optional HTML overlays for debugging,
-  \item stable artifact naming inside a run directory.
+  \item Machine-readable JSON reports.
+  \item Optional HTML overlays for visual debugging.
+  \item Stable artifact nomenclature within a designated run directory.
 \end{itemize}
 
-This is intentional: it keeps regression testing and comparison easy.
+This design is highly intentional: it streamlines regression testing and facilitates effortless cross-run comparisons.
