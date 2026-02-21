@@ -1,3 +1,6 @@
+> [MOVED] This repository has moved to https://github.com/ToppyMicroServices/YOLOZU
+> Please use the company repository for all new issues, PRs, and development.
+
 # YOLOZU (萬)
 
 日本語: [`Readme_jp.md`](Readme_jp.md)
