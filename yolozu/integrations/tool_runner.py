@@ -1,61 +1,28 @@
 from __future__ import annotations
 
-import json
-import subprocess
-import sys
-from pathlib import Path
 from typing import Any
 
+from .layers.api import run_cli_tool
+from .layers.artifacts import collect_artifact_metadata, describe_run, list_runs
+from .layers.jobs import JobManager
 
-def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[2]
-
-
-def _short_summary(ok: bool, name: str, exit_code: int) -> str:
-    return f"{name}: {'ok' if ok else 'failed'} (exit={exit_code})"
+_JOBS = JobManager()
 
 
-def _run_yolozu_cli(name: str, args: list[str], *, artifacts: dict[str, str] | None = None) -> dict[str, Any]:
-    cmd = [sys.executable, "-m", "yolozu.cli", *args]
-    proc = subprocess.run(
-        cmd,
-        cwd=str(_repo_root()),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        check=False,
-    )
-    ok = proc.returncode == 0
-    payload: dict[str, Any] = {
-        "ok": ok,
-        "tool": name,
-        "summary": _short_summary(ok, name, proc.returncode),
-        "command": cmd,
-        "exit_code": proc.returncode,
-        "stdout": proc.stdout,
-        "stderr": proc.stderr,
-        "artifacts": {},
-    }
-    for key, raw_path in (artifacts or {}).items():
-        path = Path(raw_path)
-        payload["artifacts"][key] = str(path)
-        if path.suffix.lower() == ".json" and path.exists():
-            try:
-                payload[f"{key}_json"] = json.loads(path.read_text(encoding="utf-8"))
-            except Exception:
-                pass
+def _with_meta(payload: dict[str, Any]) -> dict[str, Any]:
+    payload.setdefault("meta", collect_artifact_metadata())
     return payload
 
 
 def doctor(*, output: str = "reports/doctor.json") -> dict[str, Any]:
-    return _run_yolozu_cli("doctor", ["doctor", "--output", output], artifacts={"doctor": output})
+    return _with_meta(run_cli_tool("doctor", ["doctor", "--output", output], artifacts={"doctor": output}))
 
 
 def validate_predictions(path: str, *, strict: bool = True) -> dict[str, Any]:
     args = ["validate", "predictions", path]
     if strict:
         args.append("--strict")
-    return _run_yolozu_cli("validate_predictions", args)
+    return _with_meta(run_cli_tool("validate_predictions", args))
 
 
 def validate_dataset(
@@ -70,7 +37,7 @@ def validate_dataset(
         args.extend(["--split", split])
     if strict:
         args.append("--strict")
-    return _run_yolozu_cli("validate_dataset", args)
+    return _with_meta(run_cli_tool("validate_dataset", args))
 
 
 def eval_coco(
@@ -97,12 +64,12 @@ def eval_coco(
         args.append("--dry-run")
     if max_images is not None:
         args.extend(["--max-images", str(max_images)])
-    return _run_yolozu_cli("eval_coco", args, artifacts={"report": output})
+    return _with_meta(run_cli_tool("eval_coco", args, artifacts={"report": output}))
 
 
 def run_scenarios(config: str, *, extra_args: list[str] | None = None) -> dict[str, Any]:
     args = ["test", config, *(extra_args or [])]
-    return _run_yolozu_cli("run_scenarios", args)
+    return _with_meta(run_cli_tool("run_scenarios", args))
 
 
 def convert_dataset(
@@ -136,4 +103,111 @@ def convert_dataset(
         args.append("--include-crowd")
     if force:
         args.append("--force")
-    return _run_yolozu_cli("convert_dataset", args)
+    return _with_meta(run_cli_tool("convert_dataset", args))
+
+
+def submit_job(name: str, args: list[str], *, artifacts: dict[str, str] | None = None) -> dict[str, Any]:
+    job_id = _JOBS.submit(name, lambda: _with_meta(run_cli_tool(name, args, artifacts=artifacts)))
+    return {
+        "ok": True,
+        "tool": "jobs.submit",
+        "summary": f"job queued: {job_id}",
+        "job_id": job_id,
+        "status": "queued",
+        "meta": collect_artifact_metadata(),
+    }
+
+
+def jobs_list() -> dict[str, Any]:
+    return {
+        "ok": True,
+        "tool": "jobs.list",
+        "summary": "listed jobs",
+        "jobs": _JOBS.list(),
+        "meta": collect_artifact_metadata(),
+    }
+
+
+def jobs_status(job_id: str) -> dict[str, Any]:
+    status = _JOBS.status(job_id)
+    if status is None:
+        return {
+            "ok": False,
+            "tool": "jobs.status",
+            "summary": "job not found",
+            "job_id": job_id,
+            "meta": collect_artifact_metadata(),
+        }
+    return {
+        "ok": True,
+        "tool": "jobs.status",
+        "summary": f"job status: {status.get('status')}",
+        "job": status,
+        "meta": collect_artifact_metadata(),
+    }
+
+
+def jobs_cancel(job_id: str) -> dict[str, Any]:
+    out = _JOBS.cancel(job_id)
+    if out is None:
+        return {
+            "ok": False,
+            "tool": "jobs.cancel",
+            "summary": "job not found",
+            "job_id": job_id,
+            "meta": collect_artifact_metadata(),
+        }
+    return {
+        "ok": bool(out.get("cancelled")),
+        "tool": "jobs.cancel",
+        "summary": f"cancelled={out.get('cancelled')}",
+        **out,
+        "meta": collect_artifact_metadata(),
+    }
+
+
+def runs_list(limit: int = 20) -> dict[str, Any]:
+    return {
+        "ok": True,
+        "tool": "runs.list",
+        "summary": "listed runs",
+        "runs": list_runs(limit=limit),
+        "meta": collect_artifact_metadata(),
+    }
+
+
+def runs_describe(run_id: str) -> dict[str, Any]:
+    details = describe_run(run_id)
+    if details is None:
+        return {
+            "ok": False,
+            "tool": "runs.describe",
+            "summary": "run not found",
+            "run_id": run_id,
+            "meta": collect_artifact_metadata(),
+        }
+    return {
+        "ok": True,
+        "tool": "runs.describe",
+        "summary": "run described",
+        "run": details,
+        "meta": collect_artifact_metadata(),
+    }
+
+
+def train_job(train_config: str, *, run_id: str | None = None, resume: str | None = None) -> dict[str, Any]:
+    args = ["train", train_config]
+    if run_id:
+        args.extend(["--run-id", run_id])
+    if resume:
+        args.extend(["--resume", resume])
+    return submit_job("train", args)
+
+
+def export_onnx_job(dataset: str, output: str, *, split: str | None = None, force: bool = True) -> dict[str, Any]:
+    args = ["export", "--backend", "labels", "--dataset", dataset, "--output", output]
+    if split:
+        args.extend(["--split", split])
+    if force:
+        args.append("--force")
+    return submit_job("export", args, artifacts={"predictions": output})

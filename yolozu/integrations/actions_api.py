@@ -3,7 +3,21 @@ from __future__ import annotations
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-from .tool_runner import convert_dataset, doctor, eval_coco, run_scenarios, validate_dataset, validate_predictions
+from .tool_runner import (
+    convert_dataset,
+    doctor,
+    eval_coco,
+    export_onnx_job,
+    jobs_cancel,
+    jobs_list,
+    jobs_status,
+    run_scenarios,
+    runs_describe,
+    runs_list,
+    train_job,
+    validate_dataset,
+    validate_predictions,
+)
 
 
 app = FastAPI(title="YOLOZU Actions API", version="0.1.0")
@@ -50,6 +64,19 @@ class ConvertDatasetRequest(BaseModel):
     instances_json: str | None = None
     mode: str = "manifest"
     include_crowd: bool = False
+    force: bool = True
+
+
+class TrainJobRequest(BaseModel):
+    train_config: str
+    run_id: str | None = None
+    resume: str | None = None
+
+
+class ExportOnnxJobRequest(BaseModel):
+    dataset: str
+    output: str
+    split: str | None = None
     force: bool = True
 
 
@@ -105,3 +132,38 @@ def convert_dataset_route(req: ConvertDatasetRequest) -> dict:
         include_crowd=req.include_crowd,
         force=req.force,
     )
+
+
+@app.post("/jobs/train")
+def train_job_route(req: TrainJobRequest) -> dict:
+    return train_job(train_config=req.train_config, run_id=req.run_id, resume=req.resume)
+
+
+@app.post("/jobs/export-onnx")
+def export_onnx_job_route(req: ExportOnnxJobRequest) -> dict:
+    return export_onnx_job(dataset=req.dataset, output=req.output, split=req.split, force=req.force)
+
+
+@app.get("/jobs")
+def jobs_list_route() -> dict:
+    return jobs_list()
+
+
+@app.get("/jobs/{job_id}")
+def jobs_status_route(job_id: str) -> dict:
+    return jobs_status(job_id)
+
+
+@app.post("/jobs/{job_id}/cancel")
+def jobs_cancel_route(job_id: str) -> dict:
+    return jobs_cancel(job_id)
+
+
+@app.get("/runs")
+def runs_list_route(limit: int = 20) -> dict:
+    return runs_list(limit=limit)
+
+
+@app.get("/runs/{run_id}")
+def runs_describe_route(run_id: str) -> dict:
+    return runs_describe(run_id)

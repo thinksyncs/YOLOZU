@@ -27,6 +27,15 @@ Return payload policy (for all clients):
   \item stable top-level keys: \cmd{ok}, \cmd{tool}, \cmd{summary}, \cmd{exit\_code}
 \end{itemize}
 
+\section{Layer model (fixed)}
+
+\begin{enumerate}
+  \item Core layer: I/O envelope, auth/log hooks, error shaping.
+  \item YOLOZU API layer: CLI/Python wrapper, argument normalization, manifest resolution.
+  \item Job layer: long-running operations with \cmd{job\_id} tracking.
+  \item Artifact layer: run artifacts and metadata return (git SHA / manifest hash / environment).
+\end{enumerate}
+
 \section{Client routing}
 
 \subsection{Gemini}
@@ -50,6 +59,15 @@ python3 tools/run_actions_api.py
 \section{Operational recommendation}
 
 Maintain feature parity by implementing behavior once in backend runner and exposing it through MCP/API adapters.
+
+\section{CI no-abandon policy}
+
+For MCP-related changes:
+\begin{enumerate}
+  \item Run local validation (manifest + tests).
+  \item Push and monitor latest CI result.
+  \item If failed, patch immediately and rerun until green.
+\end{enumerate}
 
 \section{Cross references}
 

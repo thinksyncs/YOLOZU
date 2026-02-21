@@ -2,6 +2,8 @@
 
 This project standardizes LLM integrations around one backend implementation.
 
+Architecture reference: [MCP extension architecture](mcp_extension_architecture.md)
+
 ## 1) Common base (highest priority): YOLOZU MCP server
 
 Start server:

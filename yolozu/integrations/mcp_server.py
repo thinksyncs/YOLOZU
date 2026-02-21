@@ -2,7 +2,21 @@ from __future__ import annotations
 
 from mcp.server.fastmcp import FastMCP
 
-from .tool_runner import convert_dataset, doctor, eval_coco, run_scenarios, validate_dataset, validate_predictions
+from .tool_runner import (
+    convert_dataset,
+    doctor,
+    eval_coco,
+    export_onnx_job,
+    jobs_cancel,
+    jobs_list,
+    jobs_status,
+    run_scenarios,
+    runs_describe,
+    runs_list,
+    train_job,
+    validate_dataset,
+    validate_predictions,
+)
 
 
 app = FastMCP("yolozu")
@@ -80,6 +94,48 @@ def convert_dataset_tool(
         include_crowd=include_crowd,
         force=force,
     )
+
+
+@app.tool()
+def train_job_tool(train_config: str, run_id: str | None = None, resume: str | None = None) -> dict:
+    """Queue train command as asynchronous job and return job_id."""
+    return train_job(train_config=train_config, run_id=run_id, resume=resume)
+
+
+@app.tool()
+def export_onnx_job_tool(dataset: str, output: str, split: str | None = None, force: bool = True) -> dict:
+    """Queue export command as asynchronous job and return job_id."""
+    return export_onnx_job(dataset=dataset, output=output, split=split, force=force)
+
+
+@app.tool()
+def jobs_list_tool() -> dict:
+    """List jobs."""
+    return jobs_list()
+
+
+@app.tool()
+def jobs_status_tool(job_id: str) -> dict:
+    """Get status for one job."""
+    return jobs_status(job_id)
+
+
+@app.tool()
+def jobs_cancel_tool(job_id: str) -> dict:
+    """Cancel one job if possible."""
+    return jobs_cancel(job_id)
+
+
+@app.tool()
+def runs_list_tool(limit: int = 20) -> dict:
+    """List run directories and metadata."""
+    return runs_list(limit=limit)
+
+
+@app.tool()
+def runs_describe_tool(run_id: str) -> dict:
+    """Describe run artifacts."""
+    return runs_describe(run_id)
 
 
 def main() -> None:

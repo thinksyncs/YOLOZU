@@ -167,7 +167,7 @@
       "examples": [
         { "description": "Start MCP server locally.", "command": "python3 tools/run_mcp_server.py" }
       ],
-      "docs": ["docs/llm_integrations.md", "docs/copilot_mcp_integration.md", "manual/chapters/20_llm_mcp_integrations.tex"]
+      "docs": ["docs/llm_integrations.md", "docs/mcp_extension_architecture.md", "docs/copilot_mcp_integration.md", "manual/chapters/20_llm_mcp_integrations.tex"]
     },
     {
       "id": "run_actions_api",
@@ -183,7 +183,7 @@
       "examples": [
         { "description": "Start Actions API server on :8080.", "command": "python3 tools/run_actions_api.py" }
       ],
-      "docs": ["docs/llm_integrations.md", "docs/openai_mcp_actions.md", "manual/chapters/20_llm_mcp_integrations.tex"]
+      "docs": ["docs/llm_integrations.md", "docs/mcp_extension_architecture.md", "docs/openai_mcp_actions.md", "manual/chapters/20_llm_mcp_integrations.tex"]
     },
     {
       "id": "export_actions_openapi",
@@ -209,7 +209,7 @@
       "examples": [
         { "description": "Export OpenAPI schema for GPT Actions registration.", "command": "python3 tools/export_actions_openapi.py --output reports/actions_openapi.json" }
       ],
-      "docs": ["docs/openai_mcp_actions.md", "docs/llm_integrations.md", "manual/chapters/20_llm_mcp_integrations.tex"]
+      "docs": ["docs/openai_mcp_actions.md", "docs/mcp_extension_architecture.md", "docs/llm_integrations.md", "manual/chapters/20_llm_mcp_integrations.tex"]
     },
     {
       "id": "make_subset_dataset",

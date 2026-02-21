@@ -90,6 +90,7 @@ Reference docs:
 - OpenAI details: [OpenAI MCP / Actions](openai_mcp_actions.md)
 - Copilot details: [Copilot MCP integration](copilot_mcp_integration.md)
 - MCP templates: `docs/examples/mcp_clients/*.example.json`
+- MCP architecture: [MCP extension architecture](mcp_extension_architecture.md)
 - MCP server entrypoint: `python3 tools/run_mcp_server.py`
 - Optional OpenAPI route: `python3 tools/run_actions_api.py`
 
