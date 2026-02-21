@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Sequence
 
-import torch
 from torch import Tensor, nn
 
 from ...backbone_interface import BaseBackbone

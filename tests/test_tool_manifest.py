@@ -49,9 +49,6 @@ class TestToolManifest(unittest.TestCase):
             self.fail(f"tool manifest validation failed:\n{proc.stdout}\n{proc.stderr}")
 
     def test_validate_tool_manifest_declarative_mode_fails_missing_fields(self):
-        repo_root = Path(__file__).resolve().parents[1]
-        script = repo_root / "tools" / "validate_tool_manifest.py"
-
         bad_manifest = {
             "manifest_version": 1,
             "tools": [
@@ -77,9 +74,6 @@ class TestToolManifest(unittest.TestCase):
         self.assertIn("required in declarative mode", proc.stderr)
 
     def test_validate_tool_manifest_declarative_mode_accepts_compliant(self):
-        repo_root = Path(__file__).resolve().parents[1]
-        script = repo_root / "tools" / "validate_tool_manifest.py"
-
         ok_manifest = {
             "manifest_version": 1,
             "tools": [
