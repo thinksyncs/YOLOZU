@@ -1,21 +1,43 @@
-# Smoke assets (offline)
+# Smoke assets (offline, repo-bundled)
 
-This folder is bundled so users can run a full dry-run smoke check without network downloads.
+This directory is a **network-free minimal dataset** used by the project smoke flow.
 
-Contents:
-- `images/val/*.jpg` (10 small images)
-- `labels/val/*.txt` (YOLO bbox labels)
-- `labels/val/classes.json`
-- `predictions/predictions_dummy.json` (schema version 1)
+## What is included
 
-Generate/update deterministically from local `data/coco128` with:
+- `images/val/*.jpg` — 10 sample images
+- `labels/val/*.txt` — YOLO bbox labels (`class cx cy w h`, normalized)
+- `labels/val/classes.json` — class/category mapping helper
+- `predictions/predictions_dummy.json` — fixed predictions artifact (`schema_version: 1`)
+
+## What is guaranteed
+
+The following commands are expected to pass from repo root:
 
 ```bash
-python3 tools/generate_smoke_assets.py
+python3 -m yolozu.cli validate dataset data/smoke
+python3 -m yolozu.cli validate predictions data/smoke/predictions/predictions_dummy.json --strict
+python3 -m yolozu.cli eval-coco \
+	--dataset data/smoke \
+	--split val \
+	--predictions data/smoke/predictions/predictions_dummy.json \
+	--dry-run \
+	--output reports/smoke_coco_eval_dry_run.json
 ```
 
-Run the end-to-end smoke flow:
+One-command equivalent:
 
 ```bash
 bash scripts/smoke.sh
 ```
+
+## Provenance and copyright/license note
+
+- These smoke assets are generated from local `data/coco128` via
+	`python3 tools/generate_smoke_assets.py`.
+- Image/license provenance follows the source subset under `data/coco128`.
+	See `data/coco128/README.txt` and `data/coco128/LICENSE`.
+- `predictions/predictions_dummy.json` is a generated artifact derived from
+	YOLO labels with fixed scores for deterministic smoke validation.
+
+If you need strictly self-authored/CC0-only media, replace `images/val` +
+`labels/val` with your own assets and regenerate predictions accordingly.
