@@ -12,6 +12,8 @@ _ALLOWED_TOP_LEVEL = {
     "doctor",
     "validate",
     "eval-coco",
+    "eval-instance-seg",
+    "eval-long-tail",
     "predict-images",
     "parity",
     "calibrate",

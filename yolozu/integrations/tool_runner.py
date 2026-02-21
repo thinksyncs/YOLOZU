@@ -169,6 +169,63 @@ def calibrate_predictions(
     )
 
 
+def eval_instance_seg(
+    dataset: str,
+    predictions: str,
+    *,
+    split: str | None = None,
+    output: str = "reports/mcp_instance_seg_eval.json",
+    max_images: int | None = None,
+    min_score: float | None = None,
+    allow_rgb_masks: bool = False,
+) -> dict[str, Any]:
+    args = [
+        "eval-instance-seg",
+        "--dataset",
+        dataset,
+        "--predictions",
+        predictions,
+        "--output",
+        output,
+    ]
+    if split:
+        args.extend(["--split", split])
+    if max_images is not None:
+        args.extend(["--max-images", str(max_images)])
+    if min_score is not None:
+        args.extend(["--min-score", str(min_score)])
+    if allow_rgb_masks:
+        args.append("--allow-rgb-masks")
+    return _with_meta(run_cli_tool("eval_instance_seg", args, artifacts={"report": output}))
+
+
+def eval_long_tail(
+    dataset: str,
+    predictions: str,
+    *,
+    split: str | None = None,
+    output: str = "reports/mcp_long_tail_eval.json",
+    max_images: int | None = None,
+    max_detections: int | None = None,
+) -> dict[str, Any]:
+    args = [
+        "eval-long-tail",
+        "--dataset",
+        dataset,
+        "--predictions",
+        predictions,
+        "--output",
+        output,
+    ]
+    if split:
+        args.extend(["--split", split])
+    if max_images is not None:
+        args.extend(["--max-images", str(max_images)])
+    if max_detections is not None:
+        args.extend(["--max-detections", str(max_detections)])
+    return _with_meta(run_cli_tool("eval_long_tail", args, artifacts={"report": output}))
+
+
 def run_scenarios(config: str, *, extra_args: list[str] | None = None) -> dict[str, Any]:
     args = ["test", config, *(extra_args or [])]
     return _with_meta(run_cli_tool("run_scenarios", args))

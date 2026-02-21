@@ -7,6 +7,8 @@ from .tool_runner import (
     convert_dataset,
     doctor,
     eval_coco,
+    eval_instance_seg,
+    eval_long_tail,
     export_onnx_job,
     jobs_cancel,
     jobs_list,
@@ -130,6 +132,48 @@ def calibrate_predictions_tool(
         output_report=output_report,
         max_images=max_images,
         force=force,
+    )
+
+
+@app.tool()
+def eval_instance_seg_tool(
+    dataset: str,
+    predictions: str,
+    split: str | None = None,
+    output: str = "reports/mcp_instance_seg_eval.json",
+    max_images: int | None = None,
+    min_score: float | None = None,
+    allow_rgb_masks: bool = False,
+) -> dict:
+    """Evaluate instance segmentation predictions."""
+    return eval_instance_seg(
+        dataset=dataset,
+        predictions=predictions,
+        split=split,
+        output=output,
+        max_images=max_images,
+        min_score=min_score,
+        allow_rgb_masks=allow_rgb_masks,
+    )
+
+
+@app.tool()
+def eval_long_tail_tool(
+    dataset: str,
+    predictions: str,
+    split: str | None = None,
+    output: str = "reports/mcp_long_tail_eval.json",
+    max_images: int | None = None,
+    max_detections: int | None = None,
+) -> dict:
+    """Evaluate long-tail detection metrics."""
+    return eval_long_tail(
+        dataset=dataset,
+        predictions=predictions,
+        split=split,
+        output=output,
+        max_images=max_images,
+        max_detections=max_detections,
     )
 
 

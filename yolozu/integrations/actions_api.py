@@ -8,6 +8,8 @@ from .tool_runner import (
     convert_dataset,
     doctor,
     eval_coco,
+    eval_instance_seg,
+    eval_long_tail,
     export_onnx_job,
     jobs_cancel,
     jobs_list,
@@ -81,6 +83,25 @@ class CalibratePredictionsRequest(BaseModel):
     output_report: str = "reports/actions_calibration_report.json"
     max_images: int | None = None
     force: bool = True
+
+
+class EvalInstanceSegRequest(BaseModel):
+    dataset: str
+    predictions: str
+    split: str | None = None
+    output: str = "reports/actions_instance_seg_eval.json"
+    max_images: int | None = None
+    min_score: float | None = None
+    allow_rgb_masks: bool = False
+
+
+class EvalLongTailRequest(BaseModel):
+    dataset: str
+    predictions: str
+    split: str | None = None
+    output: str = "reports/actions_long_tail_eval.json"
+    max_images: int | None = None
+    max_detections: int | None = None
 
 
 class RunScenariosRequest(BaseModel):
@@ -185,6 +206,31 @@ def calibrate_predictions_route(req: CalibratePredictionsRequest) -> dict:
         output_report=req.output_report,
         max_images=req.max_images,
         force=req.force,
+    )
+
+
+@app.post("/eval/instance-seg")
+def eval_instance_seg_route(req: EvalInstanceSegRequest) -> dict:
+    return eval_instance_seg(
+        dataset=req.dataset,
+        predictions=req.predictions,
+        split=req.split,
+        output=req.output,
+        max_images=req.max_images,
+        min_score=req.min_score,
+        allow_rgb_masks=req.allow_rgb_masks,
+    )
+
+
+@app.post("/eval/long-tail")
+def eval_long_tail_route(req: EvalLongTailRequest) -> dict:
+    return eval_long_tail(
+        dataset=req.dataset,
+        predictions=req.predictions,
+        split=req.split,
+        output=req.output,
+        max_images=req.max_images,
+        max_detections=req.max_detections,
     )
 
 

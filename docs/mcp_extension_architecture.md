@@ -31,6 +31,11 @@ Inference tools (B4-B6) are implemented in the same shared backend and exposed v
 - B5: `parity_check`
 - B6: `calibrate_predictions`
 
+Evaluation tools (C7-C9) are implemented in the same shared backend and exposed via both MCP and Actions API:
+- C7: `eval_coco`
+- C8: `eval_instance_seg`
+- C9: `eval_long_tail`
+
 ## Long-running jobs
 
 Long tools should return quickly with `job_id`.
