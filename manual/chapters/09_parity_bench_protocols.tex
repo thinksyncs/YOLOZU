@@ -11,7 +11,8 @@ Execution requires a minimum of two comparable prediction artifacts for parity a
 \section{Backend parity}
 When exporting predictions across disparate backends (e.g., PyTorch, ONNX Runtime, TensorRT), it is critical to detect any silent numerical drift. Parity tooling systematically compares two prediction artifacts and generates a comprehensive report of any discrepancies.
 
-Conceptual usage:
+\textbf{Conceptual (not copy-paste as-is):} parity command shape.
+For a runnable shortest command, use Chapter~5 Workflow A with real artifact paths.
 \begin{lstlisting}[language=bash]
 yolozu parity   --reference reports/pred_torch.json   --candidate reports/pred_onnxrt.json
 \end{lstlisting}

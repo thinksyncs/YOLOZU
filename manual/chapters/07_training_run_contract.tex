@@ -37,14 +37,29 @@ Core tenets of the run contract (codified within the documentation and enforced 
       \item \path{reports/train_metrics.jsonl}, \path{reports/val_metrics.jsonl}
       \item \path{reports/config_resolved.yaml}, \path{reports/run_meta.json}
     \end{itemize}
-  \item Export and parity artifacts are generated automatically in contracted runs:\
-    \path{exports/model.onnx}, \path{exports/model.onnx.meta.json},\
-    \path{reports/onnx_parity.json}.
+  \item Optional export/parity artifacts (when export/parity is enabled):
+    \path{exports/model.onnx}, \path{exports/model.onnx.meta.json}, \path{reports/onnx_parity.json}.
   \item Full-state resumption is standardized using the \cmd{--resume} flag, defaulting to \path{runs/<run_id>/checkpoints/last.pt}.
 \end{itemize}
 
+\subsection{Artifact contract: required vs optional}
+\begin{longtable}{@{}p{0.24\textwidth}p{0.26\textwidth}p{0.42\textwidth}@{}}
+\toprule
+\textbf{Class} & \textbf{Path} & \textbf{Condition} \\
+\midrule
+Required & \path{runs/<run_id>/checkpoints/last.pt} & Always in contracted runs \\
+Required & \path{runs/<run_id>/reports/train_metrics.jsonl} & Always in contracted runs \\
+Required & \path{runs/<run_id>/reports/val_metrics.jsonl} & Always in contracted runs \\
+Required & \path{runs/<run_id>/reports/config_resolved.yaml} & Always in contracted runs \\
+Required & \path{runs/<run_id>/reports/run_meta.json} & Always in contracted runs \\
+Optional & \path{runs/<run_id>/exports/model.onnx} & Present when ONNX export is enabled \\
+Optional & \path{runs/<run_id>/exports/model.onnx.meta.json} & Present when ONNX export metadata is emitted \\
+Optional & \path{runs/<run_id>/reports/onnx_parity.json} & Present when ONNX parity check is executed \\
+\bottomrule
+\end{longtable}
 
-oindent\textbf{Note (low-level trainer):} When invoking \cmd{python3 -m rtdetr_pose.train_minimal} directly, specifying \cmd{--run-id} implicitly activates run-contract mode and necessitates a \cmd{--config} argument (a YAML/JSON file such as \path{configs/examples/train_contract.yaml}). For rapid smoke tests bypassing the run contract, utilize \cmd{--run-dir <path>} and explicitly define \cmd{--onnx-out <path>} if required.
+
+\noindent\textbf{Note (low-level trainer):} When invoking \cmd{python3 -m rtdetr_pose.train_minimal} directly, specifying \cmd{--run-id} implicitly activates run-contract mode and necessitates a \cmd{--config} argument (a YAML/JSON file such as \path{configs/examples/train_contract.yaml}). For rapid smoke tests bypassing the run contract, use explicit values such as \cmd{--run-dir runs/exp001} and \cmd{--onnx-out runs/exp001/model.onnx}.
 
 \section{Configuration resolution and strictness}
 The training entry point ingests YAML/JSON configurations via \cmd{--config}, subsequently applying explicit CLI overrides. The resolution hierarchy is strictly defined as:
@@ -118,7 +133,7 @@ Supported learning rate scheduler configurations include \texttt{none} (default)
 \end{longtable}
 
 
-oindent\textbf{Note:} The \texttt{linear} scheduler is not supported in the current codebase.
+\noindent\textbf{Note:} The \texttt{linear} scheduler is not supported in the current codebase.
 
 \section{LoRA / QLoRA parameters and defaults}
 Low-Rank Adaptation (LoRA) is activated when \texttt{lora\_r > 0}.

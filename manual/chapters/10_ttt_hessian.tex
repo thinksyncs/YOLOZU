@@ -31,18 +31,43 @@ It is strongly advised to avoid this technique by default in strict, real-time p
 \section{CLI quickstart}
 To enable refinement (opt-in behavior):
 \begin{lstlisting}[language=bash]
-python tools/refine_predictions_hessian.py   --predictions reports/predictions.json   --dataset data/coco128   --output reports/predictions_refined.json   --enable   --refine-offsets   --wrap
+python3 tools/refine_predictions_hessian.py \
+  --predictions reports/predictions.json \
+  --dataset data/coco128 \
+  --output reports/predictions_refined.json \
+  --enable \
+  --refine-offsets \
+  --wrap
 \end{lstlisting}
 
 To explicitly disable refinement (pass-through behavior):
 \begin{lstlisting}[language=bash]
-python tools/refine_predictions_hessian.py   --predictions reports/predictions.json   --output reports/predictions_refined.json   --disable   --wrap
+python3 tools/refine_predictions_hessian.py \
+  --predictions reports/predictions.json \
+  --output reports/predictions_refined.json \
+  --disable \
+  --wrap
 \end{lstlisting}
 
 To enable refinement with customized solver parameters:
 \begin{lstlisting}[language=bash]
-python tools/refine_predictions_hessian.py   --predictions reports/predictions.json   --dataset data/coco128   --output reports/predictions_refined.json   --enable   --refine-offsets   --steps 10   --damping 1e-2
+python3 tools/refine_predictions_hessian.py \
+  --predictions reports/predictions.json \
+  --dataset data/coco128 \
+  --output reports/predictions_refined.json \
+  --enable \
+  --refine-offsets \
+  --steps 10 \
+  --damping 1e-2
 \end{lstlisting}
+
+\subsection{Workflow (misuse-prevention view)}
+\begin{enumerate}
+  \item Input predictions: \path{reports/predictions.json}
+  \item Gate selection: \cmd{--disable} $\rightarrow$ pass-through, \cmd{--enable} $\rightarrow$ iterative refine
+  \item Output predictions: \path{reports/predictions_refined.json}
+  \item Validate output contract: \cmd{yolozu validate predictions reports/predictions_refined.json --strict}
+\end{enumerate}
 
 \section{Core configuration parameters}
 Commonly tuned parameters (which correspond to the documentation in \path{docs/hessian_solver.md}):
@@ -64,4 +89,4 @@ A highly practical operational sequence is:
 This chapter highlights the most frequently utilized parameters; for an exhaustive detailing of the parameter surface, please consult the tool's \cmd{--help} output, which is rigorously maintained in sync with the codebase.
 
 
-oindent\textbf{TensorRT Note:} TensorRT conversion strictly targets the inference graph execution. Hessian refinement functions as a completely separate, engine-external post-processing operation.
+\noindent\textbf{TensorRT Note:} TensorRT conversion strictly targets the inference graph execution. Hessian refinement functions as a completely separate, engine-external post-processing operation.

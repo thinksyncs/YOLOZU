@@ -14,6 +14,14 @@ Real-time TensorRT paths are typically Linux with an NVIDIA GPU; parity requires
   \item[Real-time/streaming] Optimize end-to-end latency and stability; avoid expensive per-frame extras.
 \end{description}
 
+\section{Non-goals (operational boundaries)}
+\begin{itemize}
+  \item TTT is \textbf{not} a real-time default. Keep it disabled unless explicitly budgeted and enabled.
+  \item If TTT is enabled in streaming mode, use bounded-cost knobs first (e.g., \cmd{--ttt-batch-size 1 --ttt-max-batches 1}).
+  \item Hessian refinement is not part of the TensorRT inference graph; treat it as an optional postprocess step.
+  \item Real-time claims without hardware-pinned latency/FPS evidence are out of scope for this chapter.
+\end{itemize}
+
 \section{Backend choices}
 \begin{itemize}
   \item \textbf{Precomputed predictions}: best for integration; works on macOS; use \path{tools/run_scenarios.py} with \cmd{precomputed} adapter.

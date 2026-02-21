@@ -1,6 +1,7 @@
 # YOLOZU docs
 
 Choose one of these 4 entry points.
+This page is intentionally an index-only gateway; keep deep procedural detail in the chapter docs/manual to avoid duplication.
 
 ## 1) Evaluate from precomputed predictions (no inference deps)
 

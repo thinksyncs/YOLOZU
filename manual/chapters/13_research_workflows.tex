@@ -57,7 +57,8 @@ This step is particularly critical when ingesting predictions exported from exte
 \section{Backend parity (Torch vs. ONNX Runtime vs. TensorRT)}
 When evaluating different inference backends, establishing output alignment is the mandatory first step. Utilize the parity tooling to compare two \path{predictions.json} artifacts and identify systematic discrepancies (e.g., variations in preprocessing, coordinate formatting, or underlying numerics).
 
-Conceptual usage:
+\textbf{Conceptual (not copy-paste as-is):} parity command shape.
+Use real artifacts and validate them first as shown in the quality-gate section above.
 \begin{lstlisting}[language=bash]
 yolozu parity   --reference reports/pred_torch.json   --candidate reports/pred_onnxrt.json
 \end{lstlisting}

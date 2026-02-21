@@ -19,6 +19,19 @@ yolozu --help
 yolozu doctor --output -
 \end{lstlisting}
 
+\subsection{First successful run (3 commands: install \texorpdfstring{$\rightarrow$}{->} migrate \texorpdfstring{$\rightarrow$}{->} eval)}
+For the quickest reproducible success path with evaluation output:
+\begin{lstlisting}[language=bash]
+python3 -m pip install 'yolozu[coco]'
+yolozu migrate dataset --from ultralytics --data /path/to/data.yaml --output data/ultralytics_wrapper
+yolozu eval-coco --dataset data/ultralytics_wrapper --split val --predictions reports/predictions.json --output reports/coco_eval.json
+\end{lstlisting}
+
+If your predictions come from another backend, validate first:
+\begin{lstlisting}[language=bash]
+yolozu validate predictions reports/predictions.json --strict
+\end{lstlisting}
+
 Optional extras let you install only the dependencies you need for a given workflow:
 \begin{lstlisting}[language=bash]
 python3 -m pip install 'yolozu[demo]'    # PyTorch demonstration utilities

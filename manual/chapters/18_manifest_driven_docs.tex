@@ -97,3 +97,11 @@ Utilize this heuristic mapping to determine which chapters require updates follo
 \end{itemize}
 
 This mapping is intentionally lightweight. If a tool modification spans multiple domains, update all affected chapters within the same pull request to maintain documentation coherence.
+
+\section{Ownership split: GitHub docs vs PDF manual}
+To avoid double maintenance:
+\begin{itemize}
+  \item Keep \path{docs/README.md} as an \textbf{index/entry page} with links only.
+  \item Keep procedural depth and operational nuance in chapter docs and \path{manual/chapters/}.
+  \item When overlap is unavoidable, prefer a single canonical page and link to it from all other surfaces.
+\end{itemize}

@@ -25,6 +25,8 @@ Core contracts include:
   \item \textbf{Training Run Contract}: \path{docs/run_contract.md}
 \end{itemize}
 
+When links and prose disagree, treat these contract documents as canonical and re-verify against \path{tools/manifest.json} and tool \cmd{--help} output.
+
 \section{Datasets}
 The majority of tools anticipate a YOLO-style dataset hierarchy (comprising \path{images/}, \path{labels/}, and splits), supplemented by optional metadata.
 
@@ -46,12 +48,12 @@ For precise command syntax and validation procedures, refer to Chapter~5 (Workfl
 
 \subsection{COCO JSON Datasets (Migration)}
 Numerous ecosystems rely on COCO-style \path{instances_*.json} files for object detection. Because \yolozu{} consumes YOLO-style text labels, the supported migration trajectory is:
-COCO JSON $%rightarrow$ YOLO labels + \path{dataset.json} wrapper.
+COCO JSON \texorpdfstring{$\rightarrow$}{->} YOLO labels + \path{dataset.json} wrapper.
 
 For the specific conversion command, consult Chapter~5 (Workflow~D: Migrate Datasets and Predictions).
 
 \subsection{Importing Predictions from External Ecosystems}
-Frameworks such as Detectron2, MMDetection, and VOLOX frequently export detection results in COCO format. Typical fields include:
+Frameworks such as Detectron2, MMDetection, and YOLOX frequently export detection results in COCO format. Typical fields include:
 \begin{itemize}
   \item \cmd{image_id}
   \item \cmd{category_id}
@@ -90,7 +92,7 @@ An adapter functions as a thin interface layer bridging a specific inference imp
 In practical terms, this entails:
 \begin{itemize}
   \item \textbf{Input}: Dataset records supply an \cmd{image} path (and optional label/sidecar metadata).
-  \item \textbf{Output}: Per-image \cmd{tetections} must include \cmd{class_id}, \cmd{score}, and \cmd{box} (typically formatted as \cmd{cxcywh_norm}), alongside any task-specific optional fields.
+  \item \textbf{Output}: Per-image \cmd{detections} must include \cmd{class_id}, \cmd{score}, and \cmd{box} (typically formatted as \cmd{cxcywh_norm}), alongside any task-specific optional fields.
   \item \textbf{Validation}: It is imperative to execute \cmd{tools/validate_predictions.py --strict} prior to evaluation.
 \end{itemize}
 

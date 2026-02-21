@@ -22,6 +22,13 @@ Authoritative references:
 TTT updates weights \emph{in memory} using unlabeled test data before (or during) inference \cite{sun2020ttt,wang2021tent}.
 This makes comparisons sensitive to domain shift, random seeds, and reset policy.
 
+\subsection{Operator quick guide (read first)}
+\begin{itemize}
+  \item \textbf{Default OFF}: TTT is opt-in and only activates when \cmd{--ttt} is set.
+  \item \textbf{Default update scope}: start with safe presets (norm-only / adapter-safe). For CoTTA/EATA/SAR rollout, keep updates constrained to LoRA/Norm-safe subsets first.
+  \item \textbf{Reset recommendation}: for controlled comparisons, prefer \cmd{--ttt-reset sample}; for streaming latency operation, use bounded \cmd{--ttt-reset stream} with explicit \cmd{--ttt-max-batches}.
+\end{itemize}
+
 \section{When TTT is meaningful}
 On clean COCO-style validation, TTT can be neutral or harmful.
 To demonstrate improvements, you typically need a clear domain shift (e.g., corruptions, style shift, different camera).
