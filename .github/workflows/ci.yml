@@ -143,7 +143,7 @@ jobs:
           python -m unittest discover -s tests -t tests
           python -m unittest discover -s rtdetr_pose/tests -t rtdetr_pose/tests
 
-        - name: Schema compatibility gate
+      - name: Schema compatibility gate
         run: |
           python - <<'PY'
           import json
@@ -475,73 +475,73 @@ jobs:
           print("run_meta keys OK")
           PY
 
-          - name: Backend parity matrix smoke (JSON + HTML)
-          run: |
-            python - <<'PY'
-            import json
-            import os
-            import subprocess
-            import sys
-            from pathlib import Path
-            from PIL import Image
+      - name: Backend parity matrix smoke (JSON + HTML)
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import subprocess
+          import sys
+          from pathlib import Path
+          from PIL import Image
 
-            root = Path(os.environ["RUNNER_TEMP"]) / "backend_parity_matrix_smoke"
-            root.mkdir(parents=True, exist_ok=True)
-            image = root / "000001.jpg"
-            Image.new("RGB", (8, 8), color=(0, 0, 0)).save(image)
+          root = Path(os.environ["RUNNER_TEMP"]) / "backend_parity_matrix_smoke"
+          root.mkdir(parents=True, exist_ok=True)
+          image = root / "000001.jpg"
+          Image.new("RGB", (8, 8), color=(0, 0, 0)).save(image)
 
-            payload = [
-              {
-                "image": str(image.resolve()),
-                "detections": [
-                  {
-                    "class_id": 0,
-                    "score": 0.9,
-                    "bbox": {"cx": 0.5, "cy": 0.5, "w": 0.2, "h": 0.2},
-                  }
-                ],
-              }
-            ]
-
-            args = []
-            for backend in ("torch", "onnxrt", "trt", "opencv_dnn", "custom_cpp"):
-              path = root / f"pred_{backend}.json"
-              path.write_text(json.dumps(payload), encoding="utf-8")
-              args.extend(["--backend-predictions", f"{backend}={path}"])
-
-            run_dir = Path("runs") / "backend_parity_matrix" / "ci_smoke"
-            proc = subprocess.run(
-              [
-                sys.executable,
-                "tools/backend_parity_matrix.py",
-                *args,
-                "--reference-backend",
-                "torch",
-                "--image-size",
-                "8,8",
-                "--run-dir",
-                str(run_dir),
+          payload = [
+            {
+              "image": str(image.resolve()),
+              "detections": [
+                {
+                  "class_id": 0,
+                  "score": 0.9,
+                  "bbox": {"cx": 0.5, "cy": 0.5, "w": 0.2, "h": 0.2},
+                }
               ],
-              stdout=subprocess.PIPE,
-              stderr=subprocess.PIPE,
-              text=True,
-              check=False,
-            )
-            if proc.returncode != 0:
-              raise SystemExit(f"backend parity matrix smoke failed\nSTDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}")
+            }
+          ]
 
-            report_json = run_dir / "reports" / "backend_parity_matrix.json"
-            report_html = run_dir / "reports" / "backend_parity_matrix.html"
-            if not report_json.is_file() or not report_html.is_file():
-              raise SystemExit(f"missing outputs: {report_json} {report_html}")
+          args = []
+          for backend in ("torch", "onnxrt", "trt", "opencv_dnn", "custom_cpp"):
+            path = root / f"pred_{backend}.json"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            args.extend(["--backend-predictions", f"{backend}={path}"])
 
-            report = json.loads(report_json.read_text(encoding="utf-8"))
-            if not report.get("ok"):
-              raise SystemExit("backend parity matrix smoke produced non-ok report")
-            if len(report.get("matrix") or []) != 4:
-              raise SystemExit("backend parity matrix smoke report has unexpected matrix size")
-            print("backend parity matrix smoke passed")
-            PY
+          run_dir = Path("runs") / "backend_parity_matrix" / "ci_smoke"
+          proc = subprocess.run(
+            [
+              sys.executable,
+              "tools/backend_parity_matrix.py",
+              *args,
+              "--reference-backend",
+              "torch",
+              "--image-size",
+              "8,8",
+              "--run-dir",
+              str(run_dir),
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+          )
+          if proc.returncode != 0:
+            raise SystemExit(f"backend parity matrix smoke failed\nSTDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}")
+
+          report_json = run_dir / "reports" / "backend_parity_matrix.json"
+          report_html = run_dir / "reports" / "backend_parity_matrix.html"
+          if not report_json.is_file() or not report_html.is_file():
+            raise SystemExit(f"missing outputs: {report_json} {report_html}")
+
+          report = json.loads(report_json.read_text(encoding="utf-8"))
+          if not report.get("ok"):
+            raise SystemExit("backend parity matrix smoke produced non-ok report")
+          if len(report.get("matrix") or []) != 4:
+            raise SystemExit("backend parity matrix smoke report has unexpected matrix size")
+          print("backend parity matrix smoke passed")
+          PY
 
       - name: PyInstaller smoke (build + resources list)
         run: |
