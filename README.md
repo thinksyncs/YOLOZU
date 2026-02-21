@@ -12,11 +12,20 @@ Contract-first evaluation harness for detection / segmentation / pose.
 YOLOZU supports different models and datasets through unified contracts and adapters.
 Run inference in any backend, export a common `predictions.json`, and evaluate apples-to-apples with the same validators and metrics.
 
-## Start here (choose 1 of 3 entry points)
+## Start here (choose 1 of 4 entry points)
 
-- **A: Evaluate-only (BYO inference)** — `predictions.json` → validate → eval. Start: [`docs/README.md`](docs/README.md#1-evaluate-only-byo-inference)
-- **B: Train/Export (RT-DETR pose)** — reproducible run artifacts → ONNX → TensorRT. Start: [`docs/README.md`](docs/README.md#2-trainexport-rt-detr-pose)
-- **C: Online adaptation (TTA/TTT, Safe TTT)** — guard rails / reset policies for Tent/MIM/CoTTA/EATA/SAR. Start: [`docs/README.md`](docs/README.md#3-online-adaptation-ttattt-safe-ttt)
+- **A: Evaluate from precomputed predictions (no inference deps)**
+  `predictions.json` → validate → eval
+  Start: [`docs/README.md`](docs/README.md)
+- **B: Train → Export → Eval (RT-DETR scaffold)**
+  reproducible run artifacts → ONNX → parity/eval
+  Start: [`docs/README.md`](docs/README.md)
+- **C: Contracts (predictions / adapter / ttt protocol)**
+  stable schema + adapter boundary + safe adaptation protocol
+  Start: [`docs/README.md`](docs/README.md)
+- **D: Bench/Parity (TensorRT pipeline / latency benchmark)**
+  backend parity checks + fixed-protocol latency benchmarking
+  Start: [`docs/README.md`](docs/README.md)
 
 Key points:
 
@@ -39,7 +48,11 @@ Have your own `predictions.json` already?
 
 ```bash
 yolozu validate predictions --predictions reports/predictions.json --strict
-yolozu eval-coco --dataset data/coco128 --split val2017 --predictions reports/predictions.json --output reports/coco_eval.json
+yolozu eval-coco \
+  --dataset data/coco128 \
+  --split val2017 \
+  --predictions reports/predictions.json \
+  --output reports/coco_eval.json
 ```
 
 Note: `data/coco128` is available in this repo checkout; for pip-only installs, point `--dataset` to your local COCO-style dataset.
@@ -174,12 +187,23 @@ python3 tools/eval_instance_segmentation.py \
 
 Same via the unified CLI:
 ```bash
-python3 tools/yolozu.py eval-instance-seg --dataset examples/instance_seg_demo/dataset --split val2017 --predictions examples/instance_seg_demo/predictions/instance_seg_predictions.json --pred-root examples/instance_seg_demo/predictions --classes examples/instance_seg_demo/classes.txt --html reports/instance_seg_demo_eval.html --overlays-dir reports/instance_seg_demo_overlays --max-overlays 10
+python3 tools/yolozu.py eval-instance-seg \
+  --dataset examples/instance_seg_demo/dataset \
+  --split val2017 \
+  --predictions examples/instance_seg_demo/predictions/instance_seg_predictions.json \
+  --pred-root examples/instance_seg_demo/predictions \
+  --classes examples/instance_seg_demo/classes.txt \
+  --html reports/instance_seg_demo_eval.html \
+  --overlays-dir reports/instance_seg_demo_overlays \
+  --max-overlays 10
 ```
 
 Optional: prepare COCO instance-seg dataset with per-instance PNG masks (requires `pycocotools`):
 ```bash
-python3 tools/prepare_coco_instance_seg.py --coco-root /path/to/coco --split val2017 --out data/coco-instance-seg
+python3 tools/prepare_coco_instance_seg.py \
+  --coco-root /path/to/coco \
+  --split val2017 \
+  --out data/coco-instance-seg
 ```
 
 Optional: convert COCO instance-seg predictions (RLE/polygons) into YOLOZU PNG masks (requires `pycocotools`):
@@ -193,7 +217,7 @@ python3 tools/convert_coco_instance_seg_predictions.py \
 
 ## Documentation
 
-Start here: [docs/training_inference_export.md](docs/training_inference_export.md)
+Start here: [docs/README.md](docs/README.md)
 
 - Repo feature summary: [docs/yolozu_spec.md](docs/yolozu_spec.md)
 - Model/spec note: [docs/specs/rt_detr_6dof_geom_mim_spec_en_v0_4.md](docs/specs/rt_detr_6dof_geom_mim_spec_en_v0_4.md)
@@ -422,8 +446,19 @@ yolozu train configs/runtime/train_contract_custom.yaml --run-id custom_exp01 --
 6) Export predictions from your trained checkpoint and evaluate:
 
 ```bash
-python3 tools/export_predictions.py --adapter rtdetr_pose --config rtdetr_pose/configs/base.json --checkpoint runs/custom_exp01/checkpoints/best.pt --dataset /path/to/your_dataset --split val --wrap --output reports/custom_exp01_predictions_val.json
-yolozu eval-coco --dataset /path/to/your_dataset --split val --predictions reports/custom_exp01_predictions_val.json --bbox-format cxcywh_norm
+python3 tools/export_predictions.py \
+  --adapter rtdetr_pose \
+  --config rtdetr_pose/configs/base.json \
+  --checkpoint runs/custom_exp01/checkpoints/best.pt \
+  --dataset /path/to/your_dataset \
+  --split val \
+  --wrap \
+  --output reports/custom_exp01_predictions_val.json
+yolozu eval-coco \
+  --dataset /path/to/your_dataset \
+  --split val \
+  --predictions reports/custom_exp01_predictions_val.json \
+  --bbox-format cxcywh_norm
 ```
 
 For quick experiments, set `--run-dir`, which writes a standard artifact set:
@@ -475,8 +510,19 @@ Common next checks:
 
 ```bash
 python3 tools/plot_metrics.py --jsonl runs/train_minimal_smoke/metrics.jsonl --out reports/train_loss.png
-python3 tools/export_predictions.py --adapter rtdetr_pose --config rtdetr_pose/configs/base.json --checkpoint runs/train_minimal_smoke/checkpoint.pt --max-images 20 --wrap --output reports/predictions.json
-python3 tools/eval_coco.py --dataset data/coco128 --predictions reports/predictions.json --bbox-format cxcywh_norm --max-images 20 --dry-run
+python3 tools/export_predictions.py \
+  --adapter rtdetr_pose \
+  --config rtdetr_pose/configs/base.json \
+  --checkpoint runs/train_minimal_smoke/checkpoint.pt \
+  --max-images 20 \
+  --wrap \
+  --output reports/predictions.json
+python3 tools/eval_coco.py \
+  --dataset data/coco128 \
+  --predictions reports/predictions.json \
+  --bbox-format cxcywh_norm \
+  --max-images 20 \
+  --dry-run
 ```
 
 Backbone details and extension guide: [docs/backbones.md](docs/backbones.md)
@@ -484,7 +530,9 @@ Backbone details and extension guide: [docs/backbones.md](docs/backbones.md)
 Plot a loss curve (requires matplotlib):
 
 ```bash
-python3 tools/plot_metrics.py --jsonl runs/<run>/metrics.jsonl --out reports/train_loss.png
+python3 tools/plot_metrics.py \
+  --jsonl runs/train_minimal_smoke/metrics.jsonl \
+  --out reports/train_loss.png
 ```
 
 ### ONNX export
