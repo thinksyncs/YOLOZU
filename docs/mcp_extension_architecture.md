@@ -22,6 +22,8 @@ This document fixes the extension layering and operational policy.
 ## Long-running jobs
 
 Long tools should return quickly with `job_id`.
+Job states are persisted under `runs/mcp_jobs/*.json` and restored on restart.
+States restored as `queued`/`running` are converted to `unknown` to avoid false in-flight claims.
 
 Current API surface:
 - `jobs.list`
@@ -35,6 +37,8 @@ Current API surface:
 - Only allowlisted `yolozu` top-level subcommands are executable.
 - Path traversal (`..`) is rejected.
 - Absolute paths outside workspace are rejected.
+- CLI execution has a timeout guard (default 600s).
+- `stdout`/`stderr` are capped and marked with truncation metadata in response payloads.
 
 ## CI no-abandon rule
 

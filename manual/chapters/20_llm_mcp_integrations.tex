@@ -60,6 +60,13 @@ python3 tools/run_actions_api.py
 
 Maintain feature parity by implementing behavior once in backend runner and exposing it through MCP/API adapters.
 
+Operational guards in v2 layer implementation:
+\begin{itemize}
+  \item Job state persistence to \cmd{runs/mcp\_jobs/*.json} for restart-safe status retrieval.
+  \item Stale in-flight states (queued/running after restart) are surfaced as \cmd{unknown}.
+  \item CLI execution timeout and output-size caps with explicit truncation metadata.
+\end{itemize}
+
 \section{CI no-abandon policy}
 
 For MCP-related changes:

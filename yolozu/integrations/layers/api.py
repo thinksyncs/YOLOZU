@@ -18,6 +18,10 @@ _ALLOWED_TOP_LEVEL = {
     "export",
 }
 
+_MAX_STDOUT_CHARS = 200_000
+_MAX_STDERR_CHARS = 100_000
+_DEFAULT_TIMEOUT_SEC = 600
+
 
 def repo_root() -> Path:
     return Path(__file__).resolve().parents[3]
@@ -40,6 +44,12 @@ def _guard_path_token(token: str) -> None:
             raise ValueError(f"absolute path outside workspace is not allowed: {token}")
 
 
+def _truncate_text(text: str, max_chars: int) -> tuple[str, bool]:
+    if len(text) <= max_chars:
+        return text, False
+    return text[:max_chars] + "\n...[truncated]", True
+
+
 def run_cli_tool(name: str, args: list[str], *, artifacts: dict[str, str] | None = None) -> dict[str, Any]:
     if not args:
         return fail_response(name, message="empty command")
@@ -53,14 +63,37 @@ def run_cli_tool(name: str, args: list[str], *, artifacts: dict[str, str] | None
         return fail_response(name, message=str(exc), exc=exc)
 
     cmd = [sys.executable, "-m", "yolozu.cli", *args]
-    proc = subprocess.run(
-        cmd,
-        cwd=str(repo_root()),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        check=False,
-    )
+    try:
+        proc = subprocess.run(
+            cmd,
+            cwd=str(repo_root()),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=_DEFAULT_TIMEOUT_SEC,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        stdout = exc.stdout if isinstance(exc.stdout, str) else (exc.stdout.decode("utf-8", errors="replace") if exc.stdout else "")
+        stderr = exc.stderr if isinstance(exc.stderr, str) else (exc.stderr.decode("utf-8", errors="replace") if exc.stderr else "")
+        stdout, stdout_truncated = _truncate_text(stdout, _MAX_STDOUT_CHARS)
+        stderr, stderr_truncated = _truncate_text(stderr, _MAX_STDERR_CHARS)
+        payload = fail_response(name, message=f"cli timeout after {_DEFAULT_TIMEOUT_SEC}s", exit_code=124)
+        payload["command"] = cmd
+        payload["stdout"] = stdout
+        payload["stderr"] = stderr
+        payload["artifacts"] = {}
+        payload["limits"] = {
+            "timeout_sec": _DEFAULT_TIMEOUT_SEC,
+            "stdout_max_chars": _MAX_STDOUT_CHARS,
+            "stderr_max_chars": _MAX_STDERR_CHARS,
+            "stdout_truncated": stdout_truncated,
+            "stderr_truncated": stderr_truncated,
+        }
+        return payload
+
+    stdout, stdout_truncated = _truncate_text(proc.stdout, _MAX_STDOUT_CHARS)
+    stderr, stderr_truncated = _truncate_text(proc.stderr, _MAX_STDERR_CHARS)
 
     if proc.returncode != 0:
         payload = fail_response(
@@ -69,9 +102,16 @@ def run_cli_tool(name: str, args: list[str], *, artifacts: dict[str, str] | None
             exit_code=proc.returncode,
         )
         payload["command"] = cmd
-        payload["stdout"] = proc.stdout
-        payload["stderr"] = proc.stderr
+        payload["stdout"] = stdout
+        payload["stderr"] = stderr
         payload["artifacts"] = {}
+        payload["limits"] = {
+            "timeout_sec": _DEFAULT_TIMEOUT_SEC,
+            "stdout_max_chars": _MAX_STDOUT_CHARS,
+            "stderr_max_chars": _MAX_STDERR_CHARS,
+            "stdout_truncated": stdout_truncated,
+            "stderr_truncated": stderr_truncated,
+        }
         return payload
 
     payload = ok_response(
@@ -79,9 +119,16 @@ def run_cli_tool(name: str, args: list[str], *, artifacts: dict[str, str] | None
         exit_code=proc.returncode,
         data={
             "command": cmd,
-            "stdout": proc.stdout,
-            "stderr": proc.stderr,
+            "stdout": stdout,
+            "stderr": stderr,
             "artifacts": {},
+            "limits": {
+                "timeout_sec": _DEFAULT_TIMEOUT_SEC,
+                "stdout_max_chars": _MAX_STDOUT_CHARS,
+                "stderr_max_chars": _MAX_STDERR_CHARS,
+                "stdout_truncated": stdout_truncated,
+                "stderr_truncated": stderr_truncated,
+            },
         },
     )
     for key, raw_path in (artifacts or {}).items():
