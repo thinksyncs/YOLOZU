@@ -150,7 +150,8 @@
       ],
       "examples": [
         { "description": "Run full copy-paste smoke flow.", "command": "bash scripts/smoke.sh" }
-      ]
+      ],
+      "docs": ["docs/README.md"]
     },
     {
       "id": "make_subset_dataset",
@@ -1583,7 +1584,8 @@
           "description": "Enable offsets refinement in post-processing mode.",
           "command": "python3 tools/refine_predictions_hessian.py --predictions reports/predictions.json --output reports/predictions_refined.json --enable --refine-offsets --config configs/runtime/hessian_refine_example.yaml --wrap"
         }
-      ]
+      ],
+      "docs": ["docs/README.md", "docs/ttt_protocol.md", "docs/hessian_solver.md"]
     },
     {
       "id": "export_predictions_onnxrt",

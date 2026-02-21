@@ -83,3 +83,12 @@ Reference docs:
 - Run: `bash scripts/smoke.sh`
 - Bundled assets: `data/smoke`
 - Report output: `reports/smoke_coco_eval_dry_run.json`
+
+## CI incident memo (2026-02-21)
+
+- Incident 1 (Hessian CLI smoke test):
+	- Cause: the test passed `--refine-offsets` but omitted `--enable`, while refinement is opt-in.
+	- Prevention: keep opt-in semantics explicit in smoke tests (`--enable --refine-offsets`) and avoid assuming feature flags auto-enable refinement.
+- Incident 2 (Training contract smoke in CI):
+	- Cause: `--image-size 32` with `--batch-size 1` hit a BatchNorm 1x1 path and failed at train-time.
+	- Prevention: keep CI smoke at `--image-size >= 64` for this path (or increase batch size) to avoid degenerate BatchNorm shapes.
