@@ -26,6 +26,11 @@ Data entry tools (A1-A3) are implemented in shared backend `yolozu.integrations.
 - A2: `validate_dataset`
 - A3: `convert_dataset`
 
+Inference tools (B4-B6) are implemented in the same shared backend and exposed via both MCP and Actions API:
+- B4: `predict_images`
+- B5: `parity_check`
+- B6: `calibrate_predictions`
+
 ## Long-running jobs
 
 Long tools should return quickly with `job_id`.

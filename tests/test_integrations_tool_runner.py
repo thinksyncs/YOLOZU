@@ -54,6 +54,82 @@ class TestIntegrationToolRunner(unittest.TestCase):
             ],
         )
 
+    def test_b4_predict_images_defaults(self):
+        with patch("yolozu.integrations.tool_runner.run_cli_tool") as run_cli:
+            run_cli.return_value = {"ok": True, "tool": "predict_images", "summary": "ok"}
+            out = tool_runner.predict_images("data/smoke/images/val")
+
+        self.assertTrue(out["ok"])
+        run_cli.assert_called_once_with(
+            "predict_images",
+            [
+                "predict-images",
+                "--backend",
+                "dummy",
+                "--input-dir",
+                "data/smoke/images/val",
+                "--output",
+                "reports/mcp_predict_images.json",
+                "--dry-run",
+                "--strict",
+                "--force",
+            ],
+            artifacts={"predictions": "reports/mcp_predict_images.json"},
+        )
+
+    def test_b5_parity_check_defaults(self):
+        with patch("yolozu.integrations.tool_runner.run_cli_tool") as run_cli:
+            run_cli.return_value = {"ok": True, "tool": "parity_check", "summary": "ok"}
+            out = tool_runner.parity_check("reports/ref.json", "reports/cand.json")
+
+        self.assertTrue(out["ok"])
+        run_cli.assert_called_once_with(
+            "parity_check",
+            [
+                "parity",
+                "--reference",
+                "reports/ref.json",
+                "--candidate",
+                "reports/cand.json",
+                "--iou-thresh",
+                "0.5",
+                "--score-atol",
+                "1e-06",
+                "--bbox-atol",
+                "0.0001",
+            ],
+        )
+
+    def test_b6_calibrate_predictions_defaults(self):
+        with patch("yolozu.integrations.tool_runner.run_cli_tool") as run_cli:
+            run_cli.return_value = {"ok": True, "tool": "calibrate_predictions", "summary": "ok"}
+            out = tool_runner.calibrate_predictions("data/smoke", "reports/predictions.json")
+
+        self.assertTrue(out["ok"])
+        run_cli.assert_called_once_with(
+            "calibrate_predictions",
+            [
+                "calibrate",
+                "--method",
+                "fracal",
+                "--dataset",
+                "data/smoke",
+                "--task",
+                "auto",
+                "--predictions",
+                "reports/predictions.json",
+                "--output",
+                "reports/mcp_calibrated_predictions.json",
+                "--output-report",
+                "reports/mcp_calibration_report.json",
+                "--force",
+            ],
+            artifacts={
+                "predictions": "reports/mcp_calibrated_predictions.json",
+                "report": "reports/mcp_calibration_report.json",
+            },
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

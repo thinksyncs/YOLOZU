@@ -67,6 +67,108 @@ def eval_coco(
     return _with_meta(run_cli_tool("eval_coco", args, artifacts={"report": output}))
 
 
+def predict_images(
+    input_dir: str,
+    *,
+    backend: str = "dummy",
+    output: str = "reports/mcp_predict_images.json",
+    max_images: int | None = None,
+    dry_run: bool = True,
+    strict: bool = True,
+    force: bool = True,
+) -> dict[str, Any]:
+    args = [
+        "predict-images",
+        "--backend",
+        backend,
+        "--input-dir",
+        input_dir,
+        "--output",
+        output,
+    ]
+    if max_images is not None:
+        args.extend(["--max-images", str(max_images)])
+    if dry_run:
+        args.append("--dry-run")
+    if strict:
+        args.append("--strict")
+    if force:
+        args.append("--force")
+    return _with_meta(run_cli_tool("predict_images", args, artifacts={"predictions": output}))
+
+
+def parity_check(
+    reference: str,
+    candidate: str,
+    *,
+    iou_thresh: float = 0.5,
+    score_atol: float = 1e-6,
+    bbox_atol: float = 1e-4,
+    max_images: int | None = None,
+    image_size: str | None = None,
+) -> dict[str, Any]:
+    args = [
+        "parity",
+        "--reference",
+        reference,
+        "--candidate",
+        candidate,
+        "--iou-thresh",
+        str(iou_thresh),
+        "--score-atol",
+        str(score_atol),
+        "--bbox-atol",
+        str(bbox_atol),
+    ]
+    if max_images is not None:
+        args.extend(["--max-images", str(max_images)])
+    if image_size:
+        args.extend(["--image-size", image_size])
+    return _with_meta(run_cli_tool("parity_check", args))
+
+
+def calibrate_predictions(
+    dataset: str,
+    predictions: str,
+    *,
+    method: str = "fracal",
+    split: str | None = None,
+    task: str = "auto",
+    output: str = "reports/mcp_calibrated_predictions.json",
+    output_report: str = "reports/mcp_calibration_report.json",
+    max_images: int | None = None,
+    force: bool = True,
+) -> dict[str, Any]:
+    args = [
+        "calibrate",
+        "--method",
+        method,
+        "--dataset",
+        dataset,
+        "--task",
+        task,
+        "--predictions",
+        predictions,
+        "--output",
+        output,
+        "--output-report",
+        output_report,
+    ]
+    if split:
+        args.extend(["--split", split])
+    if max_images is not None:
+        args.extend(["--max-images", str(max_images)])
+    if force:
+        args.append("--force")
+    return _with_meta(
+        run_cli_tool(
+            "calibrate_predictions",
+            args,
+            artifacts={"predictions": output, "report": output_report},
+        )
+    )
+
+
 def run_scenarios(config: str, *, extra_args: list[str] | None = None) -> dict[str, Any]:
     args = ["test", config, *(extra_args or [])]
     return _with_meta(run_cli_tool("run_scenarios", args))

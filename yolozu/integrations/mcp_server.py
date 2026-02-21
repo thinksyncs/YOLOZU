@@ -3,6 +3,7 @@ from __future__ import annotations
 from mcp.server.fastmcp import FastMCP
 
 from .tool_runner import (
+    calibrate_predictions,
     convert_dataset,
     doctor,
     eval_coco,
@@ -10,6 +11,8 @@ from .tool_runner import (
     jobs_cancel,
     jobs_list,
     jobs_status,
+    parity_check,
+    predict_images,
     run_scenarios,
     runs_describe,
     runs_list,
@@ -57,6 +60,76 @@ def eval_coco_tool(
         dry_run=dry_run,
         output=output,
         max_images=max_images,
+    )
+
+
+@app.tool()
+def predict_images_tool(
+    input_dir: str,
+    backend: str = "dummy",
+    output: str = "reports/mcp_predict_images.json",
+    max_images: int | None = None,
+    dry_run: bool = True,
+    strict: bool = True,
+    force: bool = True,
+) -> dict:
+    """Run folder inference and write predictions JSON."""
+    return predict_images(
+        input_dir=input_dir,
+        backend=backend,
+        output=output,
+        max_images=max_images,
+        dry_run=dry_run,
+        strict=strict,
+        force=force,
+    )
+
+
+@app.tool()
+def parity_check_tool(
+    reference: str,
+    candidate: str,
+    iou_thresh: float = 0.5,
+    score_atol: float = 1e-6,
+    bbox_atol: float = 1e-4,
+    max_images: int | None = None,
+    image_size: str | None = None,
+) -> dict:
+    """Compare two predictions JSON files for parity."""
+    return parity_check(
+        reference=reference,
+        candidate=candidate,
+        iou_thresh=iou_thresh,
+        score_atol=score_atol,
+        bbox_atol=bbox_atol,
+        max_images=max_images,
+        image_size=image_size,
+    )
+
+
+@app.tool()
+def calibrate_predictions_tool(
+    dataset: str,
+    predictions: str,
+    method: str = "fracal",
+    split: str | None = None,
+    task: str = "auto",
+    output: str = "reports/mcp_calibrated_predictions.json",
+    output_report: str = "reports/mcp_calibration_report.json",
+    max_images: int | None = None,
+    force: bool = True,
+) -> dict:
+    """Apply post-hoc calibration to prediction scores."""
+    return calibrate_predictions(
+        dataset=dataset,
+        predictions=predictions,
+        method=method,
+        split=split,
+        task=task,
+        output=output,
+        output_report=output_report,
+        max_images=max_images,
+        force=force,
     )
 
 

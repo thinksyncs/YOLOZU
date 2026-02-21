@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 
 from .tool_runner import (
+    calibrate_predictions,
     convert_dataset,
     doctor,
     eval_coco,
@@ -11,6 +12,8 @@ from .tool_runner import (
     jobs_cancel,
     jobs_list,
     jobs_status,
+    parity_check,
+    predict_images,
     run_scenarios,
     runs_describe,
     runs_list,
@@ -46,6 +49,38 @@ class EvalCocoRequest(BaseModel):
     dry_run: bool = True
     output: str = "reports/actions_coco_eval.json"
     max_images: int | None = None
+
+
+class PredictImagesRequest(BaseModel):
+    input_dir: str
+    backend: str = "dummy"
+    output: str = "reports/actions_predict_images.json"
+    max_images: int | None = None
+    dry_run: bool = True
+    strict: bool = True
+    force: bool = True
+
+
+class ParityCheckRequest(BaseModel):
+    reference: str
+    candidate: str
+    iou_thresh: float = 0.5
+    score_atol: float = 1e-6
+    bbox_atol: float = 1e-4
+    max_images: int | None = None
+    image_size: str | None = None
+
+
+class CalibratePredictionsRequest(BaseModel):
+    dataset: str
+    predictions: str
+    method: str = "fracal"
+    split: str | None = None
+    task: str = "auto"
+    output: str = "reports/actions_calibrated_predictions.json"
+    output_report: str = "reports/actions_calibration_report.json"
+    max_images: int | None = None
+    force: bool = True
 
 
 class RunScenariosRequest(BaseModel):
@@ -109,6 +144,47 @@ def eval_coco_route(req: EvalCocoRequest) -> dict:
         dry_run=req.dry_run,
         output=req.output,
         max_images=req.max_images,
+    )
+
+
+@app.post("/predict/images")
+def predict_images_route(req: PredictImagesRequest) -> dict:
+    return predict_images(
+        input_dir=req.input_dir,
+        backend=req.backend,
+        output=req.output,
+        max_images=req.max_images,
+        dry_run=req.dry_run,
+        strict=req.strict,
+        force=req.force,
+    )
+
+
+@app.post("/parity/check")
+def parity_check_route(req: ParityCheckRequest) -> dict:
+    return parity_check(
+        reference=req.reference,
+        candidate=req.candidate,
+        iou_thresh=req.iou_thresh,
+        score_atol=req.score_atol,
+        bbox_atol=req.bbox_atol,
+        max_images=req.max_images,
+        image_size=req.image_size,
+    )
+
+
+@app.post("/calibrate/predictions")
+def calibrate_predictions_route(req: CalibratePredictionsRequest) -> dict:
+    return calibrate_predictions(
+        dataset=req.dataset,
+        predictions=req.predictions,
+        method=req.method,
+        split=req.split,
+        task=req.task,
+        output=req.output,
+        output_report=req.output_report,
+        max_images=req.max_images,
+        force=req.force,
     )
 
 
