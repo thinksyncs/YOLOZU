@@ -191,6 +191,97 @@ class TestIntegrationToolRunner(unittest.TestCase):
             artifacts={"report": "reports/mcp_long_tail_eval.json"},
         )
 
+    def test_d10_train_job_args(self):
+        with patch("yolozu.integrations.tool_runner.submit_job") as submit_job:
+            submit_job.return_value = {"ok": True, "tool": "jobs.submit", "job_id": "job_x"}
+            out = tool_runner.train_job("configs/train.yaml", run_id="exp01", resume="runs/exp00")
+
+        self.assertTrue(out["ok"])
+        submit_job.assert_called_once_with("train", ["train", "configs/train.yaml", "--run-id", "exp01", "--resume", "runs/exp00"])
+
+    def test_d11_export_job_args(self):
+        with patch("yolozu.integrations.tool_runner.submit_job") as submit_job:
+            submit_job.return_value = {"ok": True, "tool": "jobs.submit", "job_id": "job_x"}
+            out = tool_runner.export_onnx_job("data/smoke", "reports/export_predictions.json", split="val", force=True)
+
+        self.assertTrue(out["ok"])
+        submit_job.assert_called_once_with(
+            "export",
+            [
+                "export",
+                "--backend",
+                "labels",
+                "--dataset",
+                "data/smoke",
+                "--output",
+                "reports/export_predictions.json",
+                "--split",
+                "val",
+                "--force",
+            ],
+            artifacts={"predictions": "reports/export_predictions.json"},
+        )
+
+    def test_d12_test_job_args(self):
+        with patch("yolozu.integrations.tool_runner.submit_job") as submit_job:
+            submit_job.return_value = {"ok": True, "tool": "jobs.submit", "job_id": "job_x"}
+            out = tool_runner.test_job("configs/test.yaml", extra_args=["--max-images", "8"])
+
+        self.assertTrue(out["ok"])
+        submit_job.assert_called_once_with("test", ["test", "configs/test.yaml", "--max-images", "8"])
+
+    def test_e13_ttt_job_args(self):
+        with patch("yolozu.integrations.tool_runner.submit_job") as submit_job:
+            submit_job.return_value = {"ok": True, "tool": "jobs.submit", "job_id": "job_x"}
+            out = tool_runner.ttt_job("configs/test_ttt.yaml", method="tent", preset="safe", steps=2, reset=True)
+
+        self.assertTrue(out["ok"])
+        submit_job.assert_called_once_with(
+            "test",
+            [
+                "test",
+                "configs/test_ttt.yaml",
+                "--ttt",
+                "--ttt-method",
+                "tent",
+                "--ttt-preset",
+                "safe",
+                "--ttt-steps",
+                "2",
+                "--ttt-reset",
+            ],
+        )
+
+    def test_e14_ctta_job_args(self):
+        with patch("yolozu.integrations.tool_runner.submit_job") as submit_job:
+            submit_job.return_value = {"ok": True, "tool": "jobs.submit", "job_id": "job_x"}
+            out = tool_runner.ctta_job(
+                "configs/test_ctta.yaml",
+                method="cotta",
+                preset="conservative",
+                steps=1,
+                reset=False,
+                extra_args=["--max-images", "4"],
+            )
+
+        self.assertTrue(out["ok"])
+        submit_job.assert_called_once_with(
+            "test",
+            [
+                "test",
+                "configs/test_ctta.yaml",
+                "--ttt",
+                "--ttt-method",
+                "cotta",
+                "--ttt-preset",
+                "conservative",
+                "--ttt-steps",
+                "1",
+                "--max-images",
+                "4",
+            ],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

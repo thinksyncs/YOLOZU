@@ -370,3 +370,48 @@ def export_onnx_job(dataset: str, output: str, *, split: str | None = None, forc
     if force:
         args.append("--force")
     return submit_job("export", args, artifacts={"predictions": output})
+
+
+def test_job(test_config: str, *, extra_args: list[str] | None = None) -> dict[str, Any]:
+    args = ["test", test_config, *(extra_args or [])]
+    return submit_job("test", args)
+
+
+def ttt_job(
+    test_config: str,
+    *,
+    method: str = "tent",
+    preset: str | None = None,
+    steps: int | None = None,
+    reset: bool = False,
+    extra_args: list[str] | None = None,
+) -> dict[str, Any]:
+    args = ["test", test_config, "--ttt", "--ttt-method", method]
+    if preset:
+        args.extend(["--ttt-preset", preset])
+    if steps is not None:
+        args.extend(["--ttt-steps", str(steps)])
+    if reset:
+        args.append("--ttt-reset")
+    args.extend(extra_args or [])
+    return submit_job("test", args)
+
+
+def ctta_job(
+    test_config: str,
+    *,
+    method: str = "cotta",
+    preset: str | None = None,
+    steps: int | None = None,
+    reset: bool = False,
+    extra_args: list[str] | None = None,
+) -> dict[str, Any]:
+    args = ["test", test_config, "--ttt", "--ttt-method", method]
+    if preset:
+        args.extend(["--ttt-preset", preset])
+    if steps is not None:
+        args.extend(["--ttt-steps", str(steps)])
+    if reset:
+        args.append("--ttt-reset")
+    args.extend(extra_args or [])
+    return submit_job("test", args)

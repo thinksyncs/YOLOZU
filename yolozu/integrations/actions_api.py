@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 
 from .tool_runner import (
+    ctta_job,
     calibrate_predictions,
     convert_dataset,
     doctor,
@@ -20,6 +21,8 @@ from .tool_runner import (
     runs_describe,
     runs_list,
     train_job,
+    test_job,
+    ttt_job,
     validate_dataset,
     validate_predictions,
 )
@@ -134,6 +137,29 @@ class ExportOnnxJobRequest(BaseModel):
     output: str
     split: str | None = None
     force: bool = True
+
+
+class TestJobRequest(BaseModel):
+    test_config: str
+    extra_args: list[str] | None = None
+
+
+class TTTJobRequest(BaseModel):
+    test_config: str
+    method: str = "tent"
+    preset: str | None = None
+    steps: int | None = None
+    reset: bool = False
+    extra_args: list[str] | None = None
+
+
+class CTTAJobRequest(BaseModel):
+    test_config: str
+    method: str = "cotta"
+    preset: str | None = None
+    steps: int | None = None
+    reset: bool = False
+    extra_args: list[str] | None = None
 
 
 @app.get("/healthz")
@@ -264,6 +290,35 @@ def train_job_route(req: TrainJobRequest) -> dict:
 @app.post("/jobs/export-onnx")
 def export_onnx_job_route(req: ExportOnnxJobRequest) -> dict:
     return export_onnx_job(dataset=req.dataset, output=req.output, split=req.split, force=req.force)
+
+
+@app.post("/jobs/test")
+def test_job_route(req: TestJobRequest) -> dict:
+    return test_job(test_config=req.test_config, extra_args=req.extra_args)
+
+
+@app.post("/jobs/ttt")
+def ttt_job_route(req: TTTJobRequest) -> dict:
+    return ttt_job(
+        test_config=req.test_config,
+        method=req.method,
+        preset=req.preset,
+        steps=req.steps,
+        reset=req.reset,
+        extra_args=req.extra_args,
+    )
+
+
+@app.post("/jobs/ctta")
+def ctta_job_route(req: CTTAJobRequest) -> dict:
+    return ctta_job(
+        test_config=req.test_config,
+        method=req.method,
+        preset=req.preset,
+        steps=req.steps,
+        reset=req.reset,
+        extra_args=req.extra_args,
+    )
 
 
 @app.get("/jobs")

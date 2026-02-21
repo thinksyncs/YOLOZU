@@ -36,6 +36,15 @@ Evaluation tools (C7-C9) are implemented in the same shared backend and exposed 
 - C8: `eval_instance_seg`
 - C9: `eval_long_tail`
 
+Training tools (D10-D12) are implemented as async jobs in the same shared backend and exposed via both MCP and Actions API:
+- D10: `train_job`
+- D11: `export_onnx_job`
+- D12: `test_job`
+
+TTT/CTTA tools (E13-E14) are implemented as async jobs in the same shared backend and exposed via both MCP and Actions API:
+- E13: `ttt_job`
+- E14: `ctta_job`
+
 ## Long-running jobs
 
 Long tools should return quickly with `job_id`.

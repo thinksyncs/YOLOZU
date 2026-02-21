@@ -3,6 +3,7 @@ from __future__ import annotations
 from mcp.server.fastmcp import FastMCP
 
 from .tool_runner import (
+    ctta_job,
     calibrate_predictions,
     convert_dataset,
     doctor,
@@ -19,6 +20,8 @@ from .tool_runner import (
     runs_describe,
     runs_list,
     train_job,
+    test_job,
+    ttt_job,
     validate_dataset,
     validate_predictions,
 )
@@ -223,6 +226,52 @@ def train_job_tool(train_config: str, run_id: str | None = None, resume: str | N
 def export_onnx_job_tool(dataset: str, output: str, split: str | None = None, force: bool = True) -> dict:
     """Queue export command as asynchronous job and return job_id."""
     return export_onnx_job(dataset=dataset, output=output, split=split, force=force)
+
+
+@app.tool()
+def test_job_tool(test_config: str, extra_args: list[str] | None = None) -> dict:
+    """Queue test scenario command as asynchronous job and return job_id."""
+    return test_job(test_config=test_config, extra_args=extra_args)
+
+
+@app.tool()
+def ttt_job_tool(
+    test_config: str,
+    method: str = "tent",
+    preset: str | None = None,
+    steps: int | None = None,
+    reset: bool = False,
+    extra_args: list[str] | None = None,
+) -> dict:
+    """Queue TTT scenario command as asynchronous job and return job_id."""
+    return ttt_job(
+        test_config=test_config,
+        method=method,
+        preset=preset,
+        steps=steps,
+        reset=reset,
+        extra_args=extra_args,
+    )
+
+
+@app.tool()
+def ctta_job_tool(
+    test_config: str,
+    method: str = "cotta",
+    preset: str | None = None,
+    steps: int | None = None,
+    reset: bool = False,
+    extra_args: list[str] | None = None,
+) -> dict:
+    """Queue CTTA scenario command as asynchronous job and return job_id."""
+    return ctta_job(
+        test_config=test_config,
+        method=method,
+        preset=preset,
+        steps=steps,
+        reset=reset,
+        extra_args=extra_args,
+    )
 
 
 @app.tool()
