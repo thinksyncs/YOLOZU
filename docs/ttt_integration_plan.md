@@ -1,79 +1,83 @@
-# TTT Integration Notes (implemented)
+# Test-Time Training (TTT) Integration Plan
 
-See also phase-1 CoTTA rollout requirements: [docs/cotta_design_spec.md](cotta_design_spec.md).
+See also the Phase 1 CoTTA rollout requirements: [docs/cotta_design_spec.md](cotta_design_spec.md).
 Planned next method design: [docs/eata_design_spec.md](eata_design_spec.md).
 Planned SAR rollout constraints: [docs/sar_design_spec.md](sar_design_spec.md).
 
-## Goals
-- Enable test-time training (TTT) without breaking the current `tools/export_predictions.py` flow.
-- Keep default behavior unchanged when TTT is disabled.
-- Support two methods: **Tent** and **MIM**.
-- Provide clear logging (`updated_param_count`, losses, MIM `mask_ratio`) and deterministic runs via seed.
+## Objectives
+- **Seamless Integration:** Enable Test-Time Training (TTT) without disrupting the existing `tools/export_predictions.py` workflow.
+- **Zero-Impact Defaults:** Ensure that the default behavior remains strictly unchanged when TTT is disabled.
+- **Method Support:** Initially support two primary adaptation methods: **Tent** and **MIM** (Masked Image Modeling).
+- **Observability & Reproducibility:** Provide comprehensive logging (e.g., `updated_param_count`, loss metrics, MIM `mask_ratio`) and guarantee deterministic execution via strict seed control.
 
-## Modules
-- **yolozu/tta/ttt_mim.py** (already exists)
-  - Functions: `run_ttt_mim()` and helpers for masking, recon loss, update filtering.
-  - Output: `TTTMIMResult(losses, mask_ratio, updated_param_count)`.
-- **yolozu/tta/tent.py** (already exists)
-  - `TentRunner` with `updated_param_count` logging.
-- **yolozu/tta/integration.py**
-  - `run_ttt(adapter, records, config)` to adapt the model before prediction.
-  - Handles data loading and preprocessing via adapter hooks.
-- **yolozu/tta/config.py**
-  - `TTTConfig` dataclass for shared CLI/config defaults.
+## Core Modules
+- **`yolozu/tta/ttt_mim.py`** (Existing)
+  - **Functions:** `run_ttt_mim()` alongside helper functions for masking, reconstruction loss computation, and update filtering.
+  - **Output:** Returns a `TTTMIMResult` object containing `losses`, `mask_ratio`, and `updated_param_count`.
+- **`yolozu/tta/tent.py`** (Existing)
+  - Implements the `TentRunner` class, which includes built-in logging for `updated_param_count`.
+- **`yolozu/tta/integration.py`**
+  - Exposes `run_ttt(adapter, records, config)` to adapt the model weights prior to the prediction phase.
+  - Manages data loading and preprocessing by leveraging adapter-specific hooks.
+- **`yolozu/tta/config.py`**
+  - Defines the `TTTConfig` dataclass to centralize shared CLI arguments and configuration defaults.
 
-## Adapter Interface Additions
-To avoid changes in prediction flow, add **optional** methods to adapters:
+## Adapter Interface Extensions
+To prevent structural changes to the prediction flow, the following **optional** methods will be introduced to the adapter interface:
 - `build_loader(records, *, batch_size)`
-  - Returns an iterable of preprocessed tensors suitable for the model.
+  - **Returns:** An iterable of preprocessed tensors formatted appropriately for the underlying model.
 - `get_model()`
-  - Returns the underlying torch model for TTT updates.
+  - **Returns:** The underlying PyTorch model instance required for TTT parameter updates.
 
-Default adapters that do not implement these methods will not support TTT.
+*Note: Default adapters that omit these methods will inherently lack TTT support and will raise a clear exception if TTT is requested.*
 
 ## Export Predictions Integration
-Add CLI flags in `tools/export_predictions.py` (defaults keep existing behavior):
-- `--ttt` (bool): enable TTT
-- `--ttt-method {tent,mim,cotta,eata,sar}` (default: tent)
-- `--ttt-steps` (int, default: 1)
-- `--ttt-lr` (float, default: 1e-4)
-- `--ttt-batch-size` (int, default: 1)
-- `--ttt-max-batches` (int, optional cap)
-- `--ttt-update-filter {all,norm_only,adapter_only}` (default: all)
-- MIM-specific: `--ttt-mask-prob`, `--ttt-patch-size`, `--ttt-mask-value`
-- `--ttt-log-out` (path): write JSON log
+The following CLI flags will be added to `tools/export_predictions.py` (default values preserve existing behavior):
+- `--ttt` (bool): Enables Test-Time Training.
+- `--ttt-method {tent,mim,cotta,eata,sar}` (default: `tent`)
+- `--ttt-steps` (int, default: `1`)
+- `--ttt-lr` (float, default: `1e-4`)
+- `--ttt-batch-size` (int, default: `1`)
+- `--ttt-max-batches` (int, optional): Imposes a hard cap on the number of adaptation batches.
+- `--ttt-update-filter {all,norm_only,adapter_only}` (default: `all`)
+- **MIM-specific flags:** `--ttt-mask-prob`, `--ttt-patch-size`, `--ttt-mask-value`
+- `--ttt-log-out` (path): Specifies the destination for the JSON-formatted TTT log.
 
-### Flow in `export_predictions.py`
-1. Build adapter and dataset manifest.
-2. **If `--ttt` enabled**:
-   - Acquire model via `adapter.get_model()`.
-   - Build loader via `adapter.build_loader()`.
-   - Run TTT (`run_ttt_mim` or `TentRunner`) for configured steps.
-   - Capture metrics (`updated_param_count`, loss summaries).
-3. Run `adapter.predict(records)` as usual.
-4. Apply TTA (existing flow).
-5. Write output + optional TTT log JSON.
+### Execution Flow in `export_predictions.py`
+1. Initialize the adapter and construct the dataset manifest.
+2. **If `--ttt` is enabled:**
+   - Retrieve the model instance via `adapter.get_model()`.
+   - Construct the data loader via `adapter.build_loader()`.
+   - Execute the TTT routine (`run_ttt_mim` or `TentRunner`) for the configured number of steps.
+   - Capture relevant metrics (e.g., `updated_param_count`, loss summaries).
+3. Execute `adapter.predict(records)` using the standard inference pathway.
+4. Apply Test-Time Augmentation (TTA) if configured (existing flow).
+5. Serialize the output predictions and optionally write the TTT JSON log.
 
-TTT should be strictly pre-prediction to keep output schema unchanged.
+*Crucially, TTT must execute strictly prior to the prediction phase to ensure the output schema remains entirely unaffected.*
 
-## Logging
-- Add `ttt` block under meta when `--wrap` is used:
-  - `enabled`, `method`, `steps`, `lr`, `batch_size`,
-  - `report`: `updated_param_count`, `mask_ratio` (MIM), and `losses`.
-- `--ttt-log-out` writes a lightweight JSON log, similar to TTA.
+## Logging Strategy
+- When the `--wrap` flag is utilized, append a `ttt` block under the `meta` section:
+  - **Configuration:** `enabled`, `method`, `steps`, `lr`, `batch_size`.
+  - **Report:** `updated_param_count`, `mask_ratio` (for MIM), and `losses`.
+- The `--ttt-log-out` flag will generate a lightweight, standalone JSON log, mirroring the existing TTA logging paradigm.
 
 ## Backwards Compatibility
-- No change when `--ttt` is not set.
-- If adapter lacks `get_model()` or `build_loader()`, raise a clear error.
+- The system will exhibit no behavioral changes unless the `--ttt` flag is explicitly provided.
+- If an adapter lacks the `get_model()` or `build_loader()` implementations, the system will fail fast and raise an informative error.
 
-## Tests
-- **Unit tests** for integration helper:
-  - MIM path uses dummy model + synthetic loader.
-  - Tent path uses dummy model + simple logits.
-- **CLI smoke test** for `export_predictions.py` with dummy adapter (TTT disabled by default).
+## Testing Strategy
+- **Unit Tests** for the integration helper:
+  - The MIM pathway will be validated using a dummy model coupled with a synthetic data loader.
+  - The Tent pathway will be validated using a dummy model and simplified logit outputs.
+- **CLI Smoke Tests:** Validate `export_predictions.py` using a dummy adapter to ensure TTT remains disabled by default and fails gracefully when unsupported.
 
-## Incremental Delivery
-1. Add `TTTConfig` + `integration.py` runner wrappers.
-2. Add adapter hooks (RTDETRPoseAdapter + DummyAdapter stubs).
-3. Add CLI flags and logging in `export_predictions.py`.
-4. Add tests and docs.
+## Incremental Delivery Plan
+1. Introduce `TTTConfig` and the `integration.py` runner wrappers.
+2. Implement adapter hooks (specifically for `RTDETRPoseAdapter` and `DummyAdapter` stubs).
+3. Integrate CLI flags and logging mechanisms into `export_predictions.py`.
+4. Finalize unit tests and update relevant documentation.
+
+## References
+- Wang, D., Shelhamer, E., Liu, S., Olshausen, B., & Darrell, T. (2021). Tent: Fully Test-Time Adaptation by Entropy Minimization. In *International Conference on Learning Representations (ICLR)*.
+- He, K., Chen, X., Xie, S., Li, Y., Dollár, P., & Girshick, R. (2022). Masked Autoencoders Are Scalable Vision Learners. In *Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)*.

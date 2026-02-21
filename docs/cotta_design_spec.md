@@ -1,103 +1,100 @@
-# CoTTA design spec for YOLOZU (phase 1)
+# CoTTA Design Specification for YOLOZU (Phase 1)
 
-This document defines the first production-safe CoTTA integration scope for YOLOZU.
+This document outlines the initial, production-safe integration scope for Continual Test-Time Domain Adaptation (CoTTA) within the YOLOZU framework.
 
-## Goal
+## Objective
 
-Suppress long-run online drift and forgetting in test-time adaptation while keeping rollout risk low.
+The primary goal is to mitigate long-term online drift and catastrophic forgetting during test-time adaptation while minimizing deployment risks.
 
-Phase 1 prioritizes operationally safe components:
+Phase 1 focuses exclusively on operationally safe components:
+- An Exponential Moving Average (EMA) teacher model.
+- Multi-augmentation prediction averaging.
+- Stochastic restoration restricted to safe parameter subsets (e.g., LoRA and normalization layers).
 
-- EMA teacher model
-- multi-augmentation prediction averaging
-- stochastic restoration limited to safe parameter subsets (LoRA/Norm)
+## Update Scope (Phase 1)
 
-## Update scope (phase 1)
+### Permitted Trainable Targets
+- Low-Rank Adaptation (LoRA) parameters.
+- Normalization affine parameters (e.g., LayerNorm, GroupNorm, or BatchNorm affine weights, where applicable).
 
-### Allowed trainable targets
+### Explicitly Excluded in Phase 1
+- Full backbone weight adaptation.
+- Unrestricted, full-model optimizer updates.
 
-- LoRA parameters
-- normalization affine parameters (LN/GN/BN affine where used)
+**Rationale:** By initiating adaptation with a minimal blast radius, we can effectively prevent irreversible parameter drift and maintain model stability.
 
-### Explicitly disallowed in phase 1
+## Teacher Model Specification
 
-- full backbone weight adaptation
-- unrestricted full-model optimizer updates
-
-Rationale: start with low-blast-radius adaptation and prevent irreversible drift.
-
-## Teacher model specification
-
-- Teacher is defined as EMA(student):
+- The teacher model is defined as the Exponential Moving Average (EMA) of the student model:
   - `theta_teacher <- m * theta_teacher + (1 - m) * theta_student`
-- Teacher update runs after each adaptation step.
-- EMA momentum `m` is configurable.
-- Teacher parameters are never directly optimized by gradient descent.
+- The teacher's weights are updated immediately following each adaptation step.
+- The EMA momentum `m` is a configurable hyperparameter.
+- Crucially, the teacher's parameters are never directly optimized via gradient descent.
 
-## Multi-augmentation prediction averaging
+## Multi-Augmentation Prediction Averaging
 
-### Supported initial augmentation set
+### Supported Initial Augmentation Set
+- Identity (no augmentation)
+- Horizontal flip
 
-- identity
-- horizontal flip
+*Note: Additional augmentations, such as scale jitter or mild color jitter, may be introduced in future phases but are excluded from the Phase 1 default configuration.*
 
-Optional future augmentations (not phase-1 default): scale jitter / mild color jitter.
+### Aggregation Behavior
+- The student model (or the teacher-selected pathway) processes each augmented branch independently.
+- Predictions are subsequently mapped back to the original image coordinate space.
+- Aggregation is performed using confidence-aware averaging prior to the final post-processing and Non-Maximum Suppression (NMS) stages.
+- To ensure reproducibility, the aggregation strategy must remain strictly deterministic given a specific random seed and configuration.
 
-### Aggregation behavior
+## Stochastic Restoration (Safe Mode)
 
-- Run student (or teacher-selected path) on each augmentation branch.
-- Map predictions back to common image coordinates.
-- Aggregate by confidence-aware averaging before final postprocess/NMS path.
-- Aggregation strategy must be deterministic given seed/config.
+- Restoration mechanisms are applied exclusively to the permitted trainable targets.
+- For each eligible parameter element, the system restores its value from a source snapshot with a probability of `p_restore`.
+- By default, the source snapshot corresponds to the model's initial, pre-adaptation state for the current session.
+- This restoration process is executed at a configured cadence (e.g., every `N` adaptation steps).
 
-## Stochastic restoration (safe mode)
+## Safety Boundaries and Guardrails
 
-- Restoration is applied only to allowed trainable targets.
-- For each eligible parameter element, restore from source snapshot with probability `p_restore`.
-- Source snapshot defaults to initial pre-adaptation model state for the session.
-- Restoration executes on configured cadence (e.g., every N adaptation steps).
+To ensure a safe Phase 1 rollout, the following guardrails are mandatory:
+- Gradient norm clipping (`max_grad_norm`).
+- A per-step update norm cap (`max_update_norm`).
+- A cumulative update norm cap (`max_total_update_norm`).
+- A divergence stop condition triggered by a loss-ratio threshold (`max_loss_ratio`).
+- An optional, immediate fallback to baseline weights in the event of a guardrail breach.
 
-## Safety boundaries and guardrails
+**Failure Behavior:**
+- If a hard breach occurs, the current adaptation step is immediately aborted.
+- The event is recorded in the TTT diagnostics output.
+- The model state is reverted according to the defined fallback policy.
 
-The following guardrails are required for phase 1 rollout:
+## Configuration Parameters (Phase 1)
 
-- gradient norm clipping (`max_grad_norm`)
-- per-step update norm cap (`max_update_norm`)
-- cumulative update norm cap (`max_total_update_norm`)
-- divergence stop condition via loss-ratio threshold (`max_loss_ratio`)
-- optional immediate fallback to baseline weights on guardrail breach
-
-Failure behavior:
-
-- adaptation step is aborted on hard breach
-- event is logged to TTT diagnostics output
-- model state is restored according to fallback policy
-
-## Configuration knobs (phase 1)
-
-Minimum required knobs:
-
+The following minimum configuration knobs are required:
 - `ttt.method: cotta`
 - `ttt.cotta.ema_momentum`
-- `ttt.cotta.augmentations` (initial: `identity`, `hflip`)
-- `ttt.cotta.aggregation` (initial default: confidence-weighted mean)
+- `ttt.cotta.augmentations` (Initial defaults: `identity`, `hflip`)
+- `ttt.cotta.aggregation` (Initial default: confidence-weighted mean)
 - `ttt.cotta.restore_prob`
 - `ttt.cotta.restore_interval`
-- `ttt.update_filter` (must support `norm_only`, `lora_only`, and combined safe subset)
+- `ttt.update_filter` (Must support `norm_only`, `lora_only`, and a combined safe subset)
 - `ttt.max_grad_norm`
 - `ttt.max_update_norm`
 - `ttt.max_total_update_norm`
 - `ttt.max_loss_ratio`
 
-## Logging and observability
+## Logging and Observability
 
-TTT logs should include:
+Test-Time Training (TTT) logs must capture the following details:
+- Run/session ID.
+- Adaptation method (e.g., `cotta`).
+- Update scope summary (detailing which parameter groups were active).
+- Teacher EMA momentum value.
+- The applied augmentation set and aggregation mode.
 
-- run/session id
-- method (`cotta`)
-- update scope summary (which parameter groups were active)
-- teacher EMA momentum
-- augmentation set and aggregation mode
+## References
+
+- Wang, Q., Fink, O., Van Gool, L., & Dai, D. (2022). Continual Test-Time Domain Adaptation. In *Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)* (pp. 7201-7211). [arXiv:2203.13591](https://arxiv.org/abs/2203.13591)
+- Niu, S., Wu, J., Zhang, Y., Chen, Y., Zheng, S., Zhao, P., & Huang, J. (2022). Efficient Test-Time Model Adaptation without Forgetting. In *International Conference on Machine Learning (ICML)*.
+- Sun, Y., Wang, X., Liu, Z., Miller, J., Efros, A. A., & Hardt, M. (2020). Test-Time Training with Self-Supervision for Generalization under Shifts. In *International Conference on Machine Learning (ICML)*.
 - restoration probability + applied restore count
 - guardrail metrics and triggered events
 
