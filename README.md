@@ -798,7 +798,13 @@ This repo includes a COCO-style evaluator that:
 Example (smoke-first, works with bundled assets):
 
 ```bash
-python3 tools/export_predictions.py --adapter dummy --dataset data/smoke --split val --max-images 10 --wrap --output reports/predictions_smoke.json
+python3 tools/export_predictions.py \
+  --adapter dummy \
+  --dataset data/smoke \
+  --split val \
+  --max-images 10 \
+  --wrap \
+  --output reports/predictions_smoke.json
 python3 tools/eval_coco.py \
   --dataset data/smoke \
   --split val \
