@@ -25,7 +25,7 @@ When the run contract is enabled:
 - `--config <train_setting.yaml>` is required (this is the trainer settings file)
 - `config_version: 1` is required (set in the YAML; enforced at startup)
 
-Also required (explicit keys in the YAML/config; no implicit defaults):
+Also required as explicit YAML/config keys (no implicit defaults):
 - `dataset_root`
 - `seed`
 - `device` (`cpu` / `cuda:0`, ...)

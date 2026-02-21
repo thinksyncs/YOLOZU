@@ -14,18 +14,10 @@ Run inference in any backend, export a common `predictions.json`, and evaluate a
 
 ## Start here (choose 1 of 4 entry points)
 
-- **A: Evaluate from precomputed predictions (no inference deps)**
-  `predictions.json` → validate → eval
-  Start: [`docs/README.md`](docs/README.md)
-- **B: Train → Export → Eval (RT-DETR scaffold)**
-  reproducible run artifacts → ONNX → parity/eval
-  Start: [`docs/README.md`](docs/README.md)
-- **C: Contracts (predictions / adapter / ttt protocol)**
-  stable schema + adapter boundary + safe adaptation protocol
-  Start: [`docs/README.md`](docs/README.md)
-- **D: Bench/Parity (TensorRT pipeline / latency benchmark)**
-  backend parity checks + fixed-protocol latency benchmarking
-  Start: [`docs/README.md`](docs/README.md)
+- **A: Evaluate from precomputed predictions (no inference deps)** — `predictions.json` → validate → eval. Start: [`docs/README.md`](docs/README.md)
+- **B: Train → Export → Eval (RT-DETR scaffold)** — reproducible run artifacts → ONNX → parity/eval. Start: [`docs/README.md`](docs/README.md)
+- **C: Contracts (predictions / adapter / ttt protocol)** — stable schema + adapter boundary + safe adaptation protocol. Start: [`docs/README.md`](docs/README.md)
+- **D: Bench/Parity (TensorRT pipeline / latency benchmark)** — backend parity checks + fixed-protocol latency benchmarking. Start: [`docs/README.md`](docs/README.md)
 
 Key points:
 
