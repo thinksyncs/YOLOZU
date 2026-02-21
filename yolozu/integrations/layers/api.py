@@ -8,7 +8,7 @@ from typing import Any
 
 from .core import fail_response, ok_response
 
-_ALLOWED_TOP_LEVEL = {
+_FALLBACK_ALLOWED_TOP_LEVEL = {
     "doctor",
     "validate",
     "eval-coco",
@@ -30,6 +30,49 @@ _DEFAULT_TIMEOUT_SEC = 600
 
 def repo_root() -> Path:
     return Path(__file__).resolve().parents[3]
+
+
+def _allowed_from_manifest() -> set[str]:
+    path = repo_root() / "tools" / "manifest.json"
+    if not path.exists():
+        return set()
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return set()
+    tools = payload.get("tools") if isinstance(payload, dict) else None
+    if not isinstance(tools, list):
+        return set()
+
+    allowed: set[str] = set()
+    for tool in tools:
+        if not isinstance(tool, dict):
+            continue
+        examples = tool.get("examples")
+        if not isinstance(examples, list):
+            continue
+        for ex in examples:
+            if not isinstance(ex, dict):
+                continue
+            cmd = ex.get("command")
+            if not isinstance(cmd, str):
+                continue
+            parts = cmd.strip().split()
+            if len(parts) >= 4 and parts[0].startswith("python") and parts[1] == "-m" and parts[2] == "yolozu.cli":
+                allowed.add(parts[3])
+            elif len(parts) >= 2 and parts[0] == "yolozu":
+                allowed.add(parts[1])
+    return allowed
+
+
+def _build_allowed_top_level() -> set[str]:
+    manifest_allowed = _allowed_from_manifest()
+    if not manifest_allowed:
+        return set(_FALLBACK_ALLOWED_TOP_LEVEL)
+    return manifest_allowed | _FALLBACK_ALLOWED_TOP_LEVEL
+
+
+_ALLOWED_TOP_LEVEL = _build_allowed_top_level()
 
 
 def _looks_like_path_token(token: str) -> bool:

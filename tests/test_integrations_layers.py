@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from yolozu.integrations.layers import api as api_layer
 from yolozu.integrations.layers.api import run_cli_tool
 from yolozu.integrations.layers.core import fail_response, ok_response
 from yolozu.integrations.layers.jobs import JobManager
@@ -28,6 +29,17 @@ class TestIntegrationLayers(unittest.TestCase):
         out = run_cli_tool("validate_predictions", ["validate", "predictions", "../bad.json"])
         self.assertFalse(out["ok"])
         self.assertIn("path traversal", out.get("error", ""))
+
+    def test_api_layer_rejects_non_allowlisted_command(self):
+        out = run_cli_tool("bad", ["rm", "-rf", "/tmp/x"])
+        self.assertFalse(out["ok"])
+        self.assertIn("command not allowed", out.get("error", ""))
+
+    def test_api_allowlist_is_manifest_first_with_fallback(self):
+        with patch("yolozu.integrations.layers.api._allowed_from_manifest", return_value={"doctor"}):
+            allowed = api_layer._build_allowed_top_level()
+        self.assertIn("doctor", allowed)
+        self.assertIn("validate", allowed)
 
     def test_jobs_manager_submit_and_status(self):
         manager = JobManager(max_workers=1)

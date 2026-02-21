@@ -52,6 +52,7 @@ Current API surface:
 ## Security policy
 
 - Only allowlisted `yolozu` top-level subcommands are executable.
+   - Allowlist is manifest-first (`tools/manifest.json` examples), with conservative fallback defaults.
 - Path traversal (`..`) is rejected.
 - Absolute paths outside workspace are rejected.
 - CLI execution has a timeout guard (default 600s).
