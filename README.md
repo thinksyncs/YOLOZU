@@ -617,6 +617,8 @@ If you run real inference elsewhere (PyTorch/ONNXRuntime/TensorRT/etc.), you can
 
 ### B) Export predictions in this repo (Torch/ONNXRuntime/TensorRT)
 
+TTT updates weights in-memory at inference time and is OFF by default (opt-in via `--ttt`).
+
 - Torch backend (`rtdetr_pose`, supports **TTA + TTT**):
   - Baseline:
 
