@@ -31,6 +31,8 @@ This format is designed so Claude/Copilot/other MCP-capable clients can summariz
 
 ## 2) OpenAI (ChatGPT) routes
 
+Detailed setup: [OpenAI MCP / Actions](openai_mcp_actions.md)
+
 ### A. MCP route (recommended)
 
 Use the same YOLOZU MCP server as remote MCP endpoint.
@@ -71,6 +73,8 @@ python3 tools/run_mcp_server.py
 - Keep Claude-side prompt/tool wrappers thin (no duplicated business logic).
 
 ## 4) Copilot routes
+
+Detailed setup: [Copilot MCP integration](copilot_mcp_integration.md)
 
 ### A. Copilot Extensions (skillsets / agent)
 

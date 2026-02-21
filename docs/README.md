@@ -87,6 +87,8 @@ Reference docs:
 ## E) LLM/MCP integrations (Gemini / Claude / Copilot / OpenAI)
 
 - Guide: [LLM integrations](llm_integrations.md)
+- OpenAI details: [OpenAI MCP / Actions](openai_mcp_actions.md)
+- Copilot details: [Copilot MCP integration](copilot_mcp_integration.md)
 - MCP server entrypoint: `python3 tools/run_mcp_server.py`
 - Optional OpenAPI route: `python3 tools/run_actions_api.py`
 

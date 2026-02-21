@@ -167,7 +167,7 @@
       "examples": [
         { "description": "Start MCP server locally.", "command": "python3 tools/run_mcp_server.py" }
       ],
-      "docs": ["docs/llm_integrations.md", "manual/chapters/20_llm_mcp_integrations.tex"]
+      "docs": ["docs/llm_integrations.md", "docs/copilot_mcp_integration.md", "manual/chapters/20_llm_mcp_integrations.tex"]
     },
     {
       "id": "run_actions_api",
@@ -183,7 +183,33 @@
       "examples": [
         { "description": "Start Actions API server on :8080.", "command": "python3 tools/run_actions_api.py" }
       ],
-      "docs": ["docs/llm_integrations.md", "manual/chapters/20_llm_mcp_integrations.tex"]
+      "docs": ["docs/llm_integrations.md", "docs/openai_mcp_actions.md", "manual/chapters/20_llm_mcp_integrations.tex"]
+    },
+    {
+      "id": "export_actions_openapi",
+      "entrypoint": "tools/export_actions_openapi.py",
+      "runner": "python3",
+      "summary": "Export a static OpenAPI JSON schema for YOLOZU Actions API registration.",
+      "tags": ["openapi", "fastapi", "integration", "llm"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "requires": { "python_packages": ["fastapi"] },
+      "inputs": [
+        { "name": "output", "kind": "file", "required": false, "flag": "--output", "default": "reports/actions_openapi.json" },
+        { "name": "indent", "kind": "number", "required": false, "flag": "--indent", "default": 2 }
+      ],
+      "effects": {
+        "writes": [
+          { "flag": "--output", "kind": "file", "scope": "path", "description": "Writes OpenAPI schema JSON." }
+        ],
+        "fixed_writes": []
+      },
+      "outputs": [
+        { "name": "openapi_json", "kind": "file", "description": "Exported OpenAPI schema JSON." }
+      ],
+      "examples": [
+        { "description": "Export OpenAPI schema for GPT Actions registration.", "command": "python3 tools/export_actions_openapi.py --output reports/actions_openapi.json" }
+      ],
+      "docs": ["docs/openai_mcp_actions.md", "docs/llm_integrations.md", "manual/chapters/20_llm_mcp_integrations.tex"]
     },
     {
       "id": "make_subset_dataset",
