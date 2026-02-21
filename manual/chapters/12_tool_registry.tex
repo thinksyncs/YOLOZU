@@ -1,150 +1,146 @@
 \chapter{Tool Registry and Automation (Research Use)}
 
 \ChapterMeta{
-This chapter explains the machine-readable tool registry (manifest and schemas) and how it supports safe discovery and execution for humans and agents.
+This chapter elucidates the machine-readable tool registry (comprising the manifest and schemas) and its role in facilitating safe discovery and execution for both human operators and autonomous agents.
 }{
-It enables reproducible automation and CI-style workflows by pinning tool I/O contracts and validating the registry surface.
+It underpins reproducible automation and Continuous Integration (CI)-style workflows by strictly pinning tool I/O contracts and validating the registry's surface area.
 }{
-It assumes tools are invoked via the declared entrypoints and validated with \cmd{python3 tools/validate_tool_manifest.py}; path-resolution rules matter for automation.
+This documentation assumes that tools are invoked exclusively via their declared entrypoints and validated using \cmd{python3 tools/validate_tool_manifest.py}. Path-resolution rules are critical for robust automation.
 }
 
-\section{Why a tool registry matters}
-Research workflows tend to accumulate scripts. \yolozu{} treats \path{tools/} as a stable,
-scriptable interface layer, and adds a machine-readable registry:
+\section{The Rationale for a Tool Registry}
+Research workflows frequently accumulate disparate scripts. \yolozu{} addresses this by treating the \path{tools/} directory as a stable, scriptable interface layer, augmented by a machine-readable registry:
 \begin{itemize}
-  \item Tool manifest: \path{tools/manifest.json}
-  \item Manifest schema: \path{docs/schemas/tools_manifest.schema.json}
-  \item Validator: \cmd{python3 tools/validate_tool_manifest.py}
+  \item \textbf{Tool Manifest}: \path{tools/manifest.json}
+  \item \textbf{Manifest Schema}: \path{docs/schemas/tools_manifest.schema.json}
+  \item \textbf{Validator}: \cmd{python3 tools/validate_tool_manifest.py}
 \end{itemize}
 
-This is designed for:
+This architecture is explicitly designed to serve:
 \begin{itemize}
-  \item humans ("what command do I run to do X?"),
-  \item agentic automation (safe discovery of entrypoints and I/O contracts),
-  \item CI-style reproducibility (stable commands and stable artifacts).
+  \item \textbf{Human Operators}: Providing a clear answer to "What command do I run to achieve X?"
+  \item \textbf{Agentic Automation}: Enabling safe, programmatic discovery of entrypoints and I/O contracts.
+  \item \textbf{CI-Style Reproducibility}: Ensuring stable commands and deterministic artifact generation.
 \end{itemize}
 
-\section{Authority and update rule}
-For CLI capabilities and tool I/O behavior, \path{tools/manifest.json} is the
-\textbf{authoritative source of truth}. Manual text should be synchronized from the manifest,
-not maintained as an independent list.
+\section{Authority and the Update Imperative}
+For CLI capabilities and tool I/O behavior, \path{tools/manifest.json} serves as the \textbf{authoritative source of truth}. Manual documentation must be synchronized from the manifest, rather than maintained as an independent, potentially divergent list.
 
-When there is a discrepancy:
+In the event of a discrepancy:
 \begin{itemize}
-  \item \textbf{behavior truth}: code + manifest,
-  \item \textbf{docs action}: update this manual chapter and related chapters,
-  \item \textbf{quality gate}: re-run manifest validator before publishing.
+  \item \textbf{Behavioral Truth}: Resides in the code and the manifest.
+  \item \textbf{Documentation Action}: Update this manual chapter and any related chapters to reflect the manifest.
+  \item \textbf{Quality Gate}: Re-run the manifest validator prior to publishing any changes.
 \end{itemize}
 
-Use this check command:
+Execute the following command to verify compliance:
 \begin{lstlisting}[language=bash]
-python3 tools/validate_tool_manifest.py --manifest tools/manifest.json
+python3 tools/validate_tool_manifest.py --manifest tools/manifest.json --require-declarative
 \end{lstlisting}
 
-\section{Declarative fields (what every tool entry should expose)}
-The manifest is used as a declarative contract. At practical minimum, tool entries should expose:
+\section{Declarative Fields: Mandatory Tool Metadata}
+The manifest functions as a declarative contract. At a practical minimum, every tool entry must expose:
 \begin{itemize}
-  \item identity/execution: \texttt{id}, \texttt{entrypoint}, \texttt{runner}, \texttt{summary},
-  \item environment: \texttt{platform} and optional \texttt{requires},
-  \item interface: \texttt{inputs[]} and \texttt{outputs[]},
-  \item side effects: \texttt{effects.writes[]} and \texttt{effects.fixed\_writes[]},
-  \item reproducibility: at least one \texttt{examples[].command},
-  \item typing/compatibility: \texttt{contracts.consumes/produces}, optional \texttt{contract\_outputs}, and \texttt{docs[]} references.
+  \item \textbf{Identity and Execution}: \texttt{id}, \texttt{entrypoint}, \texttt{runner}, and \texttt{summary}.
+  \item \textbf{Environment}: \texttt{platform} constraints and optional \texttt{requires} dependencies.
+  \item \textbf{Interface}: Explicit \texttt{inputs[]} and \texttt{outputs[]} definitions.
+  \item \textbf{Side Effects}: Declared \texttt{effects.writes[]} and \texttt{effects.fixed\_writes[]}.
+  \item \textbf{Reproducibility}: At least one functional \texttt{examples[].command}.
+  \item \textbf{Typing and Compatibility}: \texttt{contracts.consumes} and \texttt{contracts.produces}, alongside optional \texttt{contract\_outputs} and \texttt{docs[]} references.
 \end{itemize}
 
-For field-level policy and boundaries, see \path{docs/manifest_declarative_spec.md}.
+For comprehensive field-level policies and boundaries, consult \path{docs/manifest_declarative_spec.md}.
 
-\section{Contracts referenced from the manifest}
-The manifest references stable JSON schemas under \path{docs/schemas/}. Common ones include:
+\section{Contracts Referenced by the Manifest}
+The manifest references stable JSON schemas located under \path{docs/schemas/}. Prominent schemas include:
 \begin{itemize}
-  \item predictions: \path{docs/schemas/predictions.schema.json}
-  \item eval suite report: \path{docs/schemas/eval_suite_report.schema.json}
-  \item COCO eval report: \path{docs/schemas/coco_eval_report.schema.json}
-  \item segmentation and instance segmentation predictions/eval reports
+  \item \textbf{Predictions}: \path{docs/schemas/predictions.schema.json}
+  \item \textbf{Evaluation Suite Reports}: \path{docs/schemas/eval_suite_report.schema.json}
+  \item \textbf{COCO Evaluation Reports}: \path{docs/schemas/coco_eval_report.schema.json}
+  \item \textbf{Segmentation}: Schemas for both semantic and instance segmentation predictions and evaluation reports.
 \end{itemize}
 
-In research, these schemas are useful because they make it cheap to:
+In a research context, these schemas are invaluable as they drastically reduce the overhead required to:
 \begin{itemize}
-  \item parse results across many runs,
-  \item build dashboards/plots from JSONL histories,
-  \item write assertions (regression gates) against well-typed outputs.
+  \item Parse and aggregate results across numerous experimental runs.
+  \item Construct dashboards and visualizations from JSONL histories.
+  \item Implement assertions (regression gates) against strictly typed outputs.
 \end{itemize}
 
-\section{Discovery loop}
-A practical loop when you join the repo (or return after a while):
+\section{The Discovery Loop}
+A recommended practical loop when onboarding to the repository (or returning after an absence):
 \begin{enumerate}
-  \item Read the docs index: \path{docs/README.md}.
+  \item Review the documentation index: \path{docs/README.md}.
   \item Scan the tool index: \path{docs/tools_index.md}.
-  \item Search the manifest by \texttt{tags}, \texttt{id}, and \texttt{contracts}.
-  \item Run the validator so the registry is trustworthy.
+  \item Query the manifest by \texttt{tags}, \texttt{id}, and \texttt{contracts}.
+  \item Execute the validator to ensure the registry remains trustworthy.
 \end{enumerate}
 
-\subsection*{Practical manifest queries}
+\subsection*{Practical Manifest Queries}
 \begin{lstlisting}[language=bash]
-# List tool ids and entrypoints
+# List all tool IDs and their corresponding entrypoints
 python3 - <<'PY'
 import json
-obj = json.load(open("tools/manifest.json", "r", encoding="utf-8"))
-for t in obj.get("tools", []):
-    print(f"{t.get('id')}\t{t.get('entrypoint')}")
+with open("tools/manifest.json", "r", encoding="utf-8") as f:
+    manifest = json.load(f)
+for tool in manifest.get("tools", []):
+    print(f"{tool.get('id')}\t{tool.get('entrypoint')}")
 PY
 
-# Find tools that consume predictions_json
+# Identify tools that consume the 'predictions_json' contract
 python3 - <<'PY'
 import json
-obj = json.load(open("tools/manifest.json", "r", encoding="utf-8"))
-for t in obj.get("tools", []):
-    c = (t.get("contracts") or {}).get("consumes") or []
-    if "predictions_json" in c:
-        print(t.get("id"))
+with open("tools/manifest.json", "r", encoding="utf-8") as f:
+    manifest = json.load(f)
+for tool in manifest.get("tools", []):
+    consumes = (tool.get("contracts") or {}).get("consumes", [])
+    if "predictions_json" in consumes:
+        print(tool.get("id"))
 PY
 \end{lstlisting}
 
-\section{AI-first entrypoints for agents}
-For autonomous or semi-autonomous usage, the recommended stable entrypoints are:
+\section{AI-First Entrypoints for Autonomous Agents}
+For autonomous or semi-autonomous operations, the recommended stable entrypoints are:
 \begin{itemize}
-  \item unified wrapper: \cmd{python3 tools/yolozu.py --help}
-  \item tool registry: \path{tools/manifest.json}
-  \item contracts/schemas: \path{docs/schemas/*.schema.json}
-  \item usage guide: \path{docs/ai_first.md}
+  \item \textbf{Unified Wrapper}: \cmd{python3 tools/yolozu.py --help}
+  \item \textbf{Tool Registry}: \path{tools/manifest.json}
+  \item \textbf{Contracts and Schemas}: \path{docs/schemas/*.schema.json}
+  \item \textbf{Usage Guide}: \path{docs/ai_first.md}
 \end{itemize}
 
-This is an explicit design target of \yolozu{}: AI agents should be able to discover,
-validate, execute, and extend workflows using stable contracts.
+This represents an explicit design objective of \yolozu{}: AI agents must be capable of discovering, validating, executing, and extending workflows utilizing stable, well-defined contracts.
 
-\section{Manifest-synchronized documentation workflow}
-When adding or changing a tool:
+\section{Manifest-Synchronized Documentation Workflow}
+When introducing or modifying a tool, adhere to the following workflow:
 \begin{enumerate}
-  \item update the script behavior in \path{tools/} and keep CLI help accurate,
-  \item update \path{tools/manifest.json} (inputs/effects/outputs/examples/contracts),
-  \item validate manifest structure and references,
-  \item update corresponding manual chapter sections and examples,
-  \item keep docs links in sync (\path{docs/README.md}, \path{docs/tools_index.md}).
+  \item Update the script's behavior within \path{tools/} and ensure the CLI help output remains accurate.
+  \item Update \path{tools/manifest.json} to reflect changes in inputs, effects, outputs, examples, and contracts.
+  \item Validate the manifest's structure and internal references.
+  \item Revise the corresponding manual chapter sections and examples.
+  \item Maintain synchronization of documentation links (e.g., \path{docs/README.md}, \path{docs/tools_index.md}).
 \end{enumerate}
 
-This keeps manual chapters aligned with the registry and reduces stale command drift.
+This rigorous process keeps manual chapters aligned with the registry, thereby minimizing stale command drift.
 
-Validate the tool registry:
+Validate the tool registry using:
 \begin{lstlisting}[language=bash]
-python3 tools/validate_tool_manifest.py
+python3 tools/validate_tool_manifest.py --manifest tools/manifest.json --require-declarative
 \end{lstlisting}
 
-\section{Path behavior (important for automation)}
-Many tools follow consistent path rules (summarized in \path{docs/tools_index.md} and
-\path{docs/ai_first.md}):
+\section{Path Resolution Behavior (Critical for Automation)}
+Many tools adhere to consistent path resolution rules (summarized in \path{docs/tools_index.md} and \path{docs/ai_first.md}):
 \begin{itemize}
-  \item CLI relative input paths resolve from the current working directory.
-  \item Config-relative paths (where supported) resolve from the config file directory.
-  \item Relative outputs write under the current working directory.
+  \item CLI-relative input paths resolve from the current working directory.
+  \item Config-relative paths (where supported) resolve from the directory containing the configuration file.
+  \item Relative outputs are written relative to the current working directory.
 \end{itemize}
 
-\section{Safety checks for agentic write actions}
-Before writing artifacts or mutating state, prefer:
+\section{Safety Guardrails for Agentic Write Actions}
+Prior to writing artifacts or mutating state, agents and users should prioritize:
 \begin{itemize}
-  \item dry-run modes where available,
-  \item explicit caps/ranges (for example \cmd{--max-images}),
-  \item deterministic output locations under \path{reports/} or a run directory.
+  \item Utilizing \textbf{dry-run modes} wherever available.
+  \item Applying \textbf{explicit caps or ranges} (e.g., \cmd{--max-images}) to limit execution scope.
+  \item Directing outputs to \textbf{deterministic locations}, such as under \path{reports/} or a dedicated run directory.
 \end{itemize}
 
-For research, this helps you run batches reliably from different working directories and
-makes scripted runs more portable.
+In a research environment, these practices ensure that batch operations run reliably across different working directories and enhance the portability of scripted executions.

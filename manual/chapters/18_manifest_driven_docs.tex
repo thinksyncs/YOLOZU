@@ -1,91 +1,99 @@
-\chapter{Manifest-Driven Operations and Manual Sync}
+\chapter{Manifest-Driven Operations and Manual Synchronization}
 
 \ChapterMeta{
-This chapter defines how to use \path{tools/manifest.json} as the canonical operational source for commands, I/O contracts, and write-side effects.
+This chapter establishes \path{tools/manifest.json} as the canonical operational source for commands, input/output (I/O) contracts, and write-side effects.
 }{
-It prevents documentation drift by making manual updates traceable to machine-readable tool metadata.
+It mitigates documentation drift by ensuring that manual updates remain strictly traceable to machine-readable tool metadata.
 }{
-Use this chapter when adding new tools, changing CLI flags, or updating workflows that depend on artifact paths and contracts.
+Consult this chapter when introducing new tools, modifying CLI flags, or revising workflows that rely on specific artifact paths and contracts.
 }
 
-\section{Why a dedicated chapter is needed}
-As the tool surface grows, command examples in narrative chapters can become stale.
-A dedicated manifest-driven workflow ensures:
+\section{The Necessity of a Dedicated Chapter}
+As the repository's tool surface expands, command examples embedded within narrative chapters are prone to becoming obsolete. A dedicated, manifest-driven workflow guarantees that:
 \begin{itemize}
-  \item command discovery comes from one source,
-  \item I/O and side effects are reviewed consistently,
-  \item manual chapter updates are done as part of code changes.
+  \item Command discovery originates from a single, authoritative source.
+  \item I/O contracts and side effects undergo consistent, systematic review.
+  \item Manual chapter revisions are executed synchronously with codebase modifications.
 \end{itemize}
 
-\section{Canonical source and references}
-Treat the following in priority order:
+\section{Canonical Sources and Hierarchy}
+When resolving discrepancies, adhere to the following priority hierarchy:
 \begin{enumerate}
-  \item \path{tools/manifest.json} (canonical tool metadata),
-  \item tool \cmd{--help} output (runtime truth for flags),
-  \item chapter prose and examples (derived documentation).
+  \item \path{tools/manifest.json} (The canonical, machine-readable tool metadata).
+  \item Tool \cmd{--help} output (The runtime source of truth for CLI flags).
+  \item Chapter prose and examples (Derived, human-readable documentation).
 \end{enumerate}
 
-Related references:
+Relevant supplementary references include:
 \begin{itemize}
   \item \path{docs/manifest_declarative_spec.md}
   \item \path{docs/tools_index.md}
   \item \path{tools/validate_tool_manifest.py}
 \end{itemize}
 
-\section{Update procedure (required order)}
-When changing tool behavior:
+\section{Mandatory Update Procedure}
+When altering tool behavior, you must follow this sequential procedure:
 \begin{enumerate}
-  \item Implement code changes.
-  \item Update corresponding tool entry in \path{tools/manifest.json}.
-  \item Validate manifest:
+  \item Implement the requisite code changes.
+  \item Update the corresponding tool entry within \path{tools/manifest.json}. Ensure that all new flags, inputs, and outputs are explicitly declared.
+  \item Validate the manifest structure and constraints:
 \begin{lstlisting}[language=bash]
-python3 tools/validate_tool_manifest.py --manifest tools/manifest.json
+python3 tools/validate_tool_manifest.py --manifest tools/manifest.json --require-declarative
 \end{lstlisting}
-  \item Update impacted manual chapters under \path{manual/chapters/}.
-  \item Re-check examples against manifest \texttt{examples[].command}.
+  \item Revise the impacted manual chapters located under \path{manual/chapters/}.
+  \item Cross-reference and verify all documentation examples against the manifest's \texttt{examples[].command} fields.
 \end{enumerate}
 
-\section{What to verify in each manual update}
-For each affected command family, verify:
+\section{Verification Criteria for Manual Updates}
+For each affected command family, rigorously verify the following:
 \begin{itemize}
-  \item selected command exists in manifest \texttt{id/entrypoint},
-  \item required input flags match manifest \texttt{inputs[]},
-  \item output and write-path statements match \texttt{outputs[]} and \texttt{effects},
-  \item contract claims match \texttt{contracts.consumes/produces}.
+  \item The referenced command exists within the manifest under \texttt{id} and \texttt{entrypoint}.
+  \item All required input flags accurately reflect the manifest's \texttt{inputs[]} array.
+  \item Output declarations and write-path statements align with the \texttt{outputs[]} and \texttt{effects} definitions.
+  \item Contract claims strictly match the \texttt{contracts.consumes} and \texttt{contracts.produces} specifications.
 \end{itemize}
 
-\section{Quick audit commands}
-List all registered tools:
+\section{Understanding Manifest Capabilities}
+The manifest is not merely a list of scripts; it is a declarative governance tool. By inspecting \path{tools/manifest.json}, users can ascertain:
+\begin{itemize}
+  \item \textbf{Platform Compatibility}: The \texttt{platform} object indicates whether a tool requires a GPU (\texttt{gpu\_required}) or supports macOS/Linux.
+  \item \textbf{Dependencies}: The \texttt{requires} object lists necessary Python packages and system-level dependencies (e.g., TensorRT).
+  \item \textbf{Data Contracts}: The \texttt{contracts} object defines what standard JSON schemas a tool consumes or produces (e.g., \texttt{predictions\_json}, \texttt{metrics\_report\_json}), enabling automated pipeline construction.
+\end{itemize}
+
+\section{Quick Audit Commands}
+To list all registered tools and their entrypoints:
 \begin{lstlisting}[language=bash]
 python3 - <<'PY'
 import json
-obj = json.load(open("tools/manifest.json", "r", encoding="utf-8"))
-for t in obj.get("tools", []):
-    print(t.get("id"), "->", t.get("entrypoint"))
+with open("tools/manifest.json", "r", encoding="utf-8") as f:
+    manifest = json.load(f)
+for tool in manifest.get("tools", []):
+    print(f"{tool.get('id')} -> {tool.get('entrypoint')}")
 PY
 \end{lstlisting}
 
-Find tools that produce a specific contract:
+To identify tools that produce a specific contract (e.g., \texttt{eval\_suite\_report\_json}):
 \begin{lstlisting}[language=bash]
 python3 - <<'PY'
 import json
-obj = json.load(open("tools/manifest.json", "r", encoding="utf-8"))
-for t in obj.get("tools", []):
-    produces = (t.get("contracts") or {}).get("produces") or []
+with open("tools/manifest.json", "r", encoding="utf-8") as f:
+    manifest = json.load(f)
+for tool in manifest.get("tools", []):
+    produces = (tool.get("contracts") or {}).get("produces", [])
     if "eval_suite_report_json" in produces:
-        print(t.get("id"))
+        print(tool.get("id"))
 PY
 \end{lstlisting}
 
-\section{Chapter ownership map (practical)}
-Use this rough mapping when deciding which chapter to update:
+\section{Chapter Ownership and Routing}
+Utilize this heuristic mapping to determine which chapters require updates following a tool modification:
 \begin{itemize}
-  \item CLI changes: Chapter 4
-  \item training/backbone/run-contract changes: Chapter 7
-  \item protocol/benchmark changes: Chapter 9
-  \item TTT method/benchmark changes: Chapter 15
-  \item registry/contract metadata changes: Chapter 12 and this chapter
+  \item General CLI changes: Chapter 4
+  \item Training, backbone, or run-contract modifications: Chapter 7
+  \item Evaluation protocols and benchmark adjustments: Chapter 9
+  \item Test-Time Training (TTT) methods and benchmarks: Chapter 15
+  \item Registry, contract metadata, and governance changes: Chapter 12 and this chapter
 \end{itemize}
 
-This map is intentionally lightweight; if a tool change spans multiple domains,
-update all affected chapters in the same PR/commit to keep docs coherent.
+This mapping is intentionally lightweight. If a tool modification spans multiple domains, update all affected chapters within the same pull request to maintain documentation coherence.
