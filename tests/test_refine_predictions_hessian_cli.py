@@ -53,6 +53,7 @@ class TestRefinePredictionsHessianCLI(unittest.TestCase):
                     str(preds_path),
                     "--output",
                     str(out_path),
+                    "--enable",
                     "--refine-offsets",
                     "--wrap",
                     "--steps",
