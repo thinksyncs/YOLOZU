@@ -33,7 +33,7 @@ To enable refinement (opt-in behavior):
 \begin{lstlisting}[language=bash]
 python3 tools/refine_predictions_hessian.py \
   --predictions reports/predictions.json \
-  --dataset data/coco128 \
+  --dataset data/smoke \
   --output reports/predictions_refined.json \
   --enable \
   --refine-offsets \
@@ -53,7 +53,7 @@ To enable refinement with customized solver parameters:
 \begin{lstlisting}[language=bash]
 python3 tools/refine_predictions_hessian.py \
   --predictions reports/predictions.json \
-  --dataset data/coco128 \
+  --dataset data/smoke \
   --output reports/predictions_refined.json \
   --enable \
   --refine-offsets \

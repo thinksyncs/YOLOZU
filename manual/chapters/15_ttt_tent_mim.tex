@@ -327,11 +327,11 @@ TTT comparisons must be run on the exact same images.
 Use \path{tools/make_subset_dataset.py} to create a deterministic subset dataset root:
 \begin{lstlisting}[language=bash]
 python3 tools/make_subset_dataset.py \
-  --dataset data/coco128 \
-  --split train2017 \
+  --dataset data/smoke \
+  --split val \
   --n 50 \
   --seed 0 \
-  --out reports/coco128_50
+  --out reports/smoke_50
 \end{lstlisting}
 
 This writes \path{subset.json} (including an image hash) and a frozen image list.
@@ -341,8 +341,8 @@ Baseline export:
 \begin{lstlisting}[language=bash]
 python3 tools/yolozu.py export \
   --backend torch \
-  --dataset reports/coco128_50 \
-  --split train2017 \
+  --dataset reports/smoke_50 \
+  --split val \
   --checkpoint /path/to.ckpt \
   --device cuda \
   --max-images 50 \
@@ -353,8 +353,8 @@ TTT export (safe preset, per-sample reset, with a log):
 \begin{lstlisting}[language=bash]
 python3 tools/yolozu.py export \
   --backend torch \
-  --dataset reports/coco128_50 \
-  --split train2017 \
+  --dataset reports/smoke_50 \
+  --split val \
   --checkpoint /path/to.ckpt \
   --device cuda \
   --max-images 50 \

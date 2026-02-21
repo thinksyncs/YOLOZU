@@ -12,4 +12,5 @@ Two usage modes:
 - `tests/`: unit/integration tests (CPU-friendly by default; GPU optional)
 - `tools/`: repo-only scripts (exporters, suites, benchmarks, smoke runs)
 - `rtdetr_pose/`: RT-DETR pose scaffold (training/inference/export helpers)
-- `data/coco128/`: tiny COCO dataset for smoke tests (downloaded; not committed)
+- `data/smoke/`: committed offline smoke assets (10 images + labels + fixed predictions)
+- `data/coco128/`: tiny COCO dataset for extended local checks (downloaded via `tools/fetch_coco128.sh`)

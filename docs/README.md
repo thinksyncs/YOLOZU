@@ -4,6 +4,12 @@ Choose one of these 4 entry points.
 This page is intentionally an index-only gateway.
 Keep deep procedural detail in the chapter docs/manual to avoid duplication.
 
+## 0) Copy-paste smoke check (offline, repo checkout)
+
+- Run: `bash scripts/smoke.sh`
+- Bundled assets: `data/smoke`
+- Report output: `reports/smoke_coco_eval_dry_run.json`
+
 ## 1) Evaluate from precomputed predictions (no inference deps)
 
 - [External inference backends](external_inference.md)

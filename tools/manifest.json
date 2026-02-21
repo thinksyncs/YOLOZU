@@ -84,6 +84,75 @@
       ]
     },
     {
+      "id": "generate_smoke_assets",
+      "entrypoint": "tools/generate_smoke_assets.py",
+      "runner": "python3",
+      "summary": "Generate deterministic offline smoke assets under data/smoke from local data/coco128.",
+      "tags": ["dataset", "smoke"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "requires": { "network": false },
+      "inputs": [],
+      "effects": {
+        "writes": [],
+        "fixed_writes": [
+          {
+            "path": "data/smoke",
+            "kind": "dir",
+            "scope": "tree",
+            "description": "Creates/updates bundled smoke assets (images/val, labels/val, predictions)."
+          }
+        ]
+      },
+      "outputs": [
+        { "name": "dataset_root", "kind": "dir", "description": "Smoke dataset root.", "default": "data/smoke" },
+        {
+          "name": "predictions",
+          "kind": "file",
+          "description": "Fixed dummy predictions (schema v1).",
+          "default": "data/smoke/predictions/predictions_dummy.json"
+        }
+      ],
+      "examples": [
+        {
+          "description": "Rebuild bundled smoke assets deterministically.",
+          "command": "python3 tools/generate_smoke_assets.py"
+        }
+      ]
+    },
+    {
+      "id": "smoke",
+      "entrypoint": "scripts/smoke.sh",
+      "runner": "bash",
+      "summary": "Run one-command offline smoke flow (doctor -> validate dataset -> validate predictions -> eval-coco dry-run).",
+      "tags": ["smoke", "validation", "eval"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "requires": { "network": false },
+      "contracts": { "consumes": ["predictions_json"], "produces": ["coco_eval_report_json"] },
+      "inputs": [],
+      "effects": {
+        "writes": [],
+        "fixed_writes": [
+          {
+            "path": "reports/smoke_coco_eval_dry_run.json",
+            "kind": "file",
+            "scope": "path",
+            "description": "Dry-run COCO evaluation report produced by the smoke script."
+          }
+        ]
+      },
+      "outputs": [
+        {
+          "name": "smoke_report",
+          "kind": "file",
+          "description": "Smoke dry-run report.",
+          "default": "reports/smoke_coco_eval_dry_run.json"
+        }
+      ],
+      "examples": [
+        { "description": "Run full copy-paste smoke flow.", "command": "bash scripts/smoke.sh" }
+      ]
+    },
+    {
       "id": "make_subset_dataset",
       "entrypoint": "tools/make_subset_dataset.py",
       "runner": "python3",

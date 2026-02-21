@@ -28,6 +28,7 @@ For repository-specific workflows, utilize: \cmd{python3 tools/yolozu.py --help}
 \textbf{Command} & \textbf{Purpose} \\
 \midrule
 \cmd{yolozu doctor} & Executes environment diagnostics (verifying dependencies, GPU status, and backend availability). \\
+\cmd{bash scripts/smoke.sh} & Runs the one-command offline smoke flow (doctor + validate + eval-coco dry-run on \path{data/smoke}). \\
 \cmd{yolozu train} & Initiates YAML/JSON config-driven RT-DETR training (fully supporting the run contract and resumption capabilities). \\
 \cmd{yolozu test} & Executes the YAML/JSON scenario runner (compatible with dummy, precomputed, and rtdetr\_pose adapters). \\
 \cmd{yolozu predict-images} & Performs folder-level inference, generating predictions, visual overlays, and an HTML summary. \\
@@ -79,7 +80,7 @@ yolozu test configs/examples/test_setting.yaml \
   --adapter rtdetr_pose \
   --config rtetr_pose/configs/base.json \
   --checkpoint /path/to/checkpoint.pt \
-  --dataset data/coco128 \
+  --dataset data/smoke \
   --max-images 50
 \end{lstlisting}
 
