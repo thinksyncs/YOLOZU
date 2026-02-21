@@ -293,7 +293,9 @@ Recent compatibility additions:
 - import/doctor auto-detection:
   `yolozu import ... --from auto`,
   `yolozu doctor import --config-from auto|--dataset-from auto`.
-- train shorthand preview: `yolozu train --import auto --cfg <args_or_config>` writes resolved canonical `TrainConfig`.
+- train shorthand preview:
+  `yolozu train --import auto --cfg configs/examples/train_setting.yaml`
+  writes resolved canonical `TrainConfig`.
 
 ### Depth mode (RT-DETR pose scaffold)
 
@@ -328,10 +330,10 @@ Safety defaults:
   (data/loss/export wiring, resume, parity gate).
   Continual-learning behavior is testable from pip with
   `yolozu demo continual --compare --markdown`, and source training stays
-  available via `yolozu train <config>`
+  available via `yolozu train configs/examples/train_setting.yaml`
   (`docs/training_inference_export.md`, requires `yolozu[train]`).
 - A one-command folder inference path is available from pip:
-  `yolozu predict-images --backend onnxrt --input-dir data/coco128/images/train2017 --onnx runs/exp001/model.onnx`,
+  `yolozu predict-images --backend onnxrt --input-dir data/smoke/images/val --onnx runs/smoke/model.onnx`,
   which writes predictions JSON + overlays + HTML in one run.
 - TensorRT remains NVIDIA/Linux-centric, while macOS can run CPU validation and ONNXRuntime export:
   `yolozu onnxrt export ...`; GPU/TRT build/eval is pinned to Runpod/container workflows (`docs/tensorrt_pipeline.md`).
@@ -622,6 +624,17 @@ python3 tools/export_predictions.py \
   --wrap \
   --output reports/predictions.json
 python3 tools/eval_coco.py \
+  --dataset data/smoke \
+  --predictions reports/predictions.json \
+  --bbox-format cxcywh_norm \
+  --max-images 20 \
+  --dry-run
+```
+
+If you explicitly want the downloaded subset path, use:
+
+```bash
+python3 tools/eval_coco.py \
   --dataset data/coco128 \
   --predictions reports/predictions.json \
   --bbox-format cxcywh_norm \
@@ -782,7 +795,20 @@ This repo includes a COCO-style evaluator that:
 - Converts YOLOZU predictions JSON into COCO detections
 - Runs COCO mAP via `pycocotools` (optional dependency)
 
-Example (coco128 quick run):
+Example (smoke-first, works with bundled assets):
+
+```bash
+python3 tools/export_predictions.py --adapter dummy --dataset data/smoke --split val --max-images 10 --wrap --output reports/predictions_smoke.json
+python3 tools/eval_coco.py \
+  --dataset data/smoke \
+  --split val \
+  --predictions reports/predictions_smoke.json \
+  --bbox-format cxcywh_norm \
+  --max-images 10 \
+  --dry-run
+```
+
+Alternative (coco128 quick run):
 
 ```bash
 python3 tools/export_predictions.py --adapter dummy --max-images 50 --wrap --output reports/predictions.json
@@ -796,6 +822,9 @@ python3 tools/eval_coco.py \
 Note:
 - `--bbox-format cxcywh_norm` expects bbox dict `{cx,cy,w,h}`
   normalized to `[0,1]` (matching the RTDETR pose adapter bbox head).
+- For run-contract variable naming and artifact conventions, see
+  `docs/run_contract.md`; README examples intentionally use fixed
+  concrete paths such as `runs/smoke`.
 
 ## Training recipe (v1)
 
