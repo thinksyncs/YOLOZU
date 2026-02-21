@@ -452,7 +452,7 @@ jobs:
             --device cpu \
             --amp none \
             --ddp-backend gloo \
-            --image-size 32 \
+            --image-size 64 \
             --batch-size 1
 
           test -f runs/ci_smoke/reports/run_meta.json
