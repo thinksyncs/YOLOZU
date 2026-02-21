@@ -276,7 +276,7 @@ Safety defaults:
 - Training in `rtdetr_pose/` is run-contract based (data/loss/export wiring, resume, parity gate), while continual-learning behavior is
   immediately testable from pip with `yolozu demo continual --compare --markdown` and source training stays available via
   `yolozu train <config>` (`docs/training_inference_export.md`, requires `yolozu[train]`).
-- A one-command folder inference path is available from pip: `yolozu predict-images --backend onnxrt --input-dir <dir> --onnx <model.onnx>`,
+- A one-command folder inference path is available from pip: `yolozu predict-images --backend onnxrt --input-dir data/coco128/images/train2017 --onnx runs/exp001/model.onnx`,
   which writes predictions JSON + overlays + HTML in one run.
 - TensorRT remains NVIDIA/Linux-centric, while macOS can run CPU validation and ONNXRuntime export:
   `yolozu onnxrt export ...`; GPU/TRT build/eval is pinned to Runpod/container workflows (`docs/tensorrt_pipeline.md`).
@@ -360,7 +360,7 @@ python3 -m unittest -q
 | Long-tail train recipe (decoupled + plugins) | `yolozu long-tail-recipe --dataset /path/to/yolo --output reports/long_tail_recipe.json ...` | (same via `python3 tools/yolozu.py ...`) |
 | Instance-seg eval (PNG masks) | `yolozu eval-instance-seg --dataset /path --predictions preds.json --output reports/instance_seg_eval.json` | `python3 tools/eval_instance_segmentation.py ...` |
 | ONNXRuntime CPU export | `yolozu onnxrt export ...` (requires `yolozu[onnxrt]`) | `python3 tools/export_predictions_onnxrt.py ...` |
-| Training pipeline | `yolozu train configs/examples/train_contract.yaml --run-id exp01` (writes `runs/<run-id>/reports/fracal_stats_bbox.json` by default, requires `yolozu[train]`) | `python3 rtdetr_pose/tools/train_minimal.py ...` |
+| Training pipeline | `yolozu train configs/examples/train_contract.yaml --run-id exp01` (writes `runs/exp01/reports/fracal_stats_bbox.json` by default, requires `yolozu[train]`) | `python3 rtdetr_pose/tools/train_minimal.py ...` |
 | Scenario suite | `yolozu test configs/examples/test_setting.yaml` | `python3 tools/run_scenarios.py ...` |
 
 The “power-user” unified CLI lives in-repo: `python3 tools/yolozu.py --help`.
@@ -419,8 +419,8 @@ yolozu train configs/examples/train_setting.yaml
 ### Custom data training (recommended flow)
 
 1) Prepare YOLO-format dataset root:
-- `images/<split>/...`
-- `labels/<split>/...` (YOLO txt: `class cx cy w h`)
+- `images/train/*.{jpg,png}` (and `images/val/*.{jpg,png}`)
+- `labels/train/*.txt` (and `labels/val/*.txt`, YOLO txt: `class cx cy w h`)
 
 2) Validate dataset before training:
 
@@ -485,13 +485,13 @@ yolozu train configs/examples/train_contract.yaml --run-id exp01 --dry-run
 ```
 
 Contracted artifacts (fixed paths):
-- `runs/<run_id>/checkpoints/{last,best}.pt`
-- `runs/<run_id>/reports/train_metrics.jsonl` (1 line per optimizer step)
-- `runs/<run_id>/reports/val_metrics.jsonl`
-- `runs/<run_id>/reports/config_resolved.yaml`
-- `runs/<run_id>/reports/run_meta.json`
-- `runs/<run_id>/reports/onnx_parity.json` (Torch vs ONNXRuntime; fails run on drift by default)
-- `runs/<run_id>/exports/model.onnx` (+ `model.onnx.meta.json`)
+- `runs/exp01/checkpoints/{last,best}.pt`
+- `runs/exp01/reports/train_metrics.jsonl` (1 line per optimizer step)
+- `runs/exp01/reports/val_metrics.jsonl`
+- `runs/exp01/reports/config_resolved.yaml`
+- `runs/exp01/reports/run_meta.json`
+- `runs/exp01/reports/onnx_parity.json` (Torch vs ONNXRuntime; fails run on drift by default)
+- `runs/exp01/exports/model.onnx` (+ `model.onnx.meta.json`)
 
 Best definition: max `map50_95` on validation.
 
@@ -542,31 +542,31 @@ python3 tools/plot_metrics.py \
 
 ### ONNX export
 
-ONNX export runs when `--run-dir` is set (defaulting to `<run-dir>/model.onnx`) or when `--onnx-out` is provided.
+ONNX export runs when `--run-dir` is set (defaulting to `runs/exp001/model.onnx`) or when `--onnx-out` is provided.
 
 Useful flags:
-- `--run-dir <dir>`
-- `--onnx-out <path>`
-- `--onnx-meta-out <path>`
+- `--run-dir runs/exp001`
+- `--onnx-out runs/exp001/model.onnx`
+- `--onnx-meta-out runs/exp001/model.onnx.meta.json`
 - `--onnx-opset <int>`
 - `--onnx-dynamic-hw` (dynamic H/W axes)
 
 ## Dataset format (YOLO + optional metadata)
 
 Base dataset format:
-- Images: `images/<split>/*.(jpg|png|...)`
-- Labels: `labels/<split>/*.txt` (YOLO: `class cx cy w h` normalized)
+- Images: `images/train/*.{jpg,png}` (and `images/val/*.{jpg,png}`)
+- Labels: `labels/train/*.txt` (and `labels/val/*.txt`, YOLO: `class cx cy w h` normalized)
 
 ### Compatibility (YOLOv8 / YOLO11 / YOLOX)
 
 - Ultralytics YOLOv8 / YOLO11: if your dataset root contains `images/train` + `labels/train` (and `images/val` + `labels/val`),
   it is already compatible. Use `yolozu validate dataset /path/to/dataset --strict`.
-  - You can also pass an Ultralytics `data.yaml` as `--dataset` (expects `path:` + `train:`/`val:` pointing to `images/<split>`).
+  - You can also pass an Ultralytics `data.yaml` as `--dataset` (expects `path:` + `train:`/`val:` pointing to `images/train` and `images/val`).
 - YOLOX: common setups use COCO JSON (`instances_*.json`). Convert once with `tools/prepare_coco_yolo.py`
   to generate YOLO-format labels (and an optional `dataset.json` descriptor) under a YOLOZU-compatible dataset root.
   - If you want a **read-only** wrapper (no label txt generation), use import adapters: [`docs/import_adapters.md`](docs/import_adapters.md).
 
-Optional per-image metadata (JSON): `labels/<split>/<image>.json`
+Optional per-image metadata (JSON): `labels/train/000001.json` (same pattern for `labels/val/*.json`)
 - Masks/seg: `mask_path` / `mask` / `M`
 - Depth: `depth_path` / `depth` / `D_obj`
 - Pose: `R_gt` / `t_gt` (or `pose`)
