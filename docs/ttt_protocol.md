@@ -5,6 +5,8 @@ This repo supports **test-time training (TTT)** for the `rtdetr_pose` adapter vi
 
 TTT updates model weights **in-memory** using unlabeled test data before (or per-sample during) inference.
 
+TTT is **OFF by default** and only enabled when you pass `--ttt` (opt-in).
+
 ## When COCO is a good choice
 
 For **detection metrics** that other people recognize, COCO (`val2017`) is a good baseline.
