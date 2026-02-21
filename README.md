@@ -12,6 +12,15 @@ YOLOZU supports different models and datasets through unified contracts and adap
 Run inference in any backend, export a common `predictions.json`,
 and evaluate apples-to-apples with the same validators and metrics.
 
+## Quickstart (run this first)
+
+```bash
+bash scripts/smoke.sh
+```
+
+This is the one-line copy-paste path. Detailed command breakdown is in
+the `Quickstart details` section below.
+
 ## Start here (choose 1 of 4 entry points)
 
 - **A: Evaluate from precomputed predictions (no inference deps)**
@@ -36,7 +45,7 @@ Key points:
 - RT-DETR pose scaffold is available for train→export→eval.
 - Safe TTT presets exist (Tent/MIM/CoTTA/EATA/SAR).
 
-## Quickstart (copy-paste one line)
+## Quickstart details
 
 With this repo checkout, run:
 
