@@ -284,12 +284,17 @@ Safety defaults:
   `yolozu parity --reference reports/pred_torch.json --candidate reports/pred_onnxrt.json`
   plus protocol-pinned eval settings (`docs/yolo26_eval_protocol.md`).
 - Lightweight metrics stay available for fast loops, and full COCOeval is directly exposed from pip:
-  `python3 -m pip install 'yolozu[coco]'` then
-  `yolozu eval-coco --dataset <yolo-dataset> --predictions <predictions.json>`.
+  install extras and run:
+
+  ```bash
+  python3 -m pip install 'yolozu[coco]'
+  yolozu eval-coco --dataset <yolo-dataset> --predictions <predictions.json>
+  ```
 - Long-tail focused post-hoc path is available without retraining:
-  `yolozu calibrate --method fracal --task bbox --dataset <yolo-dataset> --predictions <predictions.json> --stats-out reports/fracal_stats_bbox.json`
-  then
-  `yolozu eval-long-tail --dataset <yolo-dataset> --predictions <calibrated_predictions.json>`.
+  ```bash
+  yolozu calibrate --method fracal --task bbox --dataset <yolo-dataset> --predictions <predictions.json> --stats-out reports/fracal_stats_bbox.json
+  yolozu eval-long-tail --dataset <yolo-dataset> --predictions <calibrated_predictions.json>
+  ```
   Reuse training-time stats with `--stats-in reports/fracal_stats_bbox.json` (also supported for `--task seg`).
   Alternative methods are also available for comparison: `--method la --tau <value>` and `--method norcal --gamma <value>`.
 - Model weights/datasets stay outside git by design; reproducibility is maintained through stable JSON artifacts and
@@ -601,16 +606,42 @@ There are two common workflows:
 If you run real inference elsewhere (PyTorch/ONNXRuntime/TensorRT/etc.), you can evaluate this repo without installing heavy deps locally.
 
 - Validate the JSON:
-  - `python3 tools/validate_predictions.py reports/predictions.json`
+  ```bash
+  python3 tools/validate_predictions.py reports/predictions.json
+  ```
 - Consume predictions locally:
-  - `yolozu test configs/examples/test_setting.yaml --adapter precomputed --predictions reports/predictions.json --max-images 50`
-  - `python3 tools/run_scenarios.py --adapter precomputed --predictions reports/predictions.json --max-images 50`
+  ```bash
+  yolozu test configs/examples/test_setting.yaml --adapter precomputed --predictions reports/predictions.json --max-images 50
+  python3 tools/run_scenarios.py --adapter precomputed --predictions reports/predictions.json --max-images 50
+  ```
 
 ### B) Export predictions in this repo (Torch/ONNXRuntime/TensorRT)
 
 - Torch backend (`rtdetr_pose`, supports **TTA + TTT**):
-  - Baseline: `python3 tools/yolozu.py export --backend torch --checkpoint /path/to.ckpt --device cuda --max-images 50 --output reports/predictions.json`
-  - TTT (Tent, safe preset): `python3 tools/yolozu.py export --backend torch --checkpoint /path/to.ckpt --device cuda --max-images 50 --ttt --ttt-preset safe --ttt-reset sample --ttt-log-out reports/ttt_log_safe.json --output reports/predictions_ttt_safe.json`
+  - Baseline:
+
+    ```bash
+    python3 tools/yolozu.py export \
+      --backend torch \
+      --checkpoint /path/to.ckpt \
+      --device cuda \
+      --max-images 50 \
+      --output reports/predictions.json
+    ```
+  - TTT (Tent, safe preset):
+
+    ```bash
+    python3 tools/yolozu.py export \
+      --backend torch \
+      --checkpoint /path/to.ckpt \
+      --device cuda \
+      --max-images 50 \
+      --ttt \
+      --ttt-preset safe \
+      --ttt-reset sample \
+      --ttt-log-out reports/ttt_log_safe.json \
+      --output reports/predictions_ttt_safe.json
+    ```
   - TTT batch/chunk knobs: add `--ttt-batch-size <N>` and `--ttt-max-batches <K>` to cap adaptation cost (example: `--ttt-batch-size 4 --ttt-max-batches 8`).
   - TTT reset behavior: use `--ttt-reset stream` for one adaptation phase then fast prediction, or `--ttt-reset sample` for per-image/per-batch reset-ablation runs.
   - Note: `tools/yolozu.py export` always writes the wrapped `{ "predictions": [...] }` form (so `--wrap` is not needed).
@@ -637,8 +668,11 @@ This repo includes a COCO-style evaluator that:
 - Runs COCO mAP via `pycocotools` (optional dependency)
 
 Example (coco128 quick run):
-- Export predictions (any adapter): `python3 tools/export_predictions.py --adapter dummy --max-images 50 --wrap --output reports/predictions.json`
-- Evaluate mAP: `python3 tools/eval_coco.py --dataset data/coco128 --predictions reports/predictions.json --bbox-format cxcywh_norm --max-images 50`
+
+```bash
+python3 tools/export_predictions.py --adapter dummy --max-images 50 --wrap --output reports/predictions.json
+python3 tools/eval_coco.py --dataset data/coco128 --predictions reports/predictions.json --bbox-format cxcywh_norm --max-images 50
+```
 
 Note:
 - `--bbox-format cxcywh_norm` expects bbox dict `{cx,cy,w,h}` normalized to `[0,1]` (matching the RTDETR pose adapter bbox head).
@@ -681,14 +715,24 @@ To compare against external baselines (including YOLO26) while keeping this repo
 - Export detections to YOLOZU predictions JSON (see schema below).
 - (Optional) Normalize class ids using COCO `classes.json` mapping.
 - Validate + evaluate mAP in this repo:
-  - `python3 tools/validate_predictions.py reports/predictions.json`
-  - `python3 tools/eval_coco.py --dataset /path/to/coco-yolo --split val2017 --predictions reports/predictions.json --bbox-format cxcywh_norm`
+
+  ```bash
+  python3 tools/validate_predictions.py reports/predictions.json
+  python3 tools/eval_coco.py --dataset /path/to/coco-yolo --split val2017 --predictions reports/predictions.json --bbox-format cxcywh_norm
+  ```
 
 Minimal predictions entry schema:
 - `{"image": "/abs/or/rel/path.jpg", "detections": [{"class_id": 0, "score": 0.9, "bbox": {"cx": 0.5, "cy": 0.5, "w": 0.2, "h": 0.2}}]}`
 
 Optional class-id normalization (when your exporter produces COCO `category_id`):
-- `python3 tools/normalize_predictions.py --input reports/predictions.json --output reports/predictions_norm.json --classes data/coco-yolo/labels/val2017/classes.json --wrap`
+
+```bash
+python3 tools/normalize_predictions.py \
+  --input reports/predictions.json \
+  --output reports/predictions_norm.json \
+  --classes data/coco-yolo/labels/val2017/classes.json \
+  --wrap
+```
 
 ## COCO dataset prep (official JSON -> YOLO-format)
 
@@ -713,18 +757,37 @@ If you export `yolo26n/s/m/l/x` predictions as separate JSON files (e.g. `report
 you can score them together:
 
 - Protocol details: `docs/yolo26_eval_protocol.md`
-- `python3 tools/eval_suite.py --protocol yolo26 --dataset /path/to/coco-yolo --predictions-glob 'reports/pred_yolo26*.json' --output reports/eval_suite.json`
+- Evaluate suite:
+
+  ```bash
+  python3 tools/eval_suite.py \
+    --protocol yolo26 \
+    --dataset /path/to/coco-yolo \
+    --predictions-glob 'reports/pred_yolo26*.json' \
+    --output reports/eval_suite.json
+  ```
 - Fill in targets: `baselines/yolo26_targets.json`
 - Validate targets: `python3 tools/validate_map_targets.py --targets baselines/yolo26_targets.json`
-- Check pass/fail: `python3 tools/check_map_targets.py --suite reports/eval_suite.json --targets baselines/yolo26_targets.json --key map50_95`
+- Check pass/fail:
+
+  ```bash
+  python3 tools/check_map_targets.py --suite reports/eval_suite.json --targets baselines/yolo26_targets.json --key map50_95
+  ```
 - Print a table: `python3 tools/print_leaderboard.py --suite reports/eval_suite.json --targets baselines/yolo26_targets.json --key map50_95`
-- Archive the run (commands + hardware + suite output): `python3 tools/import_yolo26_baseline.py --dataset /path/to/coco-yolo --predictions-glob 'reports/pred_yolo26*.json'`
+- Archive the run (commands + hardware + suite output):
+
+  ```bash
+  python3 tools/import_yolo26_baseline.py --dataset /path/to/coco-yolo --predictions-glob 'reports/pred_yolo26*.json'
+  ```
 
 ### Debug without `pycocotools`
 
 If you don't have `pycocotools` installed yet, you can still validate/convert predictions on `data/coco128`:
-- `python3 tools/export_predictions.py --adapter dummy --max-images 10 --wrap --output reports/predictions_dummy.json`
-- `python3 tools/eval_coco.py --predictions reports/predictions_dummy.json --dry-run`
+
+```bash
+python3 tools/export_predictions.py --adapter dummy --max-images 10 --wrap --output reports/predictions_dummy.json
+python3 tools/eval_coco.py --predictions reports/predictions_dummy.json --dry-run
+```
 
 ## Deployment notes
 - Keep symmetry/commonsense logic in lightweight postprocess utilities, outside any inference graph export.
