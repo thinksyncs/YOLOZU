@@ -1,0 +1,17 @@
+{
+  "name": "yolozu-claude-mcp",
+  "description": "Template MCP connection profile for Claude-compatible clients.",
+  "transport": {
+    "type": "stdio",
+    "command": "python3",
+    "args": ["tools/run_mcp_server.py"],
+    "cwd": "/absolute/path/to/YOLOZU"
+  },
+  "env": {
+    "PYTHONUNBUFFERED": "1"
+  },
+  "notes": [
+    "Template only; map to your runtime's exact configuration schema.",
+    "Use shared JSON outputs from YOLOZU MCP tools without per-client branching."
+  ]
+}

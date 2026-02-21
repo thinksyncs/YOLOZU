@@ -1,0 +1,17 @@
+{
+  "name": "yolozu-gemini-mcp",
+  "description": "Template MCP connection profile for Gemini-side MCP runtimes.",
+  "transport": {
+    "type": "stdio",
+    "command": "python3",
+    "args": ["tools/run_mcp_server.py"],
+    "cwd": "/absolute/path/to/YOLOZU"
+  },
+  "env": {
+    "PYTHONUNBUFFERED": "1"
+  },
+  "notes": [
+    "Template only; adapt fields to your Gemini client/runtime.",
+    "Use the same tool contract as OpenAI/Claude/Copilot for parity."
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "name": "yolozu-openai-mcp",
+  "description": "Template MCP connection profile for OpenAI-side client/runtime.",
+  "transport": {
+    "type": "stdio",
+    "command": "python3",
+    "args": ["tools/run_mcp_server.py"],
+    "cwd": "/absolute/path/to/YOLOZU"
+  },
+  "env": {
+    "PYTHONUNBUFFERED": "1"
+  },
+  "notes": [
+    "This is a template. Adapt key names to your MCP client format.",
+    "Prefer MCP route first; use OpenAPI route only when Actions is required."
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "name": "yolozu-copilot-mcp",
+  "description": "Template MCP connection profile for Copilot extension/participant backends.",
+  "transport": {
+    "type": "stdio",
+    "command": "python3",
+    "args": ["tools/run_mcp_server.py"],
+    "cwd": "/absolute/path/to/YOLOZU"
+  },
+  "env": {
+    "PYTHONUNBUFFERED": "1"
+  },
+  "notes": [
+    "Template only; Copilot Extensions may proxy this via service endpoints.",
+    "Keep extension-side logic thin and delegate tool execution to MCP backend."
+  ]
+}

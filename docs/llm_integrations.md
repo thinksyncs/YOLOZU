@@ -123,3 +123,14 @@ This keeps Gemini, OpenAI, and Copilot integrations aligned on one implementatio
 - OpenAI: MCP first, GPT Actions optional
 
 All four routes should share the same backend implementation in `yolozu.integrations.tool_runner`.
+
+## 7) Connection templates (examples)
+
+Example MCP client profiles (template JSON):
+
+- OpenAI: `docs/examples/mcp_clients/openai_mcp_profile.example.json`
+- Claude: `docs/examples/mcp_clients/claude_mcp_profile.example.json`
+- Copilot: `docs/examples/mcp_clients/copilot_mcp_profile.example.json`
+- Gemini: `docs/examples/mcp_clients/gemini_mcp_profile.example.json`
+
+These are intentionally generic templates. Adjust keys/shape to each client runtime's exact MCP config format.
