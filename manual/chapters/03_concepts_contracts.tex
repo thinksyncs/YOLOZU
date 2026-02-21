@@ -93,7 +93,7 @@ If you can produce \path{predictions.json}, you can evaluate.
 In practice, this means:
 \begin{itemize}
   \item input: dataset records provide an \cmd{image} path (and optional label/sidecar metadata),
-  \item output: per-image \cmd{detections} with \cmd{class\_id}, \cmd{score}, \cmd{bbox} (typically \cmd{cxcywh\_norm}), plus task-specific optional fields,
+  \item output: per-image \cmd{detections} with \cmd{class_id}, \cmd{score}, \cmd{bbox} (typically \cmd{cxcywh_norm}), plus task-specific optional fields,
   \item validation: always run \cmd{tools/validate_predictions.py --strict} before evaluation.
 \end{itemize}
 

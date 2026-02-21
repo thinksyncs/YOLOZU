@@ -33,15 +33,17 @@ Run-contract essentials (codified in the docs and implemented in the trainer):
 \begin{itemize}
   \item Enable with \cmd{--run-contract} or \cmd{--run-id <id>}.
   \item Contract mode requires explicit config keys and rejects unknown keys in strict mode.
-  \item Fixed artifact layout under \path{runs/<run\_id>/}:
-    \path{checkpoints/last.pt}, \path{checkpoints/best.pt},\
-    \path{reports/train\_metrics.jsonl}, \path{reports/val\_metrics.jsonl},\
-    \path{reports/config\_resolved.yaml}, \path{reports/run\_meta.json}.
+  \item Fixed artifact layout under \path{runs/<run_id>/}:
+    \begin{itemize}
+      \item \path{checkpoints/last.pt}, \path{checkpoints/best.pt}
+      \item \path{reports/train_metrics.jsonl}, \path{reports/val_metrics.jsonl}
+      \item \path{reports/config_resolved.yaml}, \path{reports/run_meta.json}
+    \end{itemize}
   \item Export/parity artifacts are produced in contracted runs by default:\
     \path{exports/model.onnx}, \path{exports/model.onnx.meta.json},\
-    \path{reports/onnx\_parity.json}.
+    \path{reports/onnx_parity.json}.
   \item Full-state resume is standardized with \cmd{--resume} from
-    \path{runs/<run\_id>/checkpoints/last.pt}.
+    \path{runs/<run_id>/checkpoints/last.pt}.
 \end{itemize}
 
 \noindent\textbf{Note (low-level trainer):} When invoking \cmd{python3 -m rtdetr_pose.train_minimal} directly,
@@ -67,10 +69,10 @@ The same project can be operated with YAML files for both training and test scen
 \toprule
 \textbf{Workflow} & \textbf{Primary config} & \textbf{Reference command} \\
 \midrule
-Train (scaffold) & \path{configs/examples/train\_setting.yaml} & \cmd{yolozu train <train\_setting.yaml>} \\
-Train (contract) & \path{configs/examples/train\_contract.yaml} & \cmd{yolozu train <train\_contract.yaml> --run-id <id>} \\
-Resume (full state) & same as contract & \cmd{yolozu train <train\_contract.yaml> --run-id <id> --resume} \\
-Test (scenario runner) & \path{configs/examples/test\_setting.yaml} & \cmd{yolozu test <test\_setting.yaml> [test\_args...]} \\
+Train (scaffold) & \path{configs/examples/train_setting.yaml} & \cmd{yolozu train <train_setting.yaml>} \\
+Train (contract) & \path{configs/examples/train_contract.yaml} & \cmd{yolozu train <train_contract.yaml> --run-id <id>} \\
+Resume (full state) & same as contract & \cmd{yolozu train <train_contract.yaml> --run-id <id> --resume} \\
+Test (scenario runner) & \path{configs/examples/test_setting.yaml} & \cmd{yolozu test <test_setting.yaml> [test_args...]} \\
 \bottomrule
 \end{longtable}
 
@@ -88,7 +90,7 @@ yolozu test configs/examples/test_setting.yaml --adapter precomputed --predictio
 \section{Solver (optimizer) parameters and defaults}
 Supported optimizers are \texttt{adamw} (default) and \texttt{sgd}.
 
-\begin{longtable}{@{}p{0.30\textwidth}p{0.12\textwidth}p{0.14\textwidth}p{0.38\textwidth}@{}}
+\begin{longtable}{@{}p{0.40\textwidth}p{0.10\textwidth}p{0.12\textwidth}p{0.30\textwidth}@{}}
 \toprule
 \textbf{CLI / config key} & \textbf{Type} & \textbf{Default} & \textbf{Notes} \\
 \midrule
@@ -110,7 +112,7 @@ Supported optimizers are \texttt{adamw} (default) and \texttt{sgd}.
 \section{LR scheduling parameters and defaults}
 Supported scheduler values are \texttt{none} (default), \texttt{cosine}, \texttt{onecycle}, and \texttt{multistep}.
 
-\begin{longtable}{@{}p{0.30\textwidth}p{0.12\textwidth}p{0.14\textwidth}p{0.38\textwidth}@{}}
+\begin{longtable}{@{}p{0.40\textwidth}p{0.10\textwidth}p{0.12\textwidth}p{0.30\textwidth}@{}}
 \toprule
 \textbf{CLI / config key} & \textbf{Type} & \textbf{Default} & \textbf{Notes} \\
 \midrule
@@ -128,7 +130,7 @@ Supported scheduler values are \texttt{none} (default), \texttt{cosine}, \texttt
 \section{LoRA / QLoRA parameters and defaults}
 LoRA is enabled when \texttt{lora\_r > 0}.
 
-\begin{longtable}{@{}p{0.30\textwidth}p{0.12\textwidth}p{0.14\textwidth}p{0.38\textwidth}@{}}
+\begin{longtable}{@{}p{0.40\textwidth}p{0.10\textwidth}p{0.12\textwidth}p{0.30\textwidth}@{}}
 \toprule
 \textbf{CLI / config key} & \textbf{Type} & \textbf{Default} & \textbf{Notes} \\
 \midrule
@@ -182,16 +184,16 @@ The exact command may change; search for \path{smoke} scripts in \path{tools/}.
 The trainer supports optional depth integration with a safe default:
 \begin{itemize}
   \item \cmd{--depth-mode none} (default): baseline path, depth disabled.
-  \item \cmd{--depth-mode sidecar}: reads per-image depth sidecars (\cmd{depth\_path}/\cmd{depth}) and propagates \cmd{depth\_valid}.
-  \item \cmd{--depth-mode fuse\_mid}: applies lightweight depth fusion after projector (outside the backbone boundary).
+  \item \cmd{--depth-mode sidecar}: reads per-image depth sidecars (\cmd{depth_path}/\cmd{depth}) and propagates \cmd{depth_valid}.
+  \item \cmd{--depth-mode fuse_mid}: applies lightweight depth fusion after projector (outside the backbone boundary).
 \end{itemize}
 
 Safety knobs:
 \begin{itemize}
   \item \cmd{--depth-unit \{unspecified,relative,metric\}} (default: \cmd{unspecified}).
-  \item Absolute depth matcher costs are allowed only in metric mode; non-metric modes safety-disable \cmd{cost\_z}/\cmd{cost\_t}.
+  \item Absolute depth matcher costs are allowed only in metric mode; non-metric modes safety-disable \cmd{cost_z}/\cmd{cost_t}.
   \item \cmd{--depth-scale} applies a scalar to sidecar depth values.
-  \item \cmd{--depth-dropout} controls modality dropout probability for \cmd{fuse\_mid} training.
+  \item \cmd{--depth-dropout} controls modality dropout probability for \cmd{fuse_mid} training.
 \end{itemize}
 
 \section{Contracted run example}

@@ -124,7 +124,8 @@ To keep comparisons consistent, phase-1 CoTTA should record at least:
   \item \cmd{ttt.cotta.aggregation} (initial default: confidence-weighted mean)
   \item \cmd{ttt.cotta.restore_prob} and \cmd{ttt.cotta.restore_interval}
   \item \cmd{ttt.update_filter} (must cover norm-only, lora-only, and combined safe subset)
-  \item guardrails: \cmd{ttt.max_grad_norm}, \cmd{ttt.max_update_norm}, \cmd{ttt.max_total_update_norm}, \cmd{ttt.max_loss_ratio}
+  \item guardrails: \cmd{ttt.max_grad_norm}, \cmd{ttt.max_update_norm}, \\
+    \cmd{ttt.max_total_update_norm}, \cmd{ttt.max_loss_ratio}
 \end{itemize}
 
 \section{EATA: operational design for YOLOZU (phase 1)}
@@ -179,8 +180,14 @@ L = L_{adapt} + \lambda_{anchor} L_{anchor},
 where $L_{adapt}$ is an entropy-based adaptation objective over selected samples.
 
 \subsection{Safety boundaries and guardrails}
-Reuse the standard TTT guardrails (\cmd{max\_grad\_norm}, \cmd{max\_update\_norm},
-\cmd{max\_total\_update\_norm}, \cmd{max\_loss\_ratio}) and rollback-on-stop behavior.
+Reuse the standard TTT guardrails:
+\begin{itemize}
+  \item \cmd{max_grad_norm}
+  \item \cmd{max_update_norm}
+  \item \cmd{max_total_update_norm}
+  \item \cmd{max_loss_ratio}
+\end{itemize}
+and rollback-on-stop behavior.
 
 Additional EATA-specific safety checks:
 \begin{itemize}
@@ -194,10 +201,15 @@ Phase-1 EATA should record at least:
 \begin{itemize}
   \item \cmd{ttt.method=eata}
   \item \cmd{ttt.update_filter} (\cmd{norm_only}, \cmd{lora_only}, \cmd{lora_norm_only}, optional head allowlist)
-  \item thresholds: \cmd{ttt.eata.conf_min}, \cmd{ttt.eata.entropy_min}, \cmd{ttt.eata.entropy_max}, \cmd{ttt.eata.min_valid_dets}
+  \item thresholds: \\
+    \cmd{ttt.eata.conf_min}, \\
+    \cmd{ttt.eata.entropy_min}, \\
+    \cmd{ttt.eata.entropy_max}, \\
+    \cmd{ttt.eata.min_valid_dets}
   \item anchor: \cmd{ttt.eata.anchor_lambda}
   \item selection safety: \cmd{ttt.eata.selected_ratio_min}, \cmd{ttt.eata.max_skip_streak}
-  \item guardrails: \cmd{ttt.max_grad_norm}, \cmd{ttt.max_update_norm}, \cmd{ttt.max_total_update_norm}, \cmd{ttt.max_loss_ratio}
+  \item guardrails: \cmd{ttt.max_grad_norm}, \cmd{ttt.max_update_norm}, \\
+    \cmd{ttt.max_total_update_norm}, \cmd{ttt.max_loss_ratio}
 \end{itemize}
 
 \section{SAR: operational design for YOLOZU (phase 1)}
@@ -257,7 +269,8 @@ Phase-1 SAR should record at least:
   \item \cmd{ttt.method=sar}
   \item \cmd{ttt.update_filter} defaulting to \cmd{lora_only}
   \item \cmd{ttt.sar.rho}, \cmd{ttt.sar.adaptive}, \cmd{ttt.sar.first_step_scale}
-  \item guardrails: \cmd{ttt.max_grad_norm}, \cmd{ttt.max_update_norm}, \cmd{ttt.max_total_update_norm}, \cmd{ttt.max_loss_ratio}
+  \item guardrails: \cmd{ttt.max_grad_norm}, \cmd{ttt.max_update_norm}, \\
+    \cmd{ttt.max_total_update_norm}, \cmd{ttt.max_loss_ratio}
 \end{itemize}
 
 \section{Guard rails (safety limits)}
@@ -364,7 +377,7 @@ In this repo, the important operational points are:
 
 \section{Operational notes}
 \begin{itemize}
-  \item TTT adds latency. Always report throughput and the chosen \cmd{batch\_size/max\_batches}.
+  \item TTT adds latency. Always report throughput and the chosen \cmd{batch_size/max_batches}.
   \item Keep the evaluation subset fixed and record the exact preset and guards.
   \item For deployment, treat TTT as an optional mode; default inference should not require it.
 \end{itemize}

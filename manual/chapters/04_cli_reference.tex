@@ -23,7 +23,7 @@ Always start with:\\
 For repo workflows: \cmd{python3 tools/yolozu.py --help}.
 
 \section{Common commands}
-\begin{longtable}{@{}p{0.24\textwidth}p{0.70\textwidth}@{}}
+\begin{longtable}{@{}p{0.40\textwidth}p{0.55\textwidth}@{}}
 \toprule
 \textbf{Command} & \textbf{Purpose} \\
 \midrule
@@ -44,17 +44,17 @@ For repo workflows: \cmd{python3 tools/yolozu.py --help}.
 \section{YAML config-driven usage (train/test/resume)}
 \yolozu{} supports passing a YAML/JSON file as the first positional argument.
 Internally, \cmd{yolozu train} forwards \cmd{--config <file>} to
-\path{rtdetr\_pose.train\_minimal}, and \cmd{yolozu test} converts YAML keys to
-\path{yolozu.scenarios\_cli} arguments.
+\path{rtdetr_pose.train_minimal}, and \cmd{yolozu test} converts YAML keys to
+\path{yolozu.scenarios_cli} arguments.
 
 \begin{longtable}{@{}p{0.18\textwidth}p{0.30\textwidth}p{0.46\textwidth}@{}}
 \toprule
 \textbf{Case} & \textbf{YAML file} & \textbf{Command pattern} \\
 \midrule
-Train (default) & \path{configs/examples/train\_setting.yaml} & \cmd{yolozu train <train\_setting.yaml>} \\
-Train (contract) & \path{configs/examples/train\_contract.yaml} & \cmd{yolozu train <train\_contract.yaml> --run-id <id>} \\
-Resume & same as train contract & \cmd{yolozu train <train\_contract.yaml> --run-id <id> --resume} \\
-Test (scenario) & \path{configs/examples/test\_setting.yaml} & \cmd{yolozu test <test\_setting.yaml> [test\_args...]} \\
+Train (default) & \path{configs/examples/train_setting.yaml} & \cmd{yolozu train <train_setting.yaml>} \\
+Train (contract) & \path{configs/examples/train_contract.yaml} & \cmd{yolozu train <train_contract.yaml> --run-id <id>} \\
+Resume & same as train contract & \cmd{yolozu train <train_contract.yaml> --run-id <id> --resume} \\
+Test (scenario) & \path{configs/examples/test_setting.yaml} & \cmd{yolozu test <test_setting.yaml> [test_args...]} \\
 \bottomrule
 \end{longtable}
 
@@ -86,7 +86,7 @@ yolozu test configs/examples/test_setting.yaml \
   --max-images 50
 \end{lstlisting}
 
-\noindent This mirrors the documented real-model flow in \path{docs/real\_model\_interface.md}.
+\noindent This mirrors the documented real-model flow in \path{docs/real_model_interface.md}.
 
 \section{Repository power tools}
 Many task-specific scripts live under \path{tools/}. Examples include:

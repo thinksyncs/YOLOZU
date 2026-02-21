@@ -5,7 +5,7 @@ This chapter covers continual fine-tuning across tasks and domains, and the eval
 }{
 It helps mitigate catastrophic forgetting and makes per-task metrics comparable over a training sequence.
 }{
-It requires continual configs and run artifacts (for example \cmd{continual\_run.json}); optional replay and LoRA settings change compute and forgetting behavior.
+It requires continual configs and run artifacts (for example \cmd{continual_run.json}); optional replay and LoRA settings change compute and forgetting behavior.
 }
 
 \section{What YOLOZU means by ``continual''}
@@ -55,15 +55,15 @@ python3 tools/eval_continual.py \
 
 Available \cmd{--metric-key} values in pose mode:
 \begin{itemize}
-  \item \cmd{pose\_success}, \cmd{rot\_success}, \cmd{trans\_success}, \cmd{match\_rate}, \cmd{iou\_mean}
-  \item \cmd{depth\_abs\_mean}, \cmd{depth\_abs\_median}
-  \item \cmd{add\_mean}, \cmd{add\_median}, \cmd{adds\_mean}, \cmd{adds\_median}
+  \item \cmd{pose_success}, \cmd{rot_success}, \cmd{trans_success}, \cmd{match_rate}, \cmd{iou_mean}
+  \item \cmd{depth_abs_mean}, \cmd{depth_abs_median}
+  \item \cmd{add_mean}, \cmd{add_median}, \cmd{adds_mean}, \cmd{adds_median}
 \end{itemize}
 
 Notes:
 \begin{itemize}
   \item Depth metrics require GT depth/translation and predicted depth/translation fields.
-  \item ADD/ADDS metrics require CAD points in sidecar metadata (\cmd{cad\_points} / \cmd{cad\_path} / \cmd{cad\_points\_path}) and valid GT+pred pose.
+  \item ADD/ADDS metrics require CAD points in sidecar metadata (\cmd{cad_points} / \cmd{cad_path} / \cmd{cad_points_path}) and valid GT+pred pose.
 \end{itemize}
 
 Examples for metric-key switching:

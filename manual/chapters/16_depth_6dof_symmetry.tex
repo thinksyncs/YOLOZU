@@ -21,8 +21,8 @@ Key conventions used across docs in this repo:
 Depth integration modes in the scaffold trainer:
 \begin{itemize}
   \item \cmd{none}: depth disabled (compatibility default).
-  \item \cmd{sidecar}: depth is read from sidecar metadata (\cmd{depth\_path}/\cmd{depth}) and tracked via \cmd{depth\_valid}.
-  \item \cmd{fuse\_mid}: depth is fused after projector (outside backbone \([P3,P4,P5]\) swap boundary).
+  \item \cmd{sidecar}: depth is read from sidecar metadata (\cmd{depth_path}/\cmd{depth}) and tracked via \cmd{depth_valid}.
+  \item \cmd{fuse_mid}: depth is fused after projector (outside backbone \([P3,P4,P5]\) swap boundary).
 \end{itemize}
 
 Metric safety rule:
@@ -52,10 +52,10 @@ Practical entry points (``real model'' path):
 \section{Typical regression heads}
 The 6DoF-oriented design documents and utilities assume per-detection regression heads such as:
 \begin{itemize}
-  \item \cmd{log\_z}: object center depth in log space
+  \item \cmd{log_z}: object center depth in log space
   \item \cmd{rot6d}: 6D rotation representation \cite{zhou2019rot6d}
   \item \cmd{offsets}: center correction \cmd{(\u0394u,\u0394v)}
-  \item \cmd{k\_delta}: small intrinsics correction (global / per-frame)
+  \item \cmd{k_delta}: small intrinsics correction (global / per-frame)
 \end{itemize}
 
 See the design spec for clear definitions of frames and outputs:\\
@@ -92,14 +92,18 @@ Implementation / configuration:
 
 Key pieces (matching the Stage 4 roadmap vocabulary):
 \begin{itemize}
-  \item Depth prior: \cmd{depth\_prior(bbox\_wh, size\_wh, (fx,fy))} and penalty \cmd{depth\_prior\_penalty(z\_pred, z\_prior)}.
-  \item Table plane: signed distance via \cmd{plane\_signed\_distance(...)} and below-plane rejection via \cmd{is\_above\_plane(...)}.
-  \item Upright prior: roll/pitch extraction and violation via \cmd{upright\_violation\_deg(R, bounds)}.
+  \item Depth prior: \\
+    \cmd{depth_prior(bbox_wh, size_wh, (fx,fy))} \\
+    and penalty \cmd{depth_prior_penalty(z_pred, z_prior)}.
+  \item Table plane: signed distance via \cmd{plane_signed_distance(...)}
+    and below-plane rejection via \cmd{is_above_plane(...)}.
+  \item Upright prior: roll/pitch extraction and violation via \\
+    \cmd{upright_violation_deg(R, bounds)}.
 \end{itemize}
 
 Wiring example:
 \begin{itemize}
-  \item Candidate evaluation calls constraints from \path{yolozu/pipeline.py} (\cmd{evaluate\_candidate}).
+  \item Candidate evaluation calls constraints from \path{yolozu/pipeline.py} (\cmd{evaluate_candidate}).
 \end{itemize}
 
 Ablations:
@@ -109,8 +113,8 @@ Ablations:
 
 Tests (unit + integration toggles):
 \begin{itemize}
-  \item \path{tests/test\_gates\_constraints.py}
-  \item \path{tests/test\_inference\_constraints.py}
+  \item \path{tests/test_gates_constraints.py}
+  \item \path{tests/test_inference_constraints.py}
 \end{itemize}
 
 \section{Handheld camera robustness (Stage 5, implemented utilities)}
@@ -119,27 +123,27 @@ center offsets $(u+\Delta u, v+\Delta v)$.
 
 Implementation entry points:
 \begin{itemize}
-  \item Intrinsics correction: \path{yolozu/geometry.py} (\cmd{corrected\_intrinsics})
-  \item Translation recovery using offsets: \path{yolozu/geometry.py} (\cmd{recover\_translation})
+  \item Intrinsics correction: \path{yolozu/geometry.py} (\cmd{corrected_intrinsics})
+  \item Translation recovery using offsets: \path{yolozu/geometry.py} (\cmd{recover_translation})
   \item Jitter profile utilities: \path{yolozu/jitter.py}
 \end{itemize}
 
 Jitter utilities provide:
 \begin{itemize}
-  \item Intrinsics drift sampling (e.g. $\delta f,\delta c$): \cmd{sample\_intrinsics\_jitter(...)}
-  \item Extrinsics jitter sampling: \cmd{sample\_extrinsics\_jitter(...)}
-  \item A baseline profile with jitter disabled: \cmd{jitter\_off()}
+  \item Intrinsics drift sampling (e.g. $\delta f,\delta c$): \cmd{sample\_intrinsics_jitter(...)}
+  \item Extrinsics jitter sampling: \cmd{sample\_extrinsics_jitter(...)}
+  \item A baseline profile with jitter disabled: \cmd{jitter_off()}
 \end{itemize}
 
-Note: the jitter profile includes a \cmd{rolling\_shutter} field (\cmd{enabled}, \cmd{line\_delay}), but the current
+Note: the jitter profile includes a \cmd{rolling_shutter} field (\cmd{enabled}, \cmd{line_delay}), but the current
 repository code treats it as a configuration stub; there is no physics-accurate rolling shutter model wired into
 the core geometry utilities.
 
 Tests (integration-level expectations for jitter on/off profiles):
 \begin{itemize}
-  \item \path{tests/test\_geometry\_pipeline.py}
-  \item \path{rtdetr\_pose/tests/test\_train\_minimal\_sim\_jitter.py}
-  \item \path{rtdetr\_pose/tests/test\_train\_minimal\_extrinsics\_jitter.py}
+  \item \path{tests/test_geometry_pipeline.py}
+  \item \path{rtdetr_pose/tests/test_train_minimal_sim_jitter.py}
+  \item \path{rtdetr_pose/tests/test_train_minimal_extrinsics_jitter.py}
 \end{itemize}
 
 \section{Scenario suite (Stage 6, scaffolded validation harness)}
@@ -148,9 +152,9 @@ tooling integration.
 
 Implementation / schema:
 \begin{itemize}
-  \item Scenario suite generator: \path{yolozu/scenario\_suite.py} (\cmd{build\_report})
-  \item CLI wrapper: \path{tools/run\_scenario\_suite.py}
-  \item Schema-style stability test: \path{tests/test\_scenario\_suite.py}
+  \item Scenario suite generator: \path{yolozu/scenario_suite.py} (\cmd{build_report})
+  \item CLI wrapper: \path{tools/run_scenario_suite.py}
+  \item Schema-style stability test: \path{tests/test_scenario_suite.py}
 \end{itemize}
 
 Run it manually:
@@ -238,9 +242,9 @@ For context and intended gates (including real-time constraints), see:
 \section{Available evaluation metrics (current implementation)}
 The pose/depth evaluator (\path{yolozu/pose_eval.py}) reports these keys:
 \begin{itemize}
-  \item Depth: \cmd{depth\_abs\_mean}, \cmd{depth\_abs\_median}
-  \item Pose core: \cmd{rot\_deg\_mean}, \cmd{trans\_l2\_mean}, \cmd{pose\_success}
-  \item CAD-point pose: \cmd{add\_mean}, \cmd{add\_median}, \cmd{adds\_mean}, \cmd{adds\_median}
+  \item Depth: \cmd{depth\_abs_mean}, \cmd{depth\_abs_median}
+  \item Pose core: \cmd{rot\_deg_mean}, \cmd{trans\_l2_mean}, \cmd{pose_success}
+  \item CAD-point pose: \cmd{add_mean}, \cmd{add_median}, \cmd{adds_mean}, \cmd{adds_median}
 \end{itemize}
 
 Definitions:
@@ -255,7 +259,9 @@ For an example of a modern end-to-end 6D pose system (useful as conceptual backg
 Input requirements:
 \begin{itemize}
   \item Depth metrics require valid GT translation/depth and predicted depth or translation.
-  \item ADD/ADDS require CAD points in sidecar metadata (\cmd{cad\_points} / \cmd{cad\_path} / \cmd{cad\_points\_path}) plus valid GT+pred pose.
+  \item ADD/ADDS require CAD points in sidecar metadata \\
+    (\cmd{cad_points} / \cmd{cad_path} / \cmd{cad_points_path}) \\
+    plus valid GT+pred pose.
 \end{itemize}
 
 \section{Practical advice}
