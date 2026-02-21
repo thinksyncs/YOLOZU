@@ -9,31 +9,34 @@
 
 YOLOZU supports different models and datasets through unified contracts and adapters.
 
-Primary use case:
+YOLOZU is a contract-first evaluation harness for detection/segmentation/pose.
+Run inference in any backend, export a common `predictions.json`, and evaluate apples-to-apples with the same validators and metrics.
 
-- Run inference in any backend (BYO inference).
-- Export a common `predictions.json` contract.
-- Evaluate fairly with the same metrics and validators.
+Key points:
 
-This keeps comparisons stable across frameworks (YOLO / Detectron2 / MMDetection / ONNX Runtime / TensorRT) and across environments.
-
-Recommended deployment path (canonical): PyTorch → ONNX → TensorRT (TRT).
-
-Project focus:
-
-- CPU-minimum dev/tests (GPU optional).
-- Stable predictions-JSON contract for backend-agnostic evaluation.
-- Production-oriented RT-DETR pose training pipeline with reproducible artifacts.
-- Hessian refinement as opt-in post-processing on predictions JSON (outside inference engine).
+- Bring-your-own inference → stable `predictions.json`.
+- Validators catch schema drift early.
+- Metrics stay comparable across backends/environments.
+- Tooling stays CPU-friendly by default (GPU optional).
+- RT-DETR pose scaffold is available for train→export→eval.
+- Safe TTT presets exist (Tent/MIM/CoTTA/EATA/SAR).
 
 ## Quickstart (pip users)
 
 ```bash
 python3 -m pip install yolozu
 yolozu doctor --output -
-yolozu predict-images --backend dummy --input-dir /path/to/images
-yolozu demo instance-seg
+yolozu demo instance-seg --num-images 2 --image-size 96
 ```
+
+Have your own `predictions.json` already?
+
+```bash
+yolozu validate predictions --predictions reports/predictions.json --strict
+yolozu eval-coco --dataset data/coco128 --split val2017 --predictions reports/predictions.json --output reports/coco_eval.json
+```
+
+Note: `data/coco128` is available in this repo checkout; for pip-only installs, point `--dataset` to your local COCO-style dataset.
 
 Optional extras:
 

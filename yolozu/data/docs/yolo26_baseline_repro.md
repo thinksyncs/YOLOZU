@@ -1,0 +1,110 @@
+# Reproducing YOLO26 baseline predictions
+
+This repo does not ship (or require) any non-Apache inference code. To reproduce YOLO26 baselines, run inference externally and export **YOLOZU predictions JSON** for each bucket.
+
+Protocol reference: `docs/yolo26_eval_protocol.md`
+
+## 1) Export predictions (external env)
+
+Create five files (names are conventional; any names are fine as long as they match your glob):
+
+- `reports/pred_yolo26n.json`
+- `reports/pred_yolo26s.json`
+- `reports/pred_yolo26m.json`
+- `reports/pred_yolo26l.json`
+- `reports/pred_yolo26x.json`
+
+Each file must follow the schema validated by:
+
+```bash
+python3 tools/validate_predictions.py reports/pred_yolo26n.json
+```
+
+Important: export **pre-NMS** detections if you want true e2e/no-NMS evaluation.
+
+### Exporter skeletons (this repo)
+
+This repo includes Apache-2.0-friendly exporter skeletons you can adapt in your inference environment:
+
+```bash
+python3 tools/export_predictions_onnxrt.py --dataset /path/to/coco-yolo --onnx /path/to/model.onnx --wrap --output reports/pred_yolo26n.json
+python3 tools/export_predictions_trt.py --dataset /path/to/coco-yolo --engine /path/to/model.plan --wrap --output reports/pred_yolo26n.json
+```
+
+Both tools are **NMS-free** (they never run NMS), and they capture run metadata when `--wrap` is enabled.
+
+### TensorRT engine build (FP16 / INT8)
+
+If you need a reproducible TensorRT plan build, use the provided builder script:
+
+```bash
+python3 tools/build_trt_engine.py \
+  --onnx /path/to/model.onnx \
+  --engine /path/to/model.plan \
+  --input-name images \
+  --input-shape 1x3x640x640 \
+  --fp16
+```
+
+Optional INT8 (requires calibration data):
+
+```bash
+python3 tools/build_trt_engine.py \
+  --onnx /path/to/model.onnx \
+  --engine /path/to/model_int8.plan \
+  --input-name images \
+  --input-shape 1x3x640x640 \
+  --int8 \
+  --calib-dataset /path/to/coco-yolo \
+  --calib-max-images 128 \
+  --calib-cache reports/trt_calib.cache
+```
+
+## 2) Evaluate + archive in this repo
+
+Run a pinned evaluation and archive the suite JSON plus run metadata (commands + machine info):
+
+```bash
+python3 tools/import_yolo26_baseline.py \
+  --dataset /path/to/coco-yolo \
+  --predictions-glob 'reports/pred_yolo26*.json' \
+  --notes 'Describe exporter, postprocess, and hardware here'
+```
+
+The importer will fail loudly unless **all 5 buckets** are present in the glob: `yolo26n/s/m/l/x`.
+
+### Smoke run on coco128 (optional)
+
+If you only have `data/coco128`, you can do a **non-protocol smoke run**:
+
+```bash
+python3 tools/import_yolo26_baseline.py \
+  --dataset data/coco128 \
+  --predictions-glob 'reports/pred_yolo26*.json' \
+  --protocol none \
+  --split train2017 \
+  --dry-run \
+  --notes 'smoke on coco128 (no pycocotools)'
+```
+
+Outputs:
+- `reports/eval_suite.json` (ignored by git)
+- `baselines/yolo26_runs/<run-id>/eval_suite.json` (tracked)
+- `baselines/yolo26_runs/<run-id>/run.json` (tracked)
+
+## 3) Gate vs targets (optional)
+
+```bash
+python3 tools/check_map_targets.py \
+  --suite reports/eval_suite.json \
+  --targets baselines/yolo26_targets.json \
+  --key map50_95
+```
+
+If you want to fill `baselines/yolo26_targets.json` from an already-generated baseline suite report:
+
+```bash
+python3 tools/update_map_targets_from_suite.py \
+  --suite reports/eval_suite.json \
+  --targets baselines/yolo26_targets.json
+```
