@@ -1,11 +1,13 @@
 # Run Contract (production-style training artifacts)
 
-The RT-DETR pose trainer (`rtdetr_pose.train_minimal`, invoked via `yolozu train`) supports a **run contract** mode that pins:
+The RT-DETR pose trainer (`rtdetr_pose.train_minimal`, invoked via `yolozu train`)
+supports a **run contract** mode that pins:
 - reproducibility inputs (config + seed + environment metadata)
 - fixed output paths (checkpoints, metrics JSONL, exports)
 - safety gates (full resume, non-finite guards, parity checks)
 
-The goal is: **the same YAML can always do** `train → resume → export → eval`, and artifacts are always in the same place.
+The goal is: **the same YAML can always do** `train → resume → export → eval`.
+Artifacts are always in the same place.
 
 ## Enable
 
