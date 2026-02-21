@@ -1,21 +1,18 @@
 # Predictions JSON schema (v1)
 
-This document defines the stable **Predictions JSON** contract used by YOLOZU's
-evaluation tools. It exists so you can run inference anywhere and still compare
-results here.
+This document defines the stable Predictions JSON contract used by YOLOZU evaluation tools.
+The goal is simple: run inference anywhere, then compare results fairly in one place.
 
 ## Versioning
 
-- `schema_version`: integer, current version is `1`.
-- Backward compatible additions are allowed (new optional fields).
-- Breaking changes must bump `schema_version`.
-- Lifecycle, compatibility, and migration process are defined in [schema_governance.md](schema_governance.md).
+- `schema_version`: integer (current: `1`)
+- Backward-compatible additions are allowed (new optional fields)
+- Breaking changes require bumping `schema_version`
+- Lifecycle/migration policy: `docs/schema_governance.md`
 
 ## Allowed top-level shapes
 
-You may submit predictions in one of the following shapes.
-
-### Shape A: Array of entries
+### Shape A: array of entries
 
 ```json
 [
@@ -32,7 +29,7 @@ You may submit predictions in one of the following shapes.
 ]
 ```
 
-### Shape B: Wrapped object
+### Shape B: wrapped object
 
 ```json
 {
@@ -56,7 +53,7 @@ You may submit predictions in one of the following shapes.
 }
 ```
 
-### Shape C: Map (image -> detections)
+### Shape C: map (`image -> detections`)
 
 ```json
 {
@@ -70,129 +67,137 @@ You may submit predictions in one of the following shapes.
 }
 ```
 
-## Image keys (how predictions join to the dataset)
+## Image keys (join behavior)
 
-Each entry must include an `image` string. In YOLOZU, `image` is primarily a
-**join key** used to match predictions to dataset records.
+Each entry must include `image` (string). In YOLOZU this is primarily a join key
+for matching predictions to dataset records.
 
 Current evaluator behavior:
 
-1) First try an **exact string match** to the dataset record `image` field.
-2) If that fails, try matching by **basename** (e.g. `000000123.jpg`).
+1. Try exact string match against dataset record `image`
+2. If not found, try basename match (e.g. `000000123.jpg`)
 
 Recommendations:
 
-- For portability across machines and OS path separators, prefer **basenames** as
-  `image` values (and keep them unique within the evaluated split).
-- Do not rely on the predictions file location to resolve `image` paths.
-  Evaluators treat `image` as an identifier, not as “relative to predictions.json”.
+- Prefer basename-style keys for portability across machines/OS path separators
+- Keep basenames unique per evaluated split
+- Do not treat prediction file location as an implicit base path for `image`
 
 ## Detection fields
 
 Required:
 
-- `class_id`: int
-- `score`: float
-- `bbox`: `{cx, cy, w, h}`
+- `class_id` (int)
+- `score` (float)
+- `bbox` (`{cx, cy, w, h}`)
 
-Optional:
+Optional examples:
 
-- `bbox_abs`: absolute bbox if present
-- `mask`, `mask_path`, `depth`, `depth_path`, `rot6d`, `R`, `t_xyz`, `k_delta`, `k_prime`, ...
-- `keypoints`: optional 2D keypoints per detection (YOLO pose-style)
-  - Recommended: flat list `[x1,y1,v1,x2,y2,v2,...]` in normalized coords
-    (`v`: visibility 0/1/2)
-  - Also accepted by some tools: list of objects `[{x,y,v?}, ...]`
+- `bbox_abs`
+- `mask` / `mask_path`
+- `depth` / `depth_path`
+- `rot6d`, `R`, `t_xyz`
+- `k_delta`, `k_prime`
+- `keypoints`
 
-## BBox format
+### Keypoints formats
 
-The canonical `bbox` dict uses keys `{cx, cy, w, h}`. How those numbers are
-interpreted is controlled by the evaluating tool via `--bbox-format`.
+Recommended (YOLO pose-style):
 
-Common formats:
+- flat list in normalized coords: `[x1,y1,v1,x2,y2,v2,...]`
+- `v` visibility: `0/1/2`
 
-- `cxcywh_norm` (canonical): normalized to `[0,1]` relative to the image size.
-- `cxcywh_abs`: pixels.
-- `xywh_abs`: pixels (top-left origin).
-- `xyxy_abs`: pixels (top-left origin; bottom-right corner).
+Also accepted by some tools:
+
+- object list: `[{x,y,v?}, ...]`
+
+## BBox format responsibility split
+
+Canonical JSON shape always uses `bbox` with keys `{cx, cy, w, h}`.
+Interpretation is evaluator-side and controlled by `--bbox-format`.
+
+Supported formats:
+
+- `cxcywh_norm` (canonical for protocol-based eval)
+- `cxcywh_abs`
+- `xywh_abs`
+- `xyxy_abs`
 
 Tool expectations:
 
-- `tools/eval_coco.py` and `tools/eval_suite.py` default to `--bbox-format cxcywh_norm`
-  but allow overriding.
-- The pinned YOLO26 protocol **requires** `cxcywh_norm`
-  (see `docs/yolo26_eval_protocol.md`).
-- `tools/export_predictions.py --adapter rtdetr_pose` emits `cxcywh_norm`.
+- `tools/eval_coco.py` / `tools/eval_suite.py` default to `cxcywh_norm`
+- YOLO26 protocol requires `cxcywh_norm` (`docs/yolo26_eval_protocol.md`)
+- `tools/export_predictions.py --adapter rtdetr_pose` emits `cxcywh_norm`
 
 ## Masks (PNG) and path resolution
 
-This repo supports segmentation workflows, but note that there are **two related
-artifacts**:
+There are two related artifacts:
 
-1) This document: detection-style predictions (`{image, detections}`).
-2) Instance segmentation predictions (`{image, instances}`), validated by
-   `docs/schemas/instance_segmentation_predictions.schema.json`.
+1. detection-style predictions (`{image, detections}`)
+2. instance-seg predictions (`{image, instances}`), validated by
+   `docs/schemas/instance_segmentation_predictions.schema.json`
 
 ### `mask` vs `mask_path`
 
-When a tool accepts both fields:
+When both are accepted by a tool:
 
-- `mask` is treated as the primary field.
-- `mask_path` is treated as an alias for `mask` (kept for compatibility).
+- `mask` is primary
+- `mask_path` is compatibility alias
 
-### PNG requirements (instance segmentation)
+### PNG requirements (instance-seg)
 
-For `eval-instance-seg`, each predicted instance mask must:
+For `eval-instance-seg`, each predicted mask should:
 
-- Be a 2D mask (PNG recommended).
-- Use the standard image coordinate system: top-left origin, `y` down, `x` right.
-- Have the **same `(H, W)` as the corresponding GT mask** (size mismatches are errors).
-- Use “non-zero = foreground” semantics (binary mask).
+- be 2D (PNG recommended)
+- follow standard image coordinates (origin top-left; `y` down, `x` right)
+- match GT mask size exactly (`H, W`)
+- use non-zero as foreground
 
 ### Relative path resolution
 
-Mask paths are resolved as follows:
+When loading mask files:
 
-1) If the evaluation command provides a `--pred-root`, relative mask paths are
-   resolved under it.
-2) Otherwise, tools default to resolving relative paths under the predictions
-   JSON directory.
+1. If `--pred-root` is provided, resolve relative paths under it
+2. Otherwise resolve under predictions JSON directory
 
-For reproducible scripts, prefer passing an explicit absolute `--pred-root`.
+For reproducibility, prefer explicit absolute `--pred-root`.
 
-## Units & coordinate frames (important)
+## Units and coordinate-system notes
 
-YOLOZU does not automatically convert units. All geometry is computed in the
-**units you provide**.
+YOLOZU does not convert geometry units automatically.
 
-- `intrinsics` / `K` / `K_gt`:
-  - Interpreted as `(fx, fy, cx, cy)` in **pixels**, in the **same image coordinate
-    system** as the bbox values used for translation recovery.
-  - If you resize/letterbox images before inference, provide intrinsics for the
-    *post-transform* image.
-- `bbox` + `offsets`:
-  - Translation recovery uses bbox center in **pixels**.
-  - If `--bbox-format cxcywh_norm` is used, bbox is first converted to pixels
-    using the entry `image_size` / `image_hw`.
-  - `offsets` (if present) are treated as **pixel offsets** `(du, dv)`.
-- `log_z` / `z`:
-  - Used as the depth/translation `z` component.
-  - Whatever unit your dataset uses (e.g., meters or millimeters) becomes the unit
-    of `t_xyz`.
-  - Recommendation: store depth and translation in **meters** for interoperability.
-- `k_delta` / `k_prime`:
-  - `k_delta = [dfx, dfy, dcx, dcy]` is a **correction** applied to the provided
-    intrinsics:
-    - `fx' = fx * (1 + dfx)`
-    - `fy' = fy * (1 + dfy)`
-    - `cx' = cx + dcx`
-    - `cy' = cy + dcy`
-  - This is not a full intrinsics estimator; it adjusts a given baseline `K`.
+### Intrinsics (`intrinsics` / `K` / `K_gt`)
 
-### Intrinsics after resize/letterbox (rule of thumb)
+- interpreted as `(fx, fy, cx, cy)` in pixels
+- must correspond to the same image coordinate system used for bbox/offsets
+- after resize/letterbox, provide post-transform intrinsics
 
-If the original image is resized by `(s_x, s_y)` and padded by `(p_x, p_y)`
-(pixels), then:
+### `bbox` + `offsets`
+
+- translation recovery uses bbox center in pixels
+- if `--bbox-format cxcywh_norm`, bbox is converted using `image_size` / `image_hw`
+- `offsets` are treated as pixel offsets `(du, dv)`
+
+### `log_z` / `z`
+
+- used as depth / translation `z`
+- unit is whatever your dataset uses (meters, millimeters, ...)
+- recommendation: meters for interoperability
+
+### `k_delta` / `k_prime`
+
+`k_delta = [dfx, dfy, dcx, dcy]` corrects baseline intrinsics:
+
+- `fx' = fx * (1 + dfx)`
+- `fy' = fy * (1 + dfy)`
+- `cx' = cx + dcx`
+- `cy' = cy + dcy`
+
+This is correction, not full intrinsics estimation.
+
+### Resize/letterbox intrinsics rule of thumb
+
+If resize scale is `(s_x, s_y)` and pad is `(p_x, p_y)`:
 
 $$
 fx' = fx\,s_x,\quad fy' = fy\,s_y,\quad cx' = cx\,s_x + p_x,\quad cy' = cy\,s_y + p_y
@@ -200,6 +205,5 @@ $$
 
 ## Schema files
 
-- Detection predictions schema: `schemas/predictions.schema.json`
-- Instance segmentation predictions schema:
-  `docs/schemas/instance_segmentation_predictions.schema.json`
+- Detection schema: `schemas/predictions.schema.json`
+- Instance-seg schema: `docs/schemas/instance_segmentation_predictions.schema.json`

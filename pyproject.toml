@@ -68,6 +68,7 @@ include = ["yolozu*", "rtdetr_pose*"]
   "configs/continual/*.yml",
   "protocols/*.json",
   "schemas/*.json",
+  "docs/*.md",
 ]
 "rtdetr_pose" = ["configs/*.json"]
 

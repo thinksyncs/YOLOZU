@@ -5,9 +5,11 @@ import json
 from pathlib import Path
 from typing import Any
 
+from yolozu import resources as yz_resources
+
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _DEFAULT_PROTOCOLS = {
-    "yolo26": _REPO_ROOT / "protocols" / "yolo26_eval.json",
+    "yolo26": "protocols/yolo26_eval.json",
 }
 
 
@@ -19,7 +21,10 @@ def load_eval_protocol(protocol_id: str) -> dict[str, Any]:
     path = _DEFAULT_PROTOCOLS.get(protocol_id)
     if path is None:
         raise ValueError(f"unknown protocol: {protocol_id}")
-    doc = json.loads(path.read_text())
+    if isinstance(path, Path):
+        doc = json.loads(path.read_text())
+    else:
+        doc = json.loads(yz_resources.read_text(str(path)))
     validate_eval_protocol(doc)
     return doc
 

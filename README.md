@@ -9,27 +9,22 @@
 
 YOLOZU supports different models and datasets through unified contracts and adapters.
 
-You can easily compare models across frameworks,
-from YOLO, Detectron2 and MMDetection to ONNX Runtime and TensorRT.
+Primary use case:
 
-You can train and evaluate models with mostly the same commands across platforms.
-When source dataset formats differ, YOLOZU provides adapter/prepare commands so users can keep workflow changes minimal.
+- Run inference in any backend (BYO inference).
+- Export a common `predictions.json` contract.
+- Evaluate fairly with the same metrics and validators.
 
-Keypoints dataset onboarding is available as a one-command path:
-`python3 tools/yolozu.py prepare-keypoints-dataset --source <INPUT_PATH> --format auto --out <OUTPUT_DATASET_ROOT>`
-
-Supported direct keypoints inputs: `auto`, `yolo_pose`, `coco`, `cvat_xml`.
-Not direct (convert first): `detectron2_dataset_dict`, `labelme_keypoints`.
-Format matrix/help: `python3 tools/yolozu.py prepare-keypoints-dataset --list-formats --source . --out .`
-Minimal CVAT XML smoke test: `python3 -m pytest -q tests/test_prepare_keypoints_dataset_cvat_xml.py`
+This keeps comparisons stable across frameworks (YOLO / Detectron2 / MMDetection / ONNX Runtime / TensorRT) and across environments.
 
 Recommended deployment path (canonical): PyTorch → ONNX → TensorRT (TRT).
 
-It focuses on:
-- CPU-minimum dev/tests (GPU optional)
-- A stable predictions-JSON contract for evaluation (bring-your-own inference backend)
-- Production-oriented training pipeline (RT-DETR pose) with reproducible artifacts
-- Hessian-based refinement as opt-in post-processing on predictions JSON (engine外)
+Project focus:
+
+- CPU-minimum dev/tests (GPU optional).
+- Stable predictions-JSON contract for backend-agnostic evaluation.
+- Production-oriented RT-DETR pose training pipeline with reproducible artifacts.
+- Hessian refinement as opt-in post-processing on predictions JSON (outside inference engine).
 
 ## Quickstart (pip users)
 
@@ -51,7 +46,45 @@ python3 -m pip install 'yolozu[full]'
 
 Docs index (start here): [`docs/README.md`](docs/README.md)
 
-## Why YOLOZU (what’s “
+## Keypoints onboarding (one command)
+
+Prepare keypoints data into YOLOZU-ready layout:
+
+```bash
+python3 tools/yolozu.py prepare-keypoints-dataset \
+  --source data/keypoints_src \
+  --format auto \
+  --out data/keypoints_dataset
+```
+
+Supported direct keypoints inputs:
+
+- `auto`
+- `yolo_pose`
+- `coco`
+- `cvat_xml`
+
+Not direct (convert first):
+
+- `detectron2_dataset_dict`
+- `labelme_keypoints`
+
+Format matrix/help:
+
+```bash
+python3 tools/yolozu.py prepare-keypoints-dataset \
+  --list-formats \
+  --source . \
+  --out .
+```
+
+Minimal CVAT XML smoke test:
+
+```bash
+python3 -m pytest -q tests/test_prepare_keypoints_dataset_cvat_xml.py
+```
+
+## Why YOLOZU (what's unique)
 
 - **Bring-your-own inference + contract-first evaluation**: run inference in PyTorch / ONNXRuntime / TensorRT / C++ / Rust
   → export the same `predictions.json` → compare apples-to-apples.

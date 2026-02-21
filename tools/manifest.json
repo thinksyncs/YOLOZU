@@ -131,9 +131,8 @@
       "tags": ["dataset", "keypoints", "cvat", "coco", "yolo"],
       "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
       "requires": { "python_packages": [] },
-      "contracts": { "produces": ["dataset_descriptor"] },
       "inputs": [
-        { "name": "source", "kind": "path", "required": true, "flag": "--source" },
+        { "name": "source", "kind": "string", "required": true, "flag": "--source" },
         { "name": "out", "kind": "dir", "required": true, "flag": "--out" },
         { "name": "list_formats", "kind": "string", "required": false, "flag": "--list-formats" },
         { "name": "format", "kind": "string", "required": false, "flag": "--format" },
@@ -149,7 +148,7 @@
         { "name": "category_id", "kind": "number", "required": false, "flag": "--category-id" },
         { "name": "category_name", "kind": "string", "required": false, "flag": "--category-name" },
         { "name": "class_id", "kind": "number", "required": false, "flag": "--class-id" },
-        { "name": "cvat_images_dir", "kind": "path", "required": false, "flag": "--cvat-images-dir" }
+        { "name": "cvat_images_dir", "kind": "string", "required": false, "flag": "--cvat-images-dir" }
       ],
       "effects": {
         "writes": [
