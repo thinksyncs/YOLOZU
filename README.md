@@ -7,24 +7,16 @@
 [![Python >=3.10](https://img.shields.io/badge/python-%3E%3D3.10-3776AB?logo=python&logoColor=white)](https://pypi.org/project/yolozu/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-YOLOZU supports different models and datasets through unified contracts and adapters.
+Contract-first evaluation harness for detection / segmentation / pose.
 
-YOLOZU is a contract-first evaluation harness for detection/segmentation/pose.
+YOLOZU supports different models and datasets through unified contracts and adapters.
 Run inference in any backend, export a common `predictions.json`, and evaluate apples-to-apples with the same validators and metrics.
 
 ## Start here (choose 1 of 3 entry points)
 
-- **A: Evaluate-only (BYO inference)**
-  - `predictions.json` → validate → eval
-  - Start: [`docs/README.md`](docs/README.md#1-evaluate-from-predictionsjson-bring-your-own-inference)
-
-- **B: Train/Export (RT-DETR pose)**
-  - reproducible run artifacts → ONNX → TensorRT
-  - Start: [`docs/README.md`](docs/README.md#2-train--export--evaluate-rt-detr-pose)
-
-- **C: Online adaptation (TTA/TTT, Safe TTT)**
-  - guard rails / reset policies for Tent/MIM/CoTTA/EATA/SAR
-  - Start: [`docs/README.md`](docs/README.md#3-online-adaptation-ttattt-safe-ttt)
+- **A: Evaluate-only (BYO inference)** — `predictions.json` → validate → eval. Start: [`docs/README.md`](docs/README.md#1-evaluate-only-byo-inference)
+- **B: Train/Export (RT-DETR pose)** — reproducible run artifacts → ONNX → TensorRT. Start: [`docs/README.md`](docs/README.md#2-trainexport-rt-detr-pose)
+- **C: Online adaptation (TTA/TTT, Safe TTT)** — guard rails / reset policies for Tent/MIM/CoTTA/EATA/SAR. Start: [`docs/README.md`](docs/README.md#3-online-adaptation-ttattt-safe-ttt)
 
 Key points:
 
@@ -107,17 +99,15 @@ python3 -m pytest -q tests/test_prepare_keypoints_dataset_cvat_xml.py
 
 In one glance:
 
-- **BYO inference + contract-first eval**: export the same `predictions.json` → compare apples-to-apples.
+- **BYO inference + contract-first eval**: export the same `predictions.json` and compare apples-to-apples.
 - **Safe TTT**: guard rails + reset policies for online adaptation.
 - **Apache-2.0-only ops**: license policy + checks to keep the toolchain clean.
 - **Parity/bench**: diff stats + fixed-protocol benchmarks across backends.
 
-- **Bring-your-own inference + contract-first evaluation**: run inference in PyTorch / ONNXRuntime / TensorRT / C++ / Rust
-  → export the same `predictions.json` → compare apples-to-apples.
+- **Bring-your-own inference + contract-first evaluation**: run inference in PyTorch / ONNXRuntime / TensorRT / C++ / Rust, export the same `predictions.json`, and compare apples-to-apples.
 - **Safe TTT (test-time training)**: presets + guard rails + reset policies (see `docs/ttt_protocol.md`).
 - **Apache-2.0-only ops**: license policy + checks to keep the toolchain clean (see `docs/license_policy.md`).
-- **Unified CLI**: `yolozu` (pip) + `python3 tools/yolozu.py` (repo) wrap backends with consistent args, caching (`--cache`),
-  and always write run metadata (git SHA / env / GPU / config hash).
+- **Unified CLI**: `yolozu` (pip) + `python3 tools/yolozu.py` (repo) wrap backends with consistent args, caching (`--cache`), and always write run metadata (git SHA / env / GPU / config hash).
 - **Parity + benchmarks**: backend diff stats (torch vs onnxrt vs trt) and fixed-protocol latency/FPS reports.
 - **AI-friendly repo surface**: stable schemas + `tools/manifest.json` for tool discovery / automation.
 
