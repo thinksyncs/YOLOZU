@@ -154,6 +154,38 @@
       "docs": ["docs/README.md"]
     },
     {
+      "id": "run_mcp_server",
+      "entrypoint": "tools/run_mcp_server.py",
+      "runner": "python3",
+      "summary": "Run YOLOZU MCP server exposing doctor/validate/eval/scenario tools for LLM clients.",
+      "tags": ["mcp", "integration", "llm"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "requires": { "python_packages": ["mcp"] },
+      "inputs": [],
+      "effects": { "writes": [], "fixed_writes": [] },
+      "outputs": [{ "name": "transport", "kind": "string", "description": "MCP server stdio transport for compatible clients." }],
+      "examples": [
+        { "description": "Start MCP server locally.", "command": "python3 tools/run_mcp_server.py" }
+      ],
+      "docs": ["docs/llm_integrations.md"]
+    },
+    {
+      "id": "run_actions_api",
+      "entrypoint": "tools/run_actions_api.py",
+      "runner": "python3",
+      "summary": "Run FastAPI/OpenAPI endpoint for GPT Actions route using the same YOLOZU tool backend.",
+      "tags": ["openapi", "fastapi", "integration", "llm"],
+      "platform": { "cpu_ok": true, "gpu_required": false, "macos_ok": true, "linux_ok": true },
+      "requires": { "python_packages": ["fastapi", "uvicorn"] },
+      "inputs": [],
+      "effects": { "writes": [], "fixed_writes": [] },
+      "outputs": [{ "name": "openapi", "kind": "string", "description": "OpenAPI schema available at /openapi.json." }],
+      "examples": [
+        { "description": "Start Actions API server on :8080.", "command": "python3 tools/run_actions_api.py" }
+      ],
+      "docs": ["docs/llm_integrations.md"]
+    },
+    {
       "id": "make_subset_dataset",
       "entrypoint": "tools/make_subset_dataset.py",
       "runner": "python3",
