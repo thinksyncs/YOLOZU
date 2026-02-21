@@ -59,7 +59,18 @@ Main endpoints:
 
 Recommendation: ship MCP first, add Actions only when ChatGPT Actions integration is required.
 
-## 3) Copilot routes
+## 3) Claude routes
+
+Claude integration should also use the same MCP server.
+
+```bash
+python3 tools/run_mcp_server.py
+```
+
+- Expose the same tool contract and JSON shape used by other clients.
+- Keep Claude-side prompt/tool wrappers thin (no duplicated business logic).
+
+## 4) Copilot routes
 
 ### A. Copilot Extensions (skillsets / agent)
 
@@ -73,7 +84,7 @@ Implement participant/commands that invoke the same backend (MCP/API) instead of
 
 This avoids duplicate business logic and keeps output parity between Copilot and other LLM clients.
 
-## 4) Gemini route
+## 5) Gemini route
 
 Gemini can use the same backend in two ways:
 
@@ -99,3 +110,12 @@ Schema endpoint:
 - `http://<host>:8080/openapi.json`
 
 This keeps Gemini, OpenAI, and Copilot integrations aligned on one implementation.
+
+## 6) Client matrix (recommended)
+
+- Gemini: MCP first, API/tool-calling optional
+- Claude: MCP first
+- Copilot: MCP-backed extension/participant
+- OpenAI: MCP first, GPT Actions optional
+
+All four routes should share the same backend implementation in `yolozu.integrations.tool_runner`.

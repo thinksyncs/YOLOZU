@@ -84,6 +84,12 @@ Reference docs:
 - Bundled assets: `data/smoke`
 - Report output: `reports/smoke_coco_eval_dry_run.json`
 
+## E) LLM/MCP integrations (Gemini / Claude / Copilot / OpenAI)
+
+- Guide: [LLM integrations](llm_integrations.md)
+- MCP server entrypoint: `python3 tools/run_mcp_server.py`
+- Optional OpenAPI route: `python3 tools/run_actions_api.py`
+
 ## CI incident memo (2026-02-21)
 
 - Incident 1 (Hessian CLI smoke test):

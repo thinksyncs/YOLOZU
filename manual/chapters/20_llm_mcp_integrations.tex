@@ -1,0 +1,52 @@
+\chapter{LLM MCP Integrations (Gemini / Claude / Copilot / OpenAI)}
+\ChapterMeta{Scope:}{}
+{Unified MCP-first integration strategy across major LLM clients.}
+
+\section{Principle: one backend, many clients}
+
+All clients should share the same implementation backend:
+
+\begin{lstlisting}[language=bash]
+python3 tools/run_mcp_server.py
+\end{lstlisting}
+
+Core exposed tools:
+\begin{itemize}
+  \item \cmd{doctor}
+  \item \cmd{validate\_predictions}
+  \item \cmd{validate\_dataset}
+  \item \cmd{eval\_coco}
+  \item \cmd{run\_scenarios}
+  \item \cmd{convert\_dataset} (optional)
+\end{itemize}
+
+Return payload policy (for all clients):
+\begin{itemize}
+  \item machine-readable JSON
+  \item short textual summary in \cmd{summary}
+  \item stable top-level keys: \cmd{ok}, \cmd{tool}, \cmd{summary}, \cmd{exit\_code}
+\end{itemize}
+
+\section{Client routing}
+
+\subsection{Gemini}
+Use MCP first. Optionally use API tool-calling via OpenAPI endpoint.
+
+\subsection{Claude}
+Use MCP first with thin prompt wrappers; avoid duplicating tool logic.
+
+\subsection{Copilot}
+Use Copilot Extensions / VS Code participant that calls MCP backend (or API fallback).
+
+\subsection{OpenAI}
+Use MCP first; add GPT Actions when OpenAPI registration is required.
+
+Optional API route:
+\begin{lstlisting}[language=bash]
+python3 tools/run_actions_api.py
+# OpenAPI: http://<host>:8080/openapi.json
+\end{lstlisting}
+
+\section{Operational recommendation}
+
+Maintain feature parity by implementing behavior once in backend runner and exposing it through MCP/API adapters.
