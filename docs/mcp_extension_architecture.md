@@ -19,6 +19,13 @@ This document fixes the extension layering and operational policy.
    - run listing/description
    - metadata (`git_sha`, `manifest_sha256`, runtime info)
 
+## Tool roadmap status
+
+Data entry tools (A1-A3) are implemented in shared backend `yolozu.integrations.tool_runner` and exposed via both MCP and Actions API:
+- A1: `validate_predictions`
+- A2: `validate_dataset`
+- A3: `convert_dataset`
+
 ## Long-running jobs
 
 Long tools should return quickly with `job_id`.
