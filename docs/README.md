@@ -11,6 +11,9 @@ For test-time adaptation, YOLOZU provides safe-by-default TTT presets and guard 
 
 ## Start here (4 entry points)
 
+Need a concrete artifact first?
+- [Proof (one page): shortest path + report shape](proof_onepager.md)
+
 ### 1) Evaluate from `predictions.json` (bring-your-own inference)
 
 Run inference anywhere (PyTorch / ONNXRuntime / TensorRT / C++ / Rust) and export the same

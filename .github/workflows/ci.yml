@@ -74,6 +74,7 @@ jobs:
             "yolozu/data/schemas/predictions.schema.json",
             "yolozu/data/protocols/yolo26_eval.json",
             "yolozu/data/docs/README.md",
+            "yolozu/data/docs/proof_onepager.md",
             "yolozu/data/docs/backend_parity_matrix.md",
             "yolozu/data/docs/onnx_export_parity.md",
             "yolozu/data/docs/tensorrt_pipeline.md",

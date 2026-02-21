@@ -49,6 +49,8 @@ python3 -m pip install 'yolozu[full]'
 
 Docs index (start here): [`docs/README.md`](docs/README.md)
 
+One-page proof (shortest path + report shape): [`docs/proof_onepager.md`](docs/proof_onepager.md)
+
 ## Keypoints onboarding (one command)
 
 Prepare keypoints data into YOLOZU-ready layout:
