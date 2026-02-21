@@ -12,6 +12,20 @@ YOLOZU supports different models and datasets through unified contracts and adap
 YOLOZU is a contract-first evaluation harness for detection/segmentation/pose.
 Run inference in any backend, export a common `predictions.json`, and evaluate apples-to-apples with the same validators and metrics.
 
+## Start here (choose 1 of 3 entry points)
+
+- **A: Evaluate-only (BYO inference)**
+  - `predictions.json` → validate → eval
+  - Start: [`docs/README.md`](docs/README.md#1-evaluate-from-predictionsjson-bring-your-own-inference)
+
+- **B: Train/Export (RT-DETR pose)**
+  - reproducible run artifacts → ONNX → TensorRT
+  - Start: [`docs/README.md`](docs/README.md#2-train--export--evaluate-rt-detr-pose)
+
+- **C: Online adaptation (TTA/TTT, Safe TTT)**
+  - guard rails / reset policies for Tent/MIM/CoTTA/EATA/SAR
+  - Start: [`docs/README.md`](docs/README.md#3-online-adaptation-ttattt-safe-ttt)
+
 Key points:
 
 - Bring-your-own inference → stable `predictions.json`.
@@ -90,6 +104,13 @@ python3 -m pytest -q tests/test_prepare_keypoints_dataset_cvat_xml.py
 ```
 
 ## Why YOLOZU (what's unique)
+
+In one glance:
+
+- **BYO inference + contract-first eval**: export the same `predictions.json` → compare apples-to-apples.
+- **Safe TTT**: guard rails + reset policies for online adaptation.
+- **Apache-2.0-only ops**: license policy + checks to keep the toolchain clean.
+- **Parity/bench**: diff stats + fixed-protocol benchmarks across backends.
 
 - **Bring-your-own inference + contract-first evaluation**: run inference in PyTorch / ONNXRuntime / TensorRT / C++ / Rust
   → export the same `predictions.json` → compare apples-to-apples.

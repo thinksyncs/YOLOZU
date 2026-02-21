@@ -38,6 +38,12 @@ PRs should include:
 - tests (or a note explaining why tests aren’t practical)
 - docs updates when behavior/CLI changes
 
+External-facing hygiene (recommended):
+- Keep `main` stable and release-friendly (small PRs, minimal churn).
+- Large work: use a feature branch and link an issue (context + scope).
+- Quality gates before review: `ruff check .`, `python -m unittest`, and manifest/packaging checks when applicable.
+- If behavior/perf changes: attach a small benchmark/report artifact (JSON/CSV) or a short repro script.
+
 ## License
 
 By contributing, you agree that your contributions will be licensed under the
