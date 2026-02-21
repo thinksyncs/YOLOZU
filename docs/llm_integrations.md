@@ -72,3 +72,30 @@ Define skill endpoints that forward to:
 Implement participant/commands that invoke the same backend (MCP/API) instead of re-implementing CLI logic.
 
 This avoids duplicate business logic and keeps output parity between Copilot and other LLM clients.
+
+## 4) Gemini route
+
+Gemini can use the same backend in two ways:
+
+### A. MCP route (recommended)
+
+Connect Gemini-capable MCP client/runtime to YOLOZU MCP server:
+
+```bash
+python3 tools/run_mcp_server.py
+```
+
+Use the same core tools (`doctor`, `validate_predictions`, `validate_dataset`, `eval_coco`, `run_scenarios`, `convert_dataset`) with identical JSON outputs.
+
+### B. API/tool-calling route
+
+Expose the FastAPI/OpenAPI endpoint and register tool/function calls against it:
+
+```bash
+python3 tools/run_actions_api.py
+```
+
+Schema endpoint:
+- `http://<host>:8080/openapi.json`
+
+This keeps Gemini, OpenAI, and Copilot integrations aligned on one implementation.
