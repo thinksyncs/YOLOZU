@@ -1,0 +1,83 @@
+from __future__ import annotations
+
+import json
+import shutil
+from pathlib import Path
+
+
+def main() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    source_root = repo_root / "data" / "coco128"
+    source_images = source_root / "images" / "train2017"
+    source_labels = source_root / "labels" / "train2017"
+
+    smoke_root = repo_root / "data" / "smoke"
+    smoke_images = smoke_root / "images" / "val"
+    smoke_labels = smoke_root / "labels" / "val"
+    smoke_predictions = smoke_root / "predictions"
+
+    for path in (smoke_images, smoke_labels, smoke_predictions):
+        path.mkdir(parents=True, exist_ok=True)
+
+    image_map = {path.stem: path for path in source_images.glob("*.jpg")}
+    label_map = {path.stem: path for path in source_labels.glob("*.txt")}
+    common_stems = sorted(set(image_map) & set(label_map))
+    selected_stems = common_stems[:10]
+    if len(selected_stems) < 10:
+        raise SystemExit(f"not enough coco128 pairs for smoke assets: {len(selected_stems)}")
+
+    predictions: list[dict[str, object]] = []
+    for stem in selected_stems:
+        image_src = image_map[stem]
+        label_src = label_map[stem]
+        image_dst = smoke_images / image_src.name
+        label_dst = smoke_labels / label_src.name
+        shutil.copy2(image_src, image_dst)
+        shutil.copy2(label_src, label_dst)
+
+        detections: list[dict[str, object]] = []
+        for line in label_src.read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            if not stripped:
+                continue
+            parts = stripped.split()
+            if len(parts) < 5:
+                continue
+            class_id = int(float(parts[0]))
+            cx, cy, w, h = (float(parts[1]), float(parts[2]), float(parts[3]), float(parts[4]))
+            detections.append(
+                {
+                    "class_id": class_id,
+                    "score": 0.9,
+                    "bbox": {"cx": cx, "cy": cy, "w": w, "h": h},
+                }
+            )
+
+        predictions.append({"image": image_dst.name, "detections": detections})
+
+    classes_payload = {
+        "schema_version": 1,
+        "names": [f"class_{index}" for index in range(80)],
+        "class_to_category_id": {str(index): index + 1 for index in range(80)},
+        "category_id_to_class_id": {str(index + 1): index for index in range(80)},
+    }
+    (smoke_labels / "classes.json").write_text(
+        json.dumps(classes_payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    predictions_payload = {
+        "schema_version": 1,
+        "predictions": predictions,
+    }
+    (smoke_predictions / "predictions_dummy.json").write_text(
+        json.dumps(predictions_payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    print(f"wrote smoke assets to: {smoke_root}")
+    print(f"images: {len(selected_stems)}")
+
+
+if __name__ == "__main__":
+    main()

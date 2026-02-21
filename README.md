@@ -36,27 +36,32 @@ Key points:
 - RT-DETR pose scaffold is available for train→export→eval.
 - Safe TTT presets exist (Tent/MIM/CoTTA/EATA/SAR).
 
-## Quickstart (pip users)
+## Quickstart (copy-paste one line)
+
+With this repo checkout, run:
 
 ```bash
-python3 -m pip install yolozu
+bash scripts/smoke.sh
+```
+
+This runs `doctor` → `validate dataset` → `validate predictions` →
+`eval-coco --dry-run` using bundled smoke assets in `data/smoke`.
+
+Manual equivalent (same fixed inputs):
+
+```bash
 yolozu doctor --output -
-yolozu demo instance-seg --num-images 2 --image-size 96
-```
-
-Have your own `predictions.json` already?
-
-```bash
-yolozu validate predictions --predictions reports/predictions.json --strict
+yolozu validate dataset data/smoke
+yolozu validate predictions data/smoke/predictions/predictions_dummy.json --strict
 yolozu eval-coco \
-  --dataset data/coco128 \
-  --split val2017 \
-  --predictions reports/predictions.json \
-  --output reports/coco_eval.json
+  --dataset data/smoke \
+  --split val \
+  --predictions data/smoke/predictions/predictions_dummy.json \
+  --dry-run \
+  --output reports/smoke_coco_eval_dry_run.json
 ```
 
-Note: `data/coco128` is available in this repo checkout.
-For pip-only installs, point `--dataset` to your local COCO-style dataset.
+Detailed option patterns are in [`docs/README.md`](docs/README.md).
 
 Optional extras:
 
@@ -224,16 +229,16 @@ python3 tools/yolozu.py eval-instance-seg \
 Optional: prepare COCO instance-seg dataset with per-instance PNG masks (requires `pycocotools`):
 ```bash
 python3 tools/prepare_coco_instance_seg.py \
-  --coco-root /path/to/coco \
-  --split val2017 \
-  --out data/coco-instance-seg
+  --coco-root data/coco128 \
+  --split train2017 \
+  --out data/smoke_instance_seg
 ```
 
 Optional: convert COCO instance-seg predictions (RLE/polygons) into YOLOZU PNG masks (requires `pycocotools`):
 ```bash
 python3 tools/convert_coco_instance_seg_predictions.py \
-  --predictions /path/to/coco_instance_seg_preds.json \
-  --instances-json /path/to/instances_val2017.json \
+  --predictions reports/smoke_coco_instance_seg_preds.json \
+  --instances-json data/coco/annotations/instances_val2017.json \
   --output reports/instance_seg_predictions.json \
   --masks-dir reports/instance_seg_masks
 ```
@@ -329,13 +334,15 @@ Safety defaults:
 
   ```bash
   python3 -m pip install 'yolozu[coco]'
-  yolozu eval-coco --dataset <yolo-dataset> --predictions <predictions.json>
+  yolozu eval-coco --dataset data/smoke --predictions data/smoke/predictions/predictions_dummy.json
   ```
 - Long-tail focused post-hoc path is available without retraining:
   ```bash
-  yolozu calibrate --method fracal --task bbox --dataset <yolo-dataset> \
-    --predictions <predictions.json> --stats-out reports/fracal_stats_bbox.json
-  yolozu eval-long-tail --dataset <yolo-dataset> --predictions <calibrated_predictions.json>
+  yolozu calibrate --method fracal --task bbox --dataset data/smoke \
+    --predictions data/smoke/predictions/predictions_dummy.json \
+    --output runs/smoke/predictions_calibrated.json \
+    --stats-out runs/smoke/fracal_stats_bbox.json
+  yolozu eval-long-tail --dataset data/smoke --predictions runs/smoke/predictions_calibrated.json
   ```
   Reuse training-time stats with `--stats-in reports/fracal_stats_bbox.json` (also supported for `--task seg`).
   Alternative methods are also available for comparison:
@@ -394,28 +401,28 @@ python3 -m unittest -q
   `yolozu doctor --output -`
   / `python3 tools/yolozu.py doctor --output reports/doctor.json`
 - Export smoke (no inference):
-  `yolozu export --backend labels --dataset /path/to/yolo --output reports/predictions.json`
+  `yolozu export --backend labels --dataset data/smoke --output runs/smoke/predictions_labels.json`
   / same in repo wrapper.
 - Folder inference + overlays/HTML:
-  `yolozu predict-images --backend onnxrt --input-dir /path/to/images --model model.onnx`
+  `yolozu predict-images --backend onnxrt --input-dir data/smoke/images/val --model runs/smoke/model.onnx`
   / `python3 tools/yolozu.py predict-images ...`
 - Backend parity check:
   `yolozu parity --reference reports/pred_ref.json --candidate reports/pred_cand.json`
   / `python3 tools/check_predictions_parity.py ...`
 - Validate dataset layout:
-  `yolozu validate dataset /path/to/yolo --strict`
+  `yolozu validate dataset data/smoke --strict`
   / `python3 tools/validate_dataset.py ... --strict`
 - Validate predictions JSON:
   `yolozu validate predictions reports/predictions.json --strict`
   / `python3 tools/validate_predictions.py ... --strict`
 - COCOeval mAP:
-  `yolozu eval-coco --dataset /path/to/yolo --predictions reports/predictions.json`
+  `yolozu eval-coco --dataset data/smoke --predictions data/smoke/predictions/predictions_dummy.json`
   (`yolozu[coco]`) / `python3 tools/eval_coco.py ...`
 - Long-tail post-hoc + report:
   `yolozu calibrate --method fracal ... && yolozu eval-long-tail ...`
   / same via `python3 tools/yolozu.py ...`
 - Long-tail train recipe:
-  `yolozu long-tail-recipe --dataset /path/to/yolo ...`
+  `yolozu long-tail-recipe --dataset data/smoke ...`
   / same via `python3 tools/yolozu.py ...`
 - Instance-seg eval (PNG masks):
   `yolozu eval-instance-seg --dataset /path --predictions preds.json ...`
@@ -495,8 +502,8 @@ yolozu train configs/examples/train_setting.yaml
 2) Validate dataset before training:
 
 ```bash
-yolozu validate dataset /path/to/your_dataset --split train --strict
-yolozu validate dataset /path/to/your_dataset --split val --strict
+yolozu validate dataset data/smoke --split val --strict
+yolozu validate dataset data/smoke --split val --strict --no-check-images
 ```
 
 3) Copy and edit contract config (set dataset root/splits and training knobs):
@@ -525,12 +532,12 @@ python3 tools/export_predictions.py \
   --adapter rtdetr_pose \
   --config rtdetr_pose/configs/base.json \
   --checkpoint runs/custom_exp01/checkpoints/best.pt \
-  --dataset /path/to/your_dataset \
+  --dataset data/smoke \
   --split val \
   --wrap \
   --output reports/custom_exp01_predictions_val.json
 yolozu eval-coco \
-  --dataset /path/to/your_dataset \
+  --dataset data/smoke \
   --split val \
   --predictions reports/custom_exp01_predictions_val.json \
   --bbox-format cxcywh_norm
@@ -625,12 +632,12 @@ python3 tools/plot_metrics.py \
 
 ### ONNX export
 
-ONNX export runs when `--run-dir` is set (defaulting to `runs/exp001/model.onnx`) or when `--onnx-out` is provided.
+ONNX export runs when `--run-dir` is set (defaulting to `runs/smoke/model.onnx`) or when `--onnx-out` is provided.
 
 Useful flags:
-- `--run-dir runs/exp001`
-- `--onnx-out runs/exp001/model.onnx`
-- `--onnx-meta-out runs/exp001/model.onnx.meta.json`
+- `--run-dir runs/smoke`
+- `--onnx-out runs/smoke/model.onnx`
+- `--onnx-meta-out runs/smoke/model.onnx.meta.json`
 - `--onnx-opset <int>`
 - `--onnx-dynamic-hw` (dynamic H/W axes)
 
@@ -645,7 +652,7 @@ Base dataset format:
 - Ultralytics YOLOv8 / YOLO11:
   if your dataset root contains `images/train` + `labels/train`
   (and `images/val` + `labels/val`),
-  it is already compatible. Use `yolozu validate dataset /path/to/dataset --strict`.
+  it is already compatible. Use `yolozu validate dataset data/smoke --strict`.
   - You can also pass an Ultralytics `data.yaml` as `--dataset`
     (expects `path:` + `train:`/`val:` pointing to `images/train` and `images/val`).
 - YOLOX: common setups use COCO JSON (`instances_*.json`). Convert once with `tools/prepare_coco_yolo.py`
@@ -716,7 +723,7 @@ TTT updates weights in-memory at inference time and is OFF by default (opt-in vi
     ```bash
     python3 tools/yolozu.py export \
       --backend torch \
-      --checkpoint /path/to.ckpt \
+      --checkpoint runs/smoke/checkpoints/best.pt \
       --device cuda \
       --max-images 50 \
       --output reports/predictions.json
@@ -726,7 +733,7 @@ TTT updates weights in-memory at inference time and is OFF by default (opt-in vi
     ```bash
     python3 tools/yolozu.py export \
       --backend torch \
-      --checkpoint /path/to.ckpt \
+      --checkpoint runs/smoke/checkpoints/best.pt \
       --device cuda \
       --max-images 50 \
       --ttt \
@@ -823,8 +830,8 @@ To compare against external baselines (including YOLO26) while keeping this repo
   ```bash
   python3 tools/validate_predictions.py reports/predictions.json
   python3 tools/eval_coco.py \
-    --dataset /path/to/coco-yolo \
-    --split val2017 \
+    --dataset data/smoke \
+    --split val \
     --predictions reports/predictions.json \
     --bbox-format cxcywh_norm
   ```
@@ -847,11 +854,11 @@ python3 tools/normalize_predictions.py \
 
 If you have the official COCO layout (images + `annotations/instances_*.json`), you can generate YOLO-format labels:
 
-- `python3 tools/prepare_coco_yolo.py --coco-root /path/to/coco --split val2017 --out /path/to/coco-yolo`
+- `python3 tools/prepare_coco_yolo.py --coco-root data/coco --split val2017 --out data/coco-yolo`
 
 This creates:
-- `/path/to/coco-yolo/labels/val2017/*.txt` (YOLO normalized `class cx cy w h`)
-- `/path/to/coco-yolo/labels/val2017/classes.json` (category_id <-> class_id mapping)
+- `data/coco-yolo/labels/val2017/*.txt` (YOLO normalized `class cx cy w h`)
+- `data/coco-yolo/labels/val2017/classes.json` (category_id <-> class_id mapping)
 
 ### Dataset layout under `data/`
 
@@ -871,7 +878,7 @@ you can score them together:
   ```bash
   python3 tools/eval_suite.py \
     --protocol yolo26 \
-    --dataset /path/to/coco-yolo \
+    --dataset data/coco-yolo \
     --predictions-glob 'reports/pred_yolo26*.json' \
     --output reports/eval_suite.json
   ```
@@ -896,7 +903,7 @@ you can score them together:
 - Archive the run (commands + hardware + suite output):
 
   ```bash
-  python3 tools/import_yolo26_baseline.py --dataset /path/to/coco-yolo --predictions-glob 'reports/pred_yolo26*.json'
+  python3 tools/import_yolo26_baseline.py --dataset data/coco-yolo --predictions-glob 'reports/pred_yolo26*.json'
   ```
 
 ### Debug without `pycocotools`

@@ -25,6 +25,10 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install .
 
+      - name: Repo smoke script (offline dry-run path)
+        run: |
+          bash scripts/smoke.sh
+
       - name: CLI smoke (doctor + demo)
         run: |
           yolozu doctor --output -

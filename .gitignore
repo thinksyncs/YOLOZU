@@ -8,7 +8,9 @@ __pycache__/
 
 reports/
 rtdetr_pose/reports/
-/data/
+/data/*
+!/data/smoke/
+!/data/smoke/**
 
 # Training / build artifacts
 runs/
